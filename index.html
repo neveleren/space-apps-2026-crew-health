@@ -82,7 +82,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .count.new { color: var(--muted); }
 .icon-btn { border: 1px solid var(--line); background: var(--panel-2); border-radius: 999px; padding: 4px 10px; cursor: pointer; font-size: 13px; }
 
-.wrap { max-width: 1280px; margin: 0 auto; display: grid; gap: 22px; padding-block: 22px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.wrap { display: none; }
 .nav { display: flex; flex-wrap: wrap; gap: 6px; }
 .nav button { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 8px 14px; cursor: pointer; min-height: 40px; }
 .nav button[aria-current="page"] { background: var(--cmd); border-color: var(--cmd); color: var(--cmd-ink); }
@@ -170,11 +170,54 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .offer p, .cycle p { margin: 0; }
 .cycle h2 { margin: 0; font-family: var(--font-display); font-weight: 500; font-size: 17px; }
 
+/* App shell: a status line always on top (NASA), a side menu on wide screens, a tab bar on phones */
+.app { display: grid; grid-template-columns: 236px minmax(0, 1fr); grid-template-rows: auto 1fr; min-height: 100vh; }
+.app.no-shell { grid-template-columns: minmax(0, 1fr); }
+.status-line { grid-column: 1 / -1; position: sticky; top: env(safe-area-inset-top, 0px); z-index: 6; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; padding-block: 8px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); background: var(--panel); border-bottom: 1px solid var(--line); }
+.sl-left, .sl-right { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.sl-right { flex-wrap: wrap; justify-content: flex-end; }
+.brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; letter-spacing: .01em; white-space: nowrap; }
+.brand .icon { color: var(--cmd); }
+.sl-title { color: var(--muted); white-space: nowrap; }
+.sl-title::before { content: "/"; margin-right: 10px; color: var(--line); }
+.sl-met, .sl-clock { font-family: var(--font-mono); font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sl-clock strong, .sl-met strong { color: var(--ink); font-weight: 500; }
+.who { padding: 3px 12px 3px 3px; }
+.who-text { display: grid; line-height: 1.1; text-align: left; }
+.who-text #who-name { font-size: 14px; font-weight: 500; }
+.side { grid-row: 2; position: sticky; top: 57px; align-self: start; height: calc(100vh - 57px); display: flex; flex-direction: column; justify-content: space-between; gap: 16px; padding: 18px 12px; border-right: 1px solid var(--line); background: var(--panel); }
+.side-nav { display: grid; gap: 4px; }
+.navitem { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 10px 12px; border: 0; border-radius: 10px; background: transparent; color: var(--ink); cursor: pointer; text-align: left; font-size: 15px; }
+.navitem:hover { background: var(--panel-2); }
+.navitem[aria-current="page"] { background: var(--cmd-soft); color: var(--cmd); font-weight: 600; }
+.navitem .badge { margin-left: auto; min-width: 22px; padding: 1px 7px; border-radius: 999px; background: var(--lv1); color: var(--panel); font-size: 12px; font-weight: 600; text-align: center; }
+.side-foot { display: grid; gap: 8px; padding: 0 12px; }
+.side-mission { margin: 0; font-family: var(--font-mono); font-size: 12px; color: var(--muted); line-height: 1.5; white-space: pre-line; }
+.side-link { font-size: 13px; color: var(--muted); }
+.main { grid-row: 2; min-width: 0; display: grid; align-content: start; gap: 20px; padding-block: 24px 96px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.app.no-shell .main { grid-column: 1 / -1; max-width: 1080px; margin: 0 auto; width: 100%; }
+.main > section { max-width: 1080px; width: 100%; }
+.tabs { display: none; }
+@media (max-width: 900px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .side { display: none !important; }
+  .sl-met, .sl-title, .who-text .who-id { display: none; }
+  .tabs { position: fixed; z-index: 6; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(4, 1fr); padding-bottom: env(safe-area-inset-bottom, 0px); padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); background: var(--panel); border-top: 1px solid var(--line); }
+  .tabs[hidden] { display: none; }
+  .tabs .navitem { flex-direction: column; justify-content: center; gap: 2px; min-height: 60px; padding: 6px 4px; border-radius: 0; font-size: 12px; text-align: center; }
+  .tabs .navitem .badge { position: absolute; transform: translate(14px, -10px); margin: 0; }
+  .tabs .navitem { position: relative; }
+}
+.mi { display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: var(--panel-2); color: var(--muted); flex: none; }
+.lv1 > .mi, .mi.lv1 { color: var(--lv1); background: var(--lv1-fill); }
+.lv2 > .mi, .mi.lv2 { color: var(--lv2); background: var(--lv2-fill); }
+.lv3 > .mi, .mi.lv3 { color: var(--lv3); background: var(--lv3-fill); }
+
 /* Calm structure: one message, a short list, one place for everything else */
 .sys-summary { display: inline-flex; gap: 6px; flex-wrap: wrap; }
 .nav-link { align-self: center; margin-left: auto; font-size: 14px; color: var(--muted); }
 .attn { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.attn button { width: 100%; text-align: left; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer; }
+.attn button { width: 100%; text-align: left; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer; }
 .attn button:hover { border-color: var(--cmd); }
 .attn .what { display: grid; gap: 2px; }
 .attn .what b { font-weight: 500; }
@@ -183,7 +226,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .calm { margin: 0; color: var(--muted); }
 .ci-done { margin: 0; }
 .rows { display: grid; gap: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); overflow: hidden; }
-.row { width: 100%; text-align: left; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 12px 16px; border: 0; border-bottom: 1px solid var(--line); background: transparent; cursor: pointer; min-height: 56px; }
+.row { width: 100%; text-align: left; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 12px 16px; border: 0; border-bottom: 1px solid var(--line); background: transparent; cursor: pointer; min-height: 56px; }
 .row:last-child { border-bottom: 0; }
 .row:hover { background: var(--panel-2); }
 .row .name { display: grid; gap: 2px; min-width: 0; }
@@ -296,38 +339,44 @@ dialog p { margin: 0 0 12px; }
 </style>
 </head>
 <body>
-<header class="bar">
-  <div class="bar-in">
-    <span class="screen" id="screen-name">Crew Health</span>
-    <button type="button" class="who" id="who-btn" hidden><span class="avatar" id="who-avatar"></span><span id="who-name"></span><span class="who-id" id="who-id"></span></button>
-    <div class="bar-mid"><span id="met"></span><span>GMT <strong id="clock">--:--:--</strong></span></div>
-    <div class="bar-right">
-      <span id="sys-summary" class="sys-summary"></span>
-      <button type="button" class="alert-btn" id="alerts-btn" hidden aria-label="Messages and alerts"></button>
-    </div>
+<div class="app" id="app">
+<header class="status-line" role="banner">
+  <div class="sl-left">
+    <span class="brand" id="brand"></span>
+    <span class="sl-title" id="screen-name">Crew Health</span>
+  </div>
+  <div class="sl-right">
+    <span class="sl-met" id="met"></span>
+    <span id="sys-summary" class="sys-summary"></span>
+    <span class="sl-clock">GMT <strong id="clock">--:--:--</strong></span>
+    <button type="button" class="alert-btn" id="alerts-btn" hidden aria-label="Messages"></button>
+    <button type="button" class="who" id="who-btn" hidden><span class="avatar" id="who-avatar"></span><span class="who-text"><span id="who-name"></span><span class="who-id" id="who-id"></span></span></button>
   </div>
 </header>
 
-<main class="wrap" id="main">
+<aside class="side" id="side" hidden aria-label="Screens">
+  <nav class="side-nav" id="side-nav"></nav>
+  <div class="side-foot">
+    <p class="side-mission" id="side-mission"></p>
+    <a class="side-link" href="./machine.html">Technical view</a>
+  </div>
+</aside>
+
+<main class="main" id="main">
   <section id="view-login" class="login" aria-labelledby="login-title">
-    <p class="kicker">Just For Fun · NASA Space Apps 2026</p>
-    <h1 id="login-title">Who are you?</h1>
-    <p>Choose yourself. Each person sees only their own data and the ship's shared cabin air. How the program will recognise a person by itself is still the team's open question; for now the choice is manual.</p>
+    <div class="login-head">
+      <p class="kicker">Just For Fun · NASA Space Apps 2026</p>
+      <h1 id="login-title">Who are you?</h1>
+      <p>Choose yourself. You see only your own data and the ship's shared cabin air.</p>
+    </div>
     <p class="people-title">Example crew (made-up people)</p>
     <div class="people" id="people-crew"></div>
     <p class="people-title">Inspiration4: real blood tests before and after flight (NASA OSDR)</p>
     <div class="people" id="people-real"></div>
+    <p class="note">How the program recognises a person by itself is still the team's open question; for now you choose.</p>
   </section>
 
   <section id="view-app" hidden>
-    <nav class="nav" aria-label="Screens">
-      <button type="button" data-view="home">Today</button>
-      <button type="button" data-view="measures">All measures</button>
-      <button type="button" data-view="alerts">Messages</button>
-      <button type="button" data-view="setup">Settings</button>
-      <a class="nav-link" href="./machine.html">Technical view</a>
-    </nav>
-
     <div id="screen-home" class="detail">
       <article class="today" id="today">
         <p class="kicker" id="today-kicker"></p>
@@ -361,6 +410,9 @@ dialog p { margin: 0 0 12px; }
     <div id="screen-setup" class="detail" hidden></div>
   </section>
 </main>
+
+<nav class="tabs" id="tabs" hidden aria-label="Screens"></nav>
+</div>
 
 <dialog id="ask-ok" class="ask-ok" aria-labelledby="ask-title" aria-describedby="ask-what">
   <p class="kicker">Camera · <span id="ask-who"></span></p>

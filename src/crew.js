@@ -12,6 +12,11 @@ import { exampleFlight, MISSION } from './demo-crew.js';
 import { drawHistory, drawTable, sparkline, fmtDate, MONTHS } from './history-view.js';
 import { assess, assessShip, measureState, headline, LEVEL, LEVEL_WORD, EXPECTED, RULES as LEVEL_RULES } from './state-levels.js';
 import { RULES as CAM_RULES } from './camera-rules.js';
+import { icon } from './icons.js';
+
+// One icon per measure, so a list can be read at a glance.
+const ICON_FOR = { pulse: 'heart-pulse', bp: 'activity', glucose: 'droplet', temp: 'thermometer', spo2: 'droplets', sleep: 'moon', resp: 'wind', fluid: 'glass-water', bodyMass: 'scale', eyePressure: 'eye', hearing: 'ear', radiation: 'radiation', vo2max: 'heart', strength: 'dumbbell', bone: 'bone', camera: 'camera', mood: 'smile', attitude: 'battery', sleepQuality: 'bed', cognition: 'brain', cycle: 'calendar-heart', xray: 'scan-line', ecg: 'chart-line', ultrasound: 'waves', co2: 'cloud-fog', cabinTemp: 'thermometer', cabinO2: 'orbit', cabinPressure: 'gauge', noise: 'volume-2', blood: 'test-tube' };
+const NAV = [['home', 'Today', 'house'], ['measures', 'All measures', 'list'], ['alerts', 'Messages', 'bell'], ['setup', 'Settings', 'settings']];
 
 const DAY = 24 * 60 * 60 * 1000;
 const REAL = realPeople(INSPIRATION4.subjects);
@@ -215,8 +220,22 @@ function procedureFor(it) {
 }
 
 // ---------- rendering: status bar ----------
+function renderNav(unseen) {
+  const items = (cls) => NAV.map(([view, label, ic]) => h('button', {
+    type: 'button', class: 'navitem', 'data-view': view,
+    'aria-current': ui.screen === view || (ui.screen === 'detail' && view === (ui.backTo || 'measures')) ? 'page' : 'false',
+    onclick: () => setScreen(view),
+  }, icon(ic, { size: cls === 'tabs' ? 22 : 20 }), h('span', {}, label), view === 'alerts' && unseen ? h('span', { class: 'badge' }, String(unseen)) : null));
+  byId('side-nav').replaceChildren(...items('side'));
+  byId('tabs').replaceChildren(...items('tabs'));
+}
+
 function renderBar() {
   const p = ui.person ? personById[ui.person] : null;
+  byId('brand').replaceChildren(icon('orbit', { size: 20 }), 'Crew Health');
+  byId('app').classList.toggle('no-shell', !p);
+  byId('side').hidden = !p;
+  byId('tabs').hidden = !p;
   byId('who-btn').hidden = !p;
   if (p) {
     byId('who-avatar').textContent = p.name.slice(0, 1);
@@ -228,8 +247,10 @@ function renderBar() {
     const day = Math.floor((msOf(now) - msOf(MISSION.launch)) / DAY) + 1;
     const left = Math.max(0, Math.ceil((msOf(MISSION.landing) - msOf(now)) / DAY));
     byId('met').replaceChildren('Flight day ', h('strong', {}, String(day)), ` · ${left} days to landing`);
+    byId('side-mission').textContent = `${MISSION.name}\nLaunch ${fmtDate(MISSION.launch)} · landing ${fmtDate(MISSION.landing)}`;
   } else {
     byId('met').textContent = p && p.real ? 'Inspiration4, 2021' : '';
+    byId('side-mission').textContent = p && p.real ? 'Inspiration4 (2021), real data from NASA OSDR' : '';
   }
   // Quiet when all is well: only an exception gets a chip (NASA's "quiet and dark").
   const exceptions = [];
@@ -244,9 +265,13 @@ function renderBar() {
     const count = (lv) => list.filter((a) => a.level === lv).length;
     const unseen = list.filter((a) => !ui.seen.has(a.id)).length;
     const top = list.length ? Math.max(...list.map((a) => a.level)) : LEVEL.FINE;
-    btn.className = `alert-btn ${LV_CLASS[top]}`;
-    btn.replaceChildren(unseen ? `${unseen} new ${unseen === 1 ? 'message' : 'messages'}` : 'Messages');
+    btn.className = `alert-btn ${unseen ? LV_CLASS[top] : 'lv0'}`;
+    btn.replaceChildren(icon('bell', { size: 18 }), unseen ? String(unseen) : '');
+    btn.setAttribute('aria-label', unseen ? `${unseen} new messages` : 'Messages');
     void count;
+    renderNav(unseen);
+  } else {
+    renderNav(0);
   }
 }
 
@@ -287,10 +312,11 @@ function renderHome() {
   };
   byId('today-reasons').className = 'attn';
   byId('today-reasons').replaceChildren(...(items.length ? [
-    ...items.map((it) => h('li', {}, h('button', { type: 'button', onclick: () => (it.cell ? openDetail(it.cell.indicator) : it.kind === 'mood' ? openDetail('mood') : setScreen('alerts')) },
-      h('span', { class: `chip ${LV_CLASS[it.level]}` }, LEVEL_WORD[it.level]),
+    ...items.map((it) => h('li', {}, h('button', { type: 'button', class: LV_CLASS[it.level], onclick: () => (it.cell ? openDetail(it.cell.indicator) : it.kind === 'mood' ? openDetail('mood') : setScreen('alerts')) },
+      h('span', { class: 'mi' }, icon(ICON_FOR[it.cell ? it.cell.indicator : it.kind === 'mood' ? 'mood' : 'camera'] || 'circle-alert', { size: 20 })),
       h('span', { class: 'what' }, h('b', {}, it.cell ? it.cell.label : it.kind === 'mood' ? 'Mood and energy' : 'Camera'), h('span', {}, short(it))),
-      h('span', { class: 'chev', 'aria-hidden': 'true' }, '›')))),
+      h('span', { class: `chip ${LV_CLASS[it.level]}` }, LEVEL_WORD[it.level]),
+      icon('chevron-right', { size: 18, cls: 'chev' })))),
     ...(all.length > items.length ? [h('li', {}, h('p', { class: 'calm' }, `${all.length - items.length} more in Messages.`))] : []),
   ] : [h('li', {}, h('p', { class: 'calm' }, 'Nothing needs your attention.'))]));
   const first = a.body.items[0] && a.body.items[0].cell ? a.body.items[0].cell.indicator : null;
@@ -356,12 +382,13 @@ async function sendCheckin() {
 }
 
 // One measure as a calm row: name, value, and a status word only when something needs attention.
-function tile({ name, valueBig, unit, chip, level, foot, onOpen, none, effort }) {
+function tile({ name, valueBig, unit, chip, level, foot, onOpen, none, effort, ind }) {
   const sub = [foot && foot[0] ? foot[0].textContent : '', effort ? `${effort} effort` : '', foot && foot[1] ? foot[1].textContent : ''].filter(Boolean).join(' · ');
   return h('button', { type: 'button', class: `row ${LV_CLASS[level] || 'lv0'}`, onclick: onOpen },
+    h('span', { class: 'mi' }, icon(ICON_FOR[ind] || 'activity', { size: 20 })),
     h('span', { class: 'name' }, h('b', {}, name), h('span', {}, none || sub)),
     h('span', { class: 'val' }, none ? '' : valueBig, !none && unit ? h('small', {}, unit) : null),
-    level > LEVEL.FINE || (chip && chip.classList.contains('stale')) ? chip : h('span', { class: 'chev', 'aria-hidden': 'true' }, '›'));
+    level > LEVEL.FINE || (chip && chip.classList.contains('stale')) ? chip : icon('chevron-right', { size: 18, cls: 'chev' }));
 }
 function tileOld({ name, valueBig, unit, chip, level, foot, onOpen, sparkOpts, none, effort }) {
   const host = h('div', { class: 'spark-host' });
@@ -406,6 +433,7 @@ function measureTile(owner, indicator, a, now) {
     sparkOpts: recent.length > 1 && !ORDINAL[indicator] ? { points: recent, band: bandOf(cell, owner), label: `${cell.label}: last 30 days` } : null,
     onOpen: () => openDetail(indicator),
     effort: cell.effort,
+    ind: indicator,
   });
 }
 
@@ -414,6 +442,7 @@ function cameraTile(owner) {
   const last = list[list.length - 1];
   const level = last && last.status === STATUS.OUT && msOf(nowTime()) - msOf(last.time) < LEVEL_RULES.cameraHours * 60 * 60 * 1000 ? LEVEL.URGENT : LEVEL.FINE;
   return tile({
+    ind: 'camera',
     name: 'Camera',
     valueBig: last ? valueText('camera', last.value) : '',
     chip: statusChip(level, level ? 'alarm' : 'no alarms'),
@@ -429,6 +458,7 @@ function complexTile(owner, indicator) {
   const cell = cellBy[indicator];
   const last = machine.history(owner.id, indicator).slice(-1)[0] || null;
   return tile({
+    ind: indicator,
     name: cell.label,
     valueBig: last ? 'received' : '',
     chip: statusChip(LEVEL.FINE, last ? 'needs analysis' : 'nothing yet'),
@@ -554,6 +584,7 @@ function renderRealHome(p) {
   const tiles = analytes.map((x) => {
     const last = x.points[x.points.length - 1];
     return tile({
+      ind: 'blood',
       name: x.name,
       valueBig: fmtVal(last.v),
       unit: x.units,
@@ -1037,12 +1068,9 @@ function render() {
   if (!logged) { renderLogin(); return; }
   const p = personById[ui.person];
   byId('checkin').hidden = Boolean(p.real);
-  for (const b of document.querySelectorAll('.nav [data-view]')) {
-    b.setAttribute('aria-current', b.dataset.view === ui.screen || (ui.screen === 'detail' && b.dataset.view === 'measures') ? 'page' : 'false');
-    b.hidden = Boolean(p.real) && b.dataset.view === 'alerts';
-  }
+  void p;
   const names = { home: 'Today', measures: 'All measures', detail: 'Measure', alerts: 'Messages', setup: 'Settings' };
-  byId('screen-name').textContent = `Crew Health · ${names[ui.screen]}`;
+  byId('screen-name').textContent = names[ui.screen];
   byId('screen-home').hidden = ui.screen !== 'home';
   byId('screen-measures').hidden = ui.screen !== 'measures';
   byId('screen-detail').hidden = ui.screen !== 'detail';
@@ -1055,7 +1083,6 @@ function render() {
 }
 
 // ---------- start ----------
-for (const b of document.querySelectorAll('.nav [data-view]')) b.addEventListener('click', () => setScreen(b.dataset.view));
 byId('who-btn').addEventListener('click', () => { if (camStop) { camStop(); camStop = null; } ui.person = null; render(); });
 byId('alerts-btn').addEventListener('click', () => setScreen('alerts'));
 byId('ci-send').addEventListener('click', sendCheckin);
