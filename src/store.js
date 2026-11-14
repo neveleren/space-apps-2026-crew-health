@@ -11,8 +11,13 @@
 
 const KEY = 'jff-health-events-v1';
 
+// Our own server runs on the computer itself (http://127.0.0.1 or localhost). A static copy on the web
+// (for example GitHub Pages, served over https) has no server, so it goes straight to the browser's storage.
+const ownServer = () => typeof location !== 'undefined' && (location.protocol === 'http:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1');
+
 export async function openStore() {
   try {
+    if (!ownServer()) throw new Error('no server on a static copy');
     const res = await fetch('./api/events', { headers: { Accept: 'application/json' }, cache: 'no-store' });
     const type = res.headers.get('content-type') || '';
     if (res.ok && type.includes('application/json')) {
