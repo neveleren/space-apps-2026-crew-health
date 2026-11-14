@@ -40,3 +40,14 @@ test('low days are counted by cycle phase, only from the person\'s own data', ()
   const phases = lowDaysByPhase(starts, days);
   assert.deepEqual(phases.map((p) => [p.low, p.days]), [[2, 3], [1, 1], [0, 0], [0, 0]]);
 });
+
+test('ACOG ranges: a cycle outside 21 to 35 days, cycles that vary by more than 9 days, a period longer than 7 days', () => {
+  const short = cycleSummary(log([[0, 'period_start'], [28, 'period_start'], [46, 'period_start']]), new Date(T0 + 50 * DAY));
+  assert.ok(short.flags.includes('cycle-outside-range'));
+  const varies = cycleSummary(log([[0, 'period_start'], [22, 'period_start'], [56, 'period_start'], [80, 'period_start']]), new Date(T0 + 82 * DAY));
+  assert.ok(varies.flags.includes('cycle-varies'));
+  const longPeriod = cycleSummary(log([[0, 'period_start'], [9, 'period_end']]), new Date(T0 + 12 * DAY));
+  assert.ok(longPeriod.flags.includes('long-period'));
+  const normal = cycleSummary(log([[0, 'period_start'], [4, 'period_end'], [28, 'period_start'], [32, 'period_end'], [57, 'period_start'], [61, 'period_end']]), new Date(T0 + 60 * DAY));
+  assert.deepEqual(normal.flags, []);
+});

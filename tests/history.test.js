@@ -76,8 +76,9 @@ test('example flight: every reading belongs to a known person or the ship, and t
   for (const ev of exampleFlight(CREW)) {
     assert.ok(ids.has(ev.person), ev.person);
     if (ev.kind === 'review') { machine.review(ev.person, ev.time); continue; }
-    if (ev.person === SHIP.id) assert.ok(['co2', 'cabinTemp'].includes(ev.reading.indicator));
-    else assert.ok(!['co2', 'cabinTemp'].includes(ev.reading.indicator));
+    const env = CELLS.filter((c) => c.section === 'env').map((c) => c.indicator);
+    if (ev.person === SHIP.id) assert.ok(env.includes(ev.reading.indicator), ev.reading.indicator);
+    else assert.ok(!env.includes(ev.reading.indicator), ev.reading.indicator);
     const e = machine.receive({ ...ev.reading, person: ev.person, time: ev.time });
     assert.notEqual(e.status, STATUS.UNKNOWN, `${ev.person} ${ev.reading.indicator} ${JSON.stringify(ev.reading.value)}`);
   }

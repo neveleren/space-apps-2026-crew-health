@@ -73,6 +73,10 @@ export function checkNorm(cell, value, profile) {
     // Below zero is a device error for body readings, radiation or CO2; a cell where it is
     // physically real (cabin temperature in degrees C) says so with allowNegative.
     if (!Number.isFinite(v) || (v < 0 && !cell.allowNegative)) return { valid: false };
+    // A lower limit that differs by sex (for example NASA's daily fluid need); with the sex unknown,
+    // the lower of the two is used, so nobody is flagged by the stricter one by mistake.
+    const sexMin = n.minBySex ? (n.minBySex[profile && profile.sex] ?? Math.min(...Object.values(n.minBySex))) : null;
+    if (sexMin !== null && v < sexMin) return { valid: true, inNorm: false, side: 'below' };
     if (has(n.min) && v < n.min) return { valid: true, inNorm: false, side: 'below' };
     if (has(n.max) && (n.maxExclusive ? v >= n.max : v > n.max)) return { valid: true, inNorm: false, side: 'above' };
     return { valid: true, inNorm: true, side: null };
@@ -83,6 +87,7 @@ export function checkNorm(cell, value, profile) {
     const sys = toNum(value ? value.sys : undefined);
     const dia = toNum(value ? value.dia : undefined);
     if (!Number.isFinite(sys) || !Number.isFinite(dia) || sys <= 0 || dia <= 0) return { valid: false };
+    if ((has(n.sysMin) && sys < n.sysMin) || (has(n.diaMin) && dia < n.diaMin)) return { valid: true, inNorm: false, side: 'below' };
     const inNorm = sys < n.sysBelow && dia < n.diaBelow;
     return { valid: true, inNorm, side: inNorm ? null : 'above' };
   }
@@ -95,6 +100,12 @@ export function checkNorm(cell, value, profile) {
       if (v < part.min) inNorm = false;
     }
     return { valid: true, inNorm, side: inNorm ? null : 'below' };
+  }
+  if (cell.normType === 'record') {
+    // A measure with no checked norm (for example body mass change in flight): it is recorded, never judged.
+    const v = toNum(value);
+    if (!Number.isFinite(v)) return { valid: false };
+    return { valid: true, inNorm: null, side: null };
   }
   if (cell.normType === 'baseline-percent') {
     // NASA's rule: in flight, stay at or above a share of the person's own pre-flight level.
@@ -224,16 +235,22 @@ export function createMachine({ cells, crew = [], state = {}, now = () => new Da
         status = STATUS.UNKNOWN;
         dest = DEST.UNDECIDED;
       } else {
+        if (r.inNorm === null) {
+          steps.push({ code: 'no-norm-recorded', by: 'machine' });
+          status = STATUS.RECORDED;
+          dest = DEST.NONE;
+        } else {
         steps.push({ code: 'norm-used', by: 'machine', norm: cell.compareWith, question: OPEN_QUESTION.WHICH_NORM });
         if (r.inNorm) {
           steps.push({ code: 'in-norm', by: 'machine', percent: r.percent });
-          if (cell.normType === 'below-both') steps.push({ code: 'no-lower-limit', by: 'open' });
+          if (cell.normType === 'below-both' && !has(cell.norm.sysMin)) steps.push({ code: 'no-lower-limit', by: 'open' });
           status = STATUS.OK;
           dest = DEST.NONE;
         } else {
           steps.push({ code: 'out-of-norm', by: 'machine', side: r.side, percent: r.percent });
           status = STATUS.OUT;
           dest = outOfNorm(steps);
+        }
         }
         // In the team's words, hours of sleep are part of the daily report the AI reviews later.
         if (cell.reviewByAi) {

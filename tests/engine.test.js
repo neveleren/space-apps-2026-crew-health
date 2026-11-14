@@ -46,12 +46,17 @@ test('pulse norm edges: 60 and 100 are within, 59 and 101 are outside', () => {
   assert.equal(m.receive(pulse(101)).status, STATUS.OUT);
 });
 
-test('blood pressure: below 120 and 80, no lower limit shown, impossible numbers rejected', () => {
+test('blood pressure: below 120/80 and not below 90/60 (NHLBI), impossible numbers rejected', () => {
   const m = make();
   const ok = m.receive(bp(118, 76));
-  assert.deepEqual(codes(ok), ['norm-used', 'in-norm', 'no-lower-limit']);
+  assert.deepEqual(codes(ok), ['norm-used', 'in-norm']);
   assert.equal(m.receive(bp(120, 70)).status, STATUS.OUT);
   assert.equal(m.receive(bp(119, 80)).status, STATUS.OUT);
+  const low = m.receive(bp(88, 70));
+  assert.equal(low.status, STATUS.OUT);
+  assert.equal(low.steps.find((s) => s.code === 'out-of-norm').side, 'below');
+  assert.equal(m.receive(bp(100, 58)).status, STATUS.OUT);
+  assert.equal(m.receive(bp(90, 60)).status, STATUS.OK);
   for (const v of [[0, 0], [-10, -5], [null, null], ['', '']]) {
     assert.equal(m.receive(bp(...v)).status, STATUS.UNKNOWN, JSON.stringify(v));
   }
@@ -334,4 +339,39 @@ test('every cell has a known kind, and every number cell shows which norm it use
     }
   }
   assert.deepEqual(checkNorm({ normType: 'other' }, 1), { valid: false });
+});
+
+test('fluid intake: the lower limit follows the person\'s sex (NASA: 2,500 mL men, 2,100 mL women)', () => {
+  const m = make();
+  assert.equal(m.receive(r('fluid', 2300, TOM)).status, STATUS.OUT);
+  assert.equal(m.receive(r('fluid', 2300, ELLY)).status, STATUS.OK);
+  assert.equal(m.receive(r('fluid', 2000, ELLY)).status, STATUS.OUT);
+  assert.equal(m.receive(r('fluid', 2600, TOM)).status, STATUS.OK);
+});
+
+test('body mass change has no checked norm: it is recorded, never judged', () => {
+  const m = make();
+  const e = m.receive(r('bodyMass', 96.5));
+  assert.equal(e.status, STATUS.RECORDED);
+  assert.equal(e.dest, DEST.NONE);
+  assert.deepEqual(codes(e), ['no-norm-recorded']);
+  assert.equal(m.receive(r('bodyMass', 'abc')).status, STATUS.UNKNOWN);
+});
+
+test('new measures: breathing rate, eye pressure, hearing, cabin oxygen, pressure and noise use their checked limits', () => {
+  const m = make();
+  assert.equal(m.receive(r('resp', 12)).status, STATUS.OK);
+  assert.equal(m.receive(r('resp', 26)).status, STATUS.OUT);
+  assert.equal(m.receive(r('eyePressure', 21)).status, STATUS.OK);
+  assert.equal(m.receive(r('eyePressure', 24)).status, STATUS.OUT);
+  assert.equal(m.receive(r('hearing', 19)).status, STATUS.OK);
+  assert.equal(m.receive(r('hearing', 20)).status, STATUS.OUT);
+  const ship = createMachine({ cells: CELLS, crew: [{ id: 'ship', baselines: {} }], state: {}, now: fixedNow });
+  const s = (indicator, value) => ship.receive({ person: 'ship', source: indicator, indicator, value });
+  assert.equal(s('cabinO2', 150).status, STATUS.OK);
+  assert.equal(s('cabinO2', 140).status, STATUS.OUT);
+  assert.equal(s('cabinPressure', 101.3).status, STATUS.OK);
+  assert.equal(s('cabinPressure', 30).status, STATUS.OUT);
+  assert.equal(s('noise', 72).status, STATUS.OK);
+  assert.equal(s('noise', 75).status, STATUS.OUT);
 });

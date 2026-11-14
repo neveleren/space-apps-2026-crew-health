@@ -17,7 +17,7 @@ export const SECTIONS = [
 // light (pulse, blood pressure, sugar, breathing, radiation), high (CT, ECG, ultrasound), extreme (blood).
 // Measures the sketch does not name were placed by Claude by analogy; EFFORT_BY_TEAM lists the team's own.
 export const EFFORT = { light: 'light', high: 'high', extreme: 'extreme' };
-export const EFFORT_BY_TEAM = ['pulse', 'bp', 'glucose', 'radiation', 'ecg', 'ultrasound', 'blood'];
+export const EFFORT_BY_TEAM = ['pulse', 'bp', 'glucose', 'resp', 'radiation', 'ecg', 'ultrasound', 'blood'];
 
 export const NORM_KINDS = [
   { key: 'earthGeneral', title: 'General, Earth' },
@@ -47,6 +47,17 @@ const L = {
   stahn2017: { name: 'Stahn et al., 2017', url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC5701078/' },
   barger2014: { name: 'Barger et al., 2014', url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC4188436/' },
   osdr: { name: 'NASA OSDR: OSD-575, OSD-569', url: 'https://osdr.nasa.gov/bio/repo/data/studies/OSD-575' },
+  medlineVitals: { name: 'MedlinePlus (NIH)', url: 'https://medlineplus.gov/ency/article/002341.htm' },
+  nhlbiLow: { name: 'NHLBI (NIH)', url: 'https://www.nhlbi.nih.gov/health/low-blood-pressure' },
+  medlineTonometry: { name: 'MedlinePlus (NIH)', url: 'https://medlineplus.gov/ency/article/003447.htm' },
+  nasaEyes2018: { name: 'NASA JSC, 2018', url: 'https://ntrs.nasa.gov/api/citations/20180004916/downloads/20180004916.pdf' },
+  whoHearing: { name: 'WHO World report on hearing, 2021', url: 'https://iris.who.int/server/api/core/bitstreams/5c3fc19f-11c9-4488-af3f-7e636b982aca/content' },
+  nasaHearing: { name: 'NASA JSC, ICES-2015-239', url: 'https://ntrs.nasa.gov/api/citations/20150011048/downloads/20150011048.pdf' },
+  hrpNutrition: { name: 'NASA HRP nutrition report, 2015', url: 'https://ntrs.nasa.gov/api/citations/20150000512/downloads/20150000512.pdf' },
+  jsc67378: { name: 'NASA JSC-67378, 2020', url: 'https://ntrs.nasa.gov/api/citations/20205008306/downloads/JSC67378%20Expl%20Nutr%20Reqs%20042020.pdf' },
+  std2f: { name: 'NASA-STD-3001, Vol. 2 Rev F', url: 'https://standards.nasa.gov/system/files/tmp/NASA-STD-3001%20Vol%202%20Rev%20F.pdf' },
+  ochmoAtmos: { name: 'NASA OCHMO-TB-003', url: 'https://www.nasa.gov/wp-content/uploads/2023/12/ochmo-tb-003-habitable-atmosphere.pdf' },
+  bioMonitor: { name: 'CSA Bio-Monitor', url: 'https://www.asc-csa.gc.ca/eng/sciences/bio-monitor.asp' },
 };
 
 const none = null;
@@ -64,9 +75,9 @@ export const CELLS = [
   },
   {
     id: 'B', section: 'body', indicator: 'bp', effort: 'light', label: 'Blood pressure', kind: KIND.NUMBER, unit: 'mmHg',
-    normType: 'below-both', norm: { sysBelow: 120, diaBelow: 80 }, compareWith: 'earthGeneral',
+    normType: 'below-both', norm: { sysBelow: 120, diaBelow: 80, sysMin: 90, diaMin: 60 }, compareWith: 'earthGeneral',
     norms: {
-      earthGeneral: { text: 'below 120/80; no lower limit yet', src: L.nhlbi },
+      earthGeneral: { text: 'below 120/80; below 90/60 counts as low blood pressure, though for some people low is normal', src: L.nhlbi, src2: L.nhlbiLow },
       spaceGeneral: { text: 'no norm; in flight the 24-hour systolic averaged about 106 against 120 before flight', src: L.fu2019 },
       personalEarth: { text: 'can be measured before flight; NASA has no blood pressure threshold' },
       personalSpace: none,
@@ -109,6 +120,56 @@ export const CELLS = [
       earthGeneral: { text: '7 hours or more for adults up to 60', src: L.cdcSleep },
       spaceGeneral: { text: 'no norm; about 6 hours on average on the ISS', src: L.barger2014 },
       personalEarth: { text: 'NASA collects a sleep assessment for 2 weeks before flight', src: L.ochmoMed },
+      personalSpace: none,
+    },
+  },
+  {
+    id: null, section: 'body', indicator: 'resp', effort: 'light', label: 'Breathing rate', kind: KIND.NUMBER, unit: 'breaths/min',
+    normType: 'range', norm: { min: 12, max: 18 }, compareWith: 'earthGeneral',
+    norms: {
+      earthGeneral: { text: '12 to 18 breaths per minute at rest', src: L.medlineVitals },
+      spaceGeneral: { text: 'no norm; on the ISS the Bio-Monitor shirt records breathing rate', src: L.bioMonitor },
+      personalEarth: none,
+      personalSpace: none,
+    },
+  },
+  {
+    id: null, section: 'body', indicator: 'fluid', effort: 'light', label: 'Fluid intake', kind: KIND.NUMBER, unit: 'mL/day',
+    normType: 'range', norm: { min: null, max: null, minBySex: { M: 2500, F: 2100 } }, compareWith: 'spaceGeneral',
+    norms: {
+      earthGeneral: none,
+      spaceGeneral: { text: 'NASA: at least 2,500 mL a day for men and 2,100 mL for women (32 mL per kg of body mass), from food and drinks', src: L.jsc67378 },
+      personalEarth: none,
+      personalSpace: none,
+    },
+  },
+  {
+    id: null, section: 'body', indicator: 'bodyMass', effort: 'light', label: 'Body mass change', kind: KIND.NUMBER, unit: '% of own pre-flight',
+    normType: 'record', compareWith: 'personalEarth',
+    norms: {
+      earthGeneral: none,
+      spaceGeneral: { text: 'no NASA limit; in ISS data crew lost 2 to 5% in the first month of flight and then kept the lower mass', src: L.hrpNutrition },
+      personalEarth: { text: 'compared with own pre-flight mass, measured with the SLAMMD or BMMD on the ISS', src: L.hrpNutrition },
+      personalSpace: none,
+    },
+  },
+  {
+    id: null, section: 'body', indicator: 'eyePressure', effort: 'high', label: 'Eye pressure', kind: KIND.NUMBER, unit: 'mmHg',
+    normType: 'range', norm: { min: 10, max: 21 }, compareWith: 'earthGeneral',
+    norms: {
+      earthGeneral: { text: '10 to 21 mmHg (tonometry); thick corneas read higher, thin ones lower', src: L.medlineTonometry },
+      spaceGeneral: { text: 'no norm; on the ISS eye checks (vision chart, fundoscopy, OCT, ocular ultrasound) run on flight day 30, 90 and 30 days before return', src: L.nasaEyes2018 },
+      personalEarth: none,
+      personalSpace: none,
+    },
+  },
+  {
+    id: null, section: 'body', indicator: 'hearing', effort: 'high', label: 'Hearing threshold', kind: KIND.NUMBER, unit: 'dB HL',
+    normType: 'range', norm: { min: null, max: 20, maxExclusive: true }, compareWith: 'earthGeneral',
+    norms: {
+      earthGeneral: { text: 'normal hearing: below 20 dB, better-ear average at 500 to 4000 Hz', src: L.whoHearing },
+      spaceGeneral: { text: 'NASA counts a mission-related shift of 10 dB or more at 2000 to 4000 Hz against the pre-flight test; hearing is checked on orbit for crew staying longer than 30 days', src: L.nasaHearing },
+      personalEarth: none,
       personalSpace: none,
     },
   },
@@ -222,6 +283,36 @@ export const CELLS = [
     },
   },
   {
+    id: null, section: 'env', indicator: 'cabinO2', effort: 'light', label: 'Cabin oxygen (inspired O2 pressure)', kind: KIND.NUMBER, unit: 'mmHg',
+    normType: 'range', norm: { min: 145, max: 155 }, compareWith: 'spaceGeneral',
+    norms: {
+      earthGeneral: none,
+      spaceGeneral: { text: 'NASA standard: normoxia target 145 to 155 mmHg, acceptable indefinitely; on the ISS the Major Constituent Analyzer watches O2 and CO2', src: L.std2f },
+      personalEarth: none,
+      personalSpace: none,
+    },
+  },
+  {
+    id: null, section: 'env', indicator: 'cabinPressure', effort: 'light', label: 'Cabin pressure', kind: KIND.NUMBER, unit: 'kPa',
+    normType: 'range', norm: { min: 34.5, max: 103 }, compareWith: 'spaceGeneral',
+    norms: {
+      earthGeneral: none,
+      spaceGeneral: { text: 'NASA standard: above 34.5 and at most 103 kPa; the ISS keeps about 101.3 kPa, as at sea level', src: L.std2f, src2: L.ochmoAtmos },
+      personalEarth: none,
+      personalSpace: none,
+    },
+  },
+  {
+    id: null, section: 'env', indicator: 'noise', effort: 'light', label: 'Cabin noise (16-hour work period)', kind: KIND.NUMBER, unit: 'dBA',
+    normType: 'range', norm: { min: null, max: 72 }, compareWith: 'spaceGeneral',
+    norms: {
+      earthGeneral: none,
+      spaceGeneral: { text: 'ISS flight rule: hearing protection above 72 dBA over the 16-hour work period; the flight surgeon recommends it above 60 dBA; the design limit for work areas is NC-50, about 58 dBA', src: L.nasaHearing, src2: L.std2f },
+      personalEarth: none,
+      personalSpace: none,
+    },
+  },
+  {
     id: null, section: 'env', indicator: 'cabinTemp', effort: 'light', label: 'Cabin temperature', kind: KIND.NUMBER, unit: '°C', allowNegative: true,
     normType: 'range', norm: { min: 18, max: 27 }, compareWith: 'spaceGeneral',
     norms: {
@@ -263,6 +354,11 @@ export const SOURCES = [
   { id: 'thermometer', section: 'body', label: 'Thermometer', indicator: 'temp', input: 'number', presets: [36.7, 37.9, 38.4].map((v) => ({ label: String(v), value: v })) },
   { id: 'oximeter', section: 'body', label: 'Pulse oximeter', indicator: 'spo2', input: 'number', presets: [98, 91].map((v) => ({ label: `${v}%`, value: v })) },
   { id: 'sleep-tracker', section: 'body', label: 'Sleep tracker', indicator: 'sleep', input: 'number', presets: [7.5, 5.8].map((v) => ({ label: `${v} h`, value: v })) },
+  { id: 'bio-monitor-resp', section: 'body', label: 'Bio-Monitor shirt: breathing', indicator: 'resp', input: 'number', presets: [14, 26].map((v) => ({ label: `${v}`, value: v })) },
+  { id: 'drink-log', section: 'body', label: 'Drink log', indicator: 'fluid', input: 'number', presets: [2600, 1500].map((v) => ({ label: `${v} mL`, value: v })) },
+  { id: 'mass-device', section: 'body', label: 'Body mass device (SLAMMD)', indicator: 'bodyMass', input: 'number', presets: [98, 94].map((v) => ({ label: `${v}%`, value: v })) },
+  { id: 'tonometer', section: 'body', label: 'Tonometer (eye pressure)', indicator: 'eyePressure', input: 'number', presets: [15, 24].map((v) => ({ label: `${v}`, value: v })) },
+  { id: 'audiometer', section: 'body', label: 'On-orbit hearing test', indicator: 'hearing', input: 'number', presets: [10, 30].map((v) => ({ label: `${v} dB`, value: v })) },
   { id: 'dosimeter', section: 'body', label: 'Personal dosimeter', indicator: 'radiation', input: 'number', presets: [85, 610].map((v) => ({ label: `${v} mSv`, value: v })) },
   { id: 'fitness-test', section: 'body', label: 'Aerobic capacity test', indicator: 'vo2max', input: 'number', presets: [38, 30].map((v) => ({ label: `${v}`, value: v })) },
   { id: 'strength-test', section: 'body', label: 'Strength test', indicator: 'strength', input: 'number', presets: [140, 110].map((v) => ({ label: `${v} kg`, value: v })) },
@@ -278,6 +374,9 @@ export const SOURCES = [
   { id: 'cycle-log', section: 'psyche', label: 'Cycle log', indicator: 'cycle', presets: [{ label: 'Period started', value: 'period_start' }, { label: 'Period ended', value: 'period_end' }] },
   { id: 'cognition-test', section: 'psyche', label: 'Thinking test (once a month)', indicator: 'cognition', presets: [{ label: 'same as before flight', value: 'same as before flight' }, { label: 'worse than before flight', value: 'worse than before flight' }] },
   { id: 'co2-sensor', section: 'env', label: 'CO2 sensor', indicator: 'co2', input: 'number', presets: [2.1, 4.2].map((v) => ({ label: String(v), value: v })) },
+  { id: 'mca', section: 'env', label: 'Major Constituent Analyzer: O2', indicator: 'cabinO2', input: 'number', presets: [150, 140].map((v) => ({ label: `${v}`, value: v })) },
+  { id: 'pressure-sensor', section: 'env', label: 'Cabin pressure sensor', indicator: 'cabinPressure', input: 'number', presets: [101.3, 30].map((v) => ({ label: `${v} kPa`, value: v })) },
+  { id: 'acoustic-monitor', section: 'env', label: 'Acoustic monitor', indicator: 'noise', input: 'number', presets: [62, 75].map((v) => ({ label: `${v} dBA`, value: v })) },
   { id: 'cabin-thermo', section: 'env', label: 'Cabin thermometer', indicator: 'cabinTemp', input: 'number', presets: [22, 29].map((v) => ({ label: `${v} °C`, value: v })) },
 ];
 
@@ -296,7 +395,7 @@ export const QUESTIONS = [
 export const DATA_GAPS = [
   'There are no general space norms for heart rate, blood pressure, glucose, temperature, oxygen or sleep, at NASA or in studies: only in-flight averages are shown.',
   'Personal norms: the four crew members are made up; their pre-flight levels were chosen by Claude.',
-  'No lower blood pressure limit yet: no checked source found so far.',
+  'Body mass change has no NASA limit: it is recorded, never judged.',
   'Glucose: the fasting norm is used for now. How and when to measure glucose in flight still needs to be settled.',
   'Blood tests: real NASA data (the Inspiration4 crew), but only before and after flight; none were taken in flight.',
   'Bone density is not measured in flight, only on Earth before and after.',

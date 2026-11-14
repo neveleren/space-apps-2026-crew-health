@@ -448,6 +448,9 @@ function cycleCard(p, now) {
   else facts.push('No period logged yet.');
   if (s.flags.includes('long-cycles')) facts.push(`The last cycles were longer than ${CYCLE_RULES.longCycleDays} days. The Endocrine Society advises a check-up when cycles are consistently that long.`);
   if (s.flags.includes('no-period')) facts.push('No period for more than 3 months. The Endocrine Society advises a check-up, after other causes are ruled out.');
+  if (s.flags.includes('cycle-outside-range')) facts.push(`The last cycle was outside the usual ${CYCLE_RULES.normalMin} to ${CYCLE_RULES.normalMax} days (ACOG).`);
+  if (s.flags.includes('cycle-varies')) facts.push(`Your recent cycles differ by more than ${CYCLE_RULES.varyMax} days; ACOG counts that as irregular.`);
+  if (s.flags.includes('long-period')) facts.push(`The last period lasted more than ${CYCLE_RULES.periodMax} days; ACOG counts that as abnormal bleeding.`);
   const table = s.starts.length > 1 ? h('details', { class: 'table' }, h('summary', {}, 'Mood and energy across your cycle (your own days, no conclusion drawn)'),
     h('div', { class: 'table-wrap' }, h('table', {},
       h('thead', {}, h('tr', {}, h('th', {}, 'Cycle days'), h('th', {}, 'Days with check-ins'), h('th', {}, 'Days with a low check-in'))),
@@ -460,7 +463,7 @@ function cycleCard(p, now) {
       h('button', { type: 'button', class: 'cmd ghost', onclick: () => addReading('cycle', 'period_end') }, 'Period ended today'),
       h('button', { type: 'button', class: 'cmd ghost', onclick: () => addReading('cycle', s.suppressed ? 'suppression_off' : 'suppression_on') }, s.suppressed ? 'I no longer suppress my periods' : 'I suppress my periods')),
     table,
-    h('p', { class: 'note' }, 'Doctors on Earth treat the cycle as a vital sign (ACOG). The next-period date is a plain average of your last cycles, not a medical model.'));
+    h('p', { class: 'note' }, `Doctors on Earth treat the cycle as a vital sign; a typical cycle is ${CYCLE_RULES.normalMin} to ${CYCLE_RULES.normalMax} days and a period lasts up to ${CYCLE_RULES.periodMax} days (ACOG). The next-period date is a plain average of your last cycles, not a medical model.`));
 }
 
 function renderGroups(p, a, now) {
@@ -911,6 +914,7 @@ const LOINC = {
   spo2: { code: '59408-5', display: 'Oxygen saturation in Arterial blood by Pulse oximetry', unit: '%' },
   glucose: { code: '1558-6', display: 'Fasting glucose [Mass/volume] in Serum or Plasma', unit: 'mg/dL' },
   sleep: { code: '93832-4', display: 'Sleep duration', unit: 'h' },
+  resp: { code: '9279-1', display: 'Respiratory rate', unit: '/min' },
 };
 function fhirBundle(personId, days = 30) {
   const since = msOf(nowTime()) - days * DAY;

@@ -70,6 +70,7 @@ const fmtPct = (p) => fmtNum(Math.floor(p * 10) / 10);
 const STEP_TEXT = {
   'norm-used': (s) => `Compared with the norm: ${NORM_TITLE[s.norm] || 'not set'}.`,
   'in-norm': (s) => (s.percent !== undefined ? `Within the norm: ${fmtPct(s.percent)}% of own pre-flight level. The AI is not triggered.` : 'Within the norm. The AI is not triggered.'),
+  'no-norm-recorded': () => 'No checked norm for this measure: the reading is recorded, not judged.',
   'no-lower-limit': () => 'There is no lower limit for blood pressure: low blood pressure is not checked yet.',
   'out-of-norm': (s) => (s.percent !== undefined
     ? `Below the norm: ${fmtPct(s.percent)}% of own pre-flight level.`

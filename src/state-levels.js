@@ -18,7 +18,7 @@ export const EXPECTED = {
 };
 
 // How often a measure is expected, in days; after twice that without a reading the data counts as stale.
-export const EXPECTED_EVERY_DAYS = { pulse: 1, bp: 1, temp: 1, sleep: 1, radiation: 1, co2: 1, cabinTemp: 1, vo2max: 30 };
+export const EXPECTED_EVERY_DAYS = { pulse: 1, bp: 1, temp: 1, sleep: 1, resp: 1, fluid: 1, radiation: 1, co2: 1, cabinTemp: 1, cabinO2: 1, cabinPressure: 1, vo2max: 30 };
 
 // Placeholder thresholds (Claude's), shown on the page as such.
 export const RULES = {
