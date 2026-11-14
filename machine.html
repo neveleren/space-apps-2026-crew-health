@@ -23,9 +23,9 @@
   --analysis: #0d6f84;
   --ignored: #5f6b77;
   --open: #946200;
-  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
-  --font-display: "Unbounded", "IBM Plex Sans", system-ui, sans-serif;
+  --font-body: "Atkinson Hyperlegible Next", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Atkinson Hyperlegible Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --font-display: "Atkinson Hyperlegible Next", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --radius: 10px;
   --series-1: #2a78d6; --series-2: #eb6834; --status-serious: #ec835a; --grid: #e1e0d9; --axis: #c3c2b7; --norm-wash: rgba(27, 122, 70, 0.10);
 }
@@ -143,25 +143,27 @@ button { font: inherit; }
 .chart svg { display: block; overflow: visible; }
 .chart .grid { stroke: var(--grid); stroke-width: 1; }
 .chart .axis { stroke: var(--axis); stroke-width: 1; }
-.chart .tick, .chart .moment-label { fill: var(--muted); font-family: var(--font-mono); font-size: 11px; font-variant-numeric: tabular-nums; }
+.chart .tick, .chart .moment-label { fill: var(--muted); font-family: var(--font-mono); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .chart .moment { stroke: var(--axis); stroke-width: 1; }
-.chart .limit { stroke: var(--status-serious); stroke-width: 1; }
+.chart .limit { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 3; }
 .chart .norm-band { fill: var(--norm-wash); }
 .chart .series-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .chart .trend { stroke: var(--ink); stroke-width: 1.5; stroke-dasharray: 5 4; opacity: 0.7; }
 .chart .dot { stroke: var(--panel); stroke-width: 2; }
-.chart .dot.out { fill: var(--status-serious); }
+.chart .dot.out { fill: var(--panel); stroke: var(--status-serious); stroke-width: 2; }
+.chart .dot.latest { stroke: var(--panel); stroke-width: 2.5; }
 .chart .crosshair { stroke: var(--muted); stroke-width: 1; }
 .chart .halo { paint-order: stroke; stroke: var(--panel); stroke-width: 4px; stroke-linejoin: round; }
 .tip { position: absolute; top: 8px; min-width: 140px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 12.5px; box-shadow: 0 2px 8px rgba(0,0,0,.12); pointer-events: none; }
 .tip-date { color: var(--muted); font-family: var(--font-mono); font-size: 11.5px; }
 .tip-row { display: flex; align-items: center; gap: 6px; }
-.tip-key { display: inline-block; width: 12px; height: 2px; border-radius: 1px; }
+.tip-key { display: inline-block; width: 14px; border-top: 2px solid; }
+.tip-key.dashed { border-top-style: dashed; }
 .legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 8px 2px; font-size: 13px; color: var(--muted); }
 .legend span.key { display: inline-block; width: 14px; height: 2px; vertical-align: middle; margin-right: 6px; border-radius: 1px; }
 .legend span.band { display: inline-block; width: 14px; height: 10px; vertical-align: middle; margin-right: 6px; border-radius: 2px; background: var(--norm-wash); border: 1px solid var(--line); }
 .legend span.trend-key { display: inline-block; width: 16px; vertical-align: middle; margin-right: 6px; border-top: 1.5px dashed var(--ink); opacity: .7; }
-.legend span.out-key { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--status-serious); vertical-align: middle; margin-right: 6px; }
+.legend span.out-key { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--status-serious); vertical-align: middle; margin-right: 6px; }
 .forecast { margin: 8px 2px; font-size: 14.5px; }
 .hist-table table { border-collapse: collapse; font-size: 13px; margin-top: 6px; }
 .hist-table th, .hist-table td { border-bottom: 1px solid var(--line); padding: 3px 10px 3px 0; text-align: left; font-variant-numeric: tabular-nums; }

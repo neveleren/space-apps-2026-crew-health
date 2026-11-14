@@ -15,6 +15,8 @@ function el(tag, attrs = {}, text) {
 const two = (n) => String(n).padStart(2, '0');
 export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 export const fmtDate = (t) => { const d = new Date(t); return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`; };
+// Crew screens keep time in GMT, as on the ISS.
+export const fmtGMT = (t) => { const d = new Date(t); return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${two(d.getUTCHours())}:${two(d.getUTCMinutes())} GMT`; };
 
 // Clean tick values for an axis between lo and hi.
 function ticks(lo, hi, count = 4) {
@@ -42,8 +44,8 @@ export function drawHistory(host, tip, opts) {
   }
   const outText = opts.outText === undefined ? 'outside the norm' : opts.outText;
   const W = Math.max(300, Math.round(host.getBoundingClientRect().width) || 640);
-  const H = 250;
-  const m = { l: 52, r: 14, t: 22, b: 30 };
+  const H = W < 600 ? 270 : 330;
+  const m = { l: 56, r: 16, t: 40, b: 34 };
   const launch = new Date(opts.mission.launch).getTime();
   const today = new Date(opts.mission.today).getTime();
   const landing = new Date(opts.mission.landing).getTime();
@@ -75,9 +77,10 @@ export function drawHistory(host, tip, opts) {
   const yt = opts.ordinal ? Object.keys(opts.ordinal).map(Number) : ticks(lo, hi);
   for (const v of yt) {
     svg.append(el('line', { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), class: 'grid' }));
-    svg.append(el('text', { x: m.l - 6, y: y(v) + 4, class: 'tick', 'text-anchor': 'end' }, opts.ordinal ? opts.ordinal[v] : opts.fmt(v)));
+    svg.append(el('text', { x: m.l - 8, y: y(v) + 4, class: 'tick', 'text-anchor': 'end' }, opts.ordinal ? opts.ordinal[v] : opts.fmt(v)));
   }
   svg.append(el('line', { x1: m.l, x2: W - m.r, y1: H - m.b, y2: H - m.b, class: 'axis' }));
+  if (opts.unit) svg.append(el('text', { x: 2, y: 12, class: 'tick unit' }, opts.unit));
 
   // Border lines (for example "limit 600"). Their names are drawn later, on top of everything.
   for (const l of opts.lines || []) svg.append(el('line', { x1: m.l, x2: W - m.r, y1: y(l.v), y2: y(l.v), class: 'limit' }));
@@ -87,12 +90,12 @@ export function drawHistory(host, tip, opts) {
   const dayMonth = (t) => { const d = new Date(t); return `${d.getDate()} ${MONTHS[d.getMonth()]}`; };
   let lastTop = -Infinity;
   let lastBottom = -Infinity;
-  for (const [t, name, withYear] of [[launch, 'launch', true], [today, 'today', false], [landing, 'landing', false]]) {
+  for (const [t, name, withYear] of [[launch, 'Launch', true], [today, 'Today', false], [landing, 'Landing', false]]) {
     if (t < t0 || t > t1) continue;
     const xt = x(t);
-    svg.append(el('line', { x1: xt, x2: xt, y1: m.t - 6, y2: H - m.b, class: 'moment' }));
+    svg.append(el('line', { x1: xt, x2: xt, y1: m.t - 4, y2: H - m.b, class: 'moment' }));
     const close = xt - lastTop < 64;
-    svg.append(el('text', { x: xt, y: close ? m.t + 9 : m.t - 9, class: 'moment-label halo', 'text-anchor': 'middle' }, name));
+    svg.append(el('text', { x: xt, y: close ? m.t + 12 : m.t - 10, class: 'moment-label halo', 'text-anchor': xt < m.l + 30 ? 'start' : xt > W - m.r - 30 ? 'end' : 'middle' }, name));
     if (!close) lastTop = xt;
     if (xt - lastBottom >= (withYear ? 70 : 44)) {
       svg.append(el('text', { x: xt, y: H - 10, class: 'tick', 'text-anchor': 'middle' }, withYear ? fmtDate(t) : dayMonth(t)));
@@ -112,17 +115,34 @@ export function drawHistory(host, tip, opts) {
   for (const s of seriesAll) {
     const pts = [...s.points].sort((p, q) => p.t - q.t);
     if (pts.length > 1 && !opts.ordinal) {
-      svg.append(el('path', { d: pts.map((p, i) => `${i ? 'L' : 'M'}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join(''), class: 'series-line', stroke: s.color }));
+      svg.append(el('path', { d: pts.map((p, i) => `${i ? 'L' : 'M'}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join(''), class: 'series-line', stroke: s.color, 'stroke-dasharray': s.dash || null }));
     }
     const sparse = pts.length <= 40;
     for (const p of pts) {
-      if (opts.ordinal || sparse) svg.append(el('circle', { cx: x(p.t), cy: y(p.v), r: 4, class: p.out ? 'dot out' : 'dot', fill: s.color }));
-      else if (p.out) svg.append(el('circle', { cx: x(p.t), cy: y(p.v), r: 4, class: 'dot out' }));
+      if (p.out) svg.append(el('circle', { cx: x(p.t), cy: y(p.v), r: 5, class: 'dot out' }));
+      else if (opts.ordinal || sparse) svg.append(el('circle', { cx: x(p.t), cy: y(p.v), r: 3.5, class: 'dot', fill: s.color }));
     }
+  }
+  // With two lines (blood pressure), each is named on the chart, so colour is not needed to tell them apart.
+  if (seriesAll.length > 1 && !opts.ordinal) {
+    for (const s of seriesAll) {
+      const pts = [...s.points].sort((p, q) => p.t - q.t);
+      if (!pts.length) continue;
+      const p0 = pts[0];
+      svg.append(el('text', { x: Math.max(m.l + 4, x(p0.t) + 4), y: y(p0.v) + (s === seriesAll[0] ? -12 : 20), class: 'series-name halo' }, s.name.charAt(0).toUpperCase() + s.name.slice(1)));
+    }
+  }
+  // The newest reading is named, so live and old readings are not confused.
+  const firstSeries = seriesAll[0] ? [...seriesAll[0].points].sort((p, q) => p.t - q.t) : [];
+  const newest = firstSeries[firstSeries.length - 1];
+  if (newest && newest.t >= t0 && newest.t <= t1) {
+    const nx = x(newest.t);
+    svg.append(el('circle', { cx: nx, cy: y(newest.v), r: 4.5, class: newest.out ? 'dot out latest' : 'dot latest' }));
+    svg.append(el('text', { x: nx > W - 90 ? nx - 8 : nx + 8, y: y(newest.v) - 9, class: 'tick latest-label halo', 'text-anchor': nx > W - 90 ? 'end' : 'start' }, 'Latest'));
   }
 
   // Names of the border lines: at the left, where the flight readings are not yet, on a halo.
-  for (const l of opts.lines || []) svg.append(el('text', { x: m.l + 4, y: y(l.v) - 5, class: 'tick halo' }, l.label));
+  for (const l of opts.lines || []) svg.append(el('text', { x: W - m.r - 4, y: y(l.v) - 6, class: 'tick halo', 'text-anchor': 'end' }, l.label));
 
   // Hover: a crosshair that snaps to the nearest reading in time, and a tooltip with every series.
   const cross = el('line', { y1: m.t, y2: H - m.b, class: 'crosshair', visibility: 'hidden' });
@@ -138,7 +158,7 @@ export function drawHistory(host, tip, opts) {
     tip.replaceChildren();
     const head = document.createElement('div');
     head.className = 'tip-date';
-    head.textContent = fmtDate(t);
+    head.textContent = fmtGMT(t);
     tip.append(head);
     for (const s of seriesAll) {
       const p = s.points.find((q) => q.t === t);
@@ -146,18 +166,18 @@ export function drawHistory(host, tip, opts) {
       const row = document.createElement('div');
       row.className = 'tip-row';
       const key = document.createElement('span');
-      key.className = 'tip-key';
-      key.style.background = s.color;
+      key.className = s.dash ? 'tip-key dashed' : 'tip-key';
+      key.style.borderTopColor = s.color;
       const val = document.createElement('strong');
       val.textContent = opts.ordinal ? opts.ordinal[p.v] : opts.fmt(p.v);
       const name = document.createElement('span');
-      name.textContent = ` ${s.name}${p.out && outText ? `, ${outText}` : ''}`;
+      name.textContent = ` ${s.name}${outText ? (p.out ? `, ${outText}` : ', inside the norm') : ''}`;
       row.append(key, val, name);
       tip.append(row);
     }
     tip.hidden = false;
     const box = host.getBoundingClientRect();
-    tip.style.left = `${Math.min(Math.max(0, x(t) - 70), box.width - 150)}px`;
+    tip.style.left = `${Math.min(Math.max(0, x(t) - 90), box.width - 200)}px`;
   };
   const nearest = (px) => {
     const t = t0 + ((px - m.l) / (W - m.l - m.r)) * (t1 - t0);
@@ -189,7 +209,7 @@ export function drawTable(host, opts) {
   const outText = opts.outText === undefined ? 'outside the norm' : opts.outText;
   const table = document.createElement('table');
   const head = table.createTHead().insertRow();
-  for (const name of ['Date', ...opts.series.map((s) => s.name)]) {
+  for (const name of ['Time', ...opts.series.map((s) => s.name)]) {
     const th = document.createElement('th');
     th.textContent = name;
     head.append(th);
@@ -201,7 +221,7 @@ export function drawTable(host, opts) {
     .sort((a, b) => b - a);
   for (const t of times) {
     const row = body.insertRow();
-    row.insertCell().textContent = fmtDate(t);
+    row.insertCell().textContent = fmtGMT(t);
     for (const s of opts.series) {
       const p = s.points.find((q) => q.t === t);
       row.insertCell().textContent = p ? `${opts.ordinal ? opts.ordinal[p.v] : opts.fmt(p.v)}${p.out && outText ? ` (${outText})` : ''}` : '';
@@ -217,7 +237,7 @@ export function sparkline(host, opts) {
   const pts = [...opts.points].filter((p) => Number.isFinite(p.v)).sort((a, b) => a.t - b.t);
   if (pts.length === 0) return;
   const W = Math.max(120, Math.round(host.getBoundingClientRect().width) || 200);
-  const H = 44;
+  const H = opts.height || 36;
   const pad = 4;
   let lo = Math.min(...pts.map((p) => p.v));
   let hi = Math.max(...pts.map((p) => p.v));
@@ -239,10 +259,8 @@ export function sparkline(host, opts) {
     if (bottom > top) svg.append(el('rect', { x: 0, y: top, width: W, height: bottom - top, class: 'spark-band' }));
   }
   const line = pts.map((p, i) => `${i ? 'L' : 'M'}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join('');
-  if (pts.length > 1) {
-    svg.append(el('path', { d: `${line}L${x(pts[pts.length - 1].t).toFixed(1)},${H}L${x(pts[0].t).toFixed(1)},${H}Z`, class: 'spark-area' }));
-    svg.append(el('path', { d: line, class: 'spark-line' }));
-  }
+  if (pts.length > 1) svg.append(el('path', { d: line, class: 'spark-line' }));
+  for (const q of pts.slice(0, -1)) if (q.out) svg.append(el('circle', { cx: x(q.t), cy: y(q.v), r: 2.6, class: 'spark-out' }));
   const end = pts[pts.length - 1];
   svg.append(el('circle', { cx: x(end.t), cy: y(end.v), r: 3.2, class: end.out ? 'spark-end out' : 'spark-end' }));
   host.append(svg);
