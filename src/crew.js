@@ -688,21 +688,33 @@ function renderDetail() {
   })) : h('p', { class: 'note' }, cell.normText || '');
 
   const a = assess({ machine, person: p, cells: CELLS, mission: MISSION, now });
+  const lastEntry = machine.history(owner.id, indicator).slice(-1)[0] || null;
+  const item = [...a.body.items, ...a.psyche.items].find((x) => x.cell && x.cell.indicator === indicator);
+  const level = owner === SHIP ? (lastEntry && lastEntry.status === STATUS.OUT ? LEVEL.ATTENTION : LEVEL.FINE) : (item ? item.level : LEVEL.FINE);
+  let verdict = 'No readings yet.';
+  if (lastEntry) {
+    if (lastEntry.status === STATUS.OUT) verdict = `${m && m.side === 'below' ? 'Below' : 'Above'} the norm (${normShort(cell, owner)}).`;
+    else if (lastEntry.status === STATUS.OK) verdict = item && item.kind === 'forecast' ? `Within the norm now, but the line goes out of it around ${fmtDate(item.m.forecast.crossing.date)}.` : `Within the norm (${normShort(cell, owner)}).`;
+    else verdict = cell.normType === 'record' ? 'Recorded: there is no checked norm for this measure.' : 'Recorded for the planned review.';
+  }
   host.replaceChildren(
     h('div', { class: 'detail-head' },
-      h('button', { type: 'button', class: 'back', onclick: () => setScreen(ui.backTo || 'measures') }, '← Back'),
-      h('h1', {}, cell.label, h('span', { class: 'muted', style: 'font-size:0.6em; margin-left:10px' }, owner === SHIP ? 'ship' : p.name))),
+      h('button', { type: 'button', class: 'back', onclick: () => setScreen(ui.backTo || 'measures') }, icon('arrow-left', { size: 18 }), 'Back'),
+      h('span', { class: `mi ${LV_CLASS[level]}` }, icon(ICON_FOR[indicator] || 'activity', { size: 22 })),
+      h('h1', {}, cell.label, h('span', { class: 'muted owner' }, owner === SHIP ? 'Ship' : p.name))),
+    h('section', { class: `now ${LV_CLASS[level]}` },
+      h('div', { class: 'now-value' }, h('b', {}, lastEntry ? valueText(indicator, lastEntry.value) : '–'), cell.unit && lastEntry && cell.kind === KIND.NUMBER ? h('span', {}, cell.unit) : null),
+      h('div', { class: 'now-text' }, h('p', { class: 'now-verdict' }, verdict), lastEntry ? h('p', { class: 'muted' }, `Last reading ${fmtDT(lastEntry.time)}`) : null)),
     periodBar,
     h('div', { class: 'chart-card' }, chart, tip),
     h('div', { class: 'legend', id: 'd-legend' }),
-    h('div', { class: 'cols' },
-      h('div', { class: 'box' }, h('h2', { class: 'panel-title' }, 'What it shows'), h('div', { class: 'prose' }, ...facts.map((t) => h('p', {}, t)))),
-      h('div', { class: 'box' }, h('h2', { class: 'panel-title' }, 'Which norm it is compared with'), normsBox)),
+    h('div', { class: 'prose explain' }, ...facts.map((x) => h('p', {}, x))),
     owner === SHIP ? null : h('div', { class: 'actions' },
-      aiButton('Analyse with AI', 'body', a),
       h('button', { type: 'button', class: 'cmd', onclick: () => openDoctor(a, 'body', indicator) }, 'Message the doctor'),
+      aiButton('Analyse with AI', 'body', a),
       h('button', { type: 'button', class: 'cmd ghost', onclick: () => openArticles(indicator) }, 'Articles on this')),
-    h('details', { class: 'table' }, h('summary', {}, 'Table of readings in the chosen period'), h('div', { class: 'table-wrap', id: 'd-table' })),
+    h('details', { class: 'table' }, h('summary', {}, 'Which norm is used, and its sources'), h('div', { class: 'box' }, normsBox)),
+    h('details', { class: 'table' }, h('summary', {}, 'All readings in the chosen period'), h('div', { class: 'table-wrap', id: 'd-table' })),
   );
   const ord = ORDINAL[indicator] || null;
   drawHistory(chart, tip, {
@@ -769,27 +781,23 @@ function renderAlerts() {
   const reports = stored.filter((e) => e.kind === 'report' && e.person === ui.person).sort((a, b) => msOf(b.time) - msOf(a.time));
   const count = (lv) => list.filter((x) => x.level === lv).length;
   const unseen = list.filter((x) => !ui.seen.has(x.id));
+  void count;
   host.replaceChildren(
-    h('div', { class: 'detail-head' }, h('h1', {}, 'Messages')),
-    h('div', { class: 'counts' },
-      h('div', { class: 'box' }, h('span', { class: 'muted' }, 'Urgent'), h('b', {}, String(count(LEVEL.URGENT)))),
-      h('div', { class: 'box' }, h('span', { class: 'muted' }, 'Needs action'), h('b', {}, String(count(LEVEL.ACTION)))),
-      h('div', { class: 'box' }, h('span', { class: 'muted' }, 'Attention'), h('b', {}, String(count(LEVEL.ATTENTION)))),
-      h('div', { class: 'box' }, h('span', { class: 'muted' }, 'New, not yet seen'), h('b', {}, String(unseen.length)))),
+    h('div', { class: 'detail-head' }, h('h1', {}, 'Messages'), h('span', { class: 'muted' }, unseen.length ? `${unseen.length} new` : 'Nothing new')),
     h('div', { class: 'actions' },
       h('button', { type: 'button', class: 'cmd ghost', onclick: () => { for (const x of list) ui.seen.add(x.id); savePrefs(); render(); } }, 'Mark all as seen'),
       h('button', { type: 'button', class: 'cmd ghost', onclick: () => { ui.muted = true; savePrefs(); try { speechSynthesis.cancel(); } catch { /* none */ } render(); toast('All sounds are off.'); } }, 'Silence all sounds')),
     list.length ? h('ul', { class: 'alert-list' }, ...list.map((x) => h('li', { class: `alert ${LV_CLASS[x.level]} ${ui.seen.has(x.id) ? 'seen' : ''}` },
-      h('span', { class: `chip ${LV_CLASS[x.level]}` }, LEVEL_WORD[x.level]),
-      h('div', {}, h('p', {}, h('b', {}, x.title)), h('p', {}, x.text), h('p', { class: 'when' }, fmtDT(x.time))),
+      h('span', { class: `mi ${LV_CLASS[x.level]}` }, icon(ICON_FOR[x.indicator] || (x.level >= LEVEL.URGENT ? 'octagon-alert' : 'circle-alert'), { size: 20 })),
+      h('div', {}, h('p', {}, h('b', {}, x.title), ' ', h('span', { class: `chip ${LV_CLASS[x.level]}` }, LEVEL_WORD[x.level])), h('p', {}, x.text), h('p', { class: 'when' }, fmtDT(x.time))),
       h('div', { class: 'alert-actions' },
         h('button', { type: 'button', class: 'proc', onclick: () => openProcedure(x) }, 'What to do'),
         x.indicator ? h('button', { type: 'button', class: 'small-btn', onclick: () => openDetail(x.indicator) }, 'Chart') : null,
         ui.seen.has(x.id) ? null : h('button', { type: 'button', class: 'small-btn', onclick: () => { ui.seen.add(x.id); savePrefs(); render(); } }, 'Seen'))))) : h('p', { class: 'note' }, 'No alerts.'),
     h('h2', { class: 'panel-title' }, 'Messages to the doctor'),
     reports.length ? h('ul', { class: 'alert-list' }, ...reports.map((r) => h('li', { class: 'alert' },
-      h('span', { class: 'chip lv0' }, r.report.to === 'doctor-onboard' ? 'to the doctor on board' : 'to the doctor on Earth'),
-      h('div', {}, h('p', {}, r.report.text), h('p', { class: 'when' }, fmtDT(r.time))),
+      h('span', { class: 'mi' }, icon('stethoscope', { size: 20 })),
+      h('div', {}, h('p', {}, h('b', {}, r.report.to === 'doctor-onboard' ? 'To the doctor on board' : 'To the doctor on Earth')), h('p', {}, r.report.text), h('p', { class: 'when' }, fmtDT(r.time))),
       h('div', { class: 'alert-actions' }, h('span', { class: 'chip lv0' }, r.report.to === 'doctor-earth' && !ui.ship.linkToEarth ? 'waiting for the link' : 'sent'))))) : h('p', { class: 'note' }, 'No messages yet.'),
   );
 }

@@ -213,6 +213,22 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .lv2 > .mi, .mi.lv2 { color: var(--lv2); background: var(--lv2-fill); }
 .lv3 > .mi, .mi.lv3 { color: var(--lv3); background: var(--lv3-fill); }
 
+/* Detail: the value first */
+.detail-head .mi { width: 40px; height: 40px; }
+.detail-head .owner { font-size: .55em; margin-left: 10px; font-weight: 400; }
+.back { display: inline-flex; align-items: center; gap: 6px; }
+.now { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; padding: 18px 20px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--panel); }
+.now-value { display: flex; align-items: baseline; gap: 8px; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.now-value b { font-size: 40px; font-weight: 500; line-height: 1; letter-spacing: -.02em; }
+.now-value span { color: var(--muted); }
+.now-text p { margin: 0; }
+.now-verdict { font-size: 17px; font-weight: 500; }
+.now.lv1 { border-left: 5px solid var(--lv1); }
+.now.lv2 { border-left: 5px solid var(--lv2-stripe); }
+.now.lv3 { border-left: 5px solid var(--lv3-stripe); }
+.explain { color: var(--muted); }
+.alert { grid-template-columns: auto minmax(0, 1fr) auto; }
+
 /* Calm structure: one message, a short list, one place for everything else */
 .sys-summary { display: inline-flex; gap: 6px; flex-wrap: wrap; }
 .nav-link { align-self: center; margin-left: auto; font-size: 14px; color: var(--muted); }
