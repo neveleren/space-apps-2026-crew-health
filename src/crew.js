@@ -158,6 +158,10 @@ function bandOf(cell, owner) {
 function normShort(cell, owner) {
   if (cell.normType === 'range') {
     const n = cell.norm;
+    if (n.minBySex) {
+      const v = n.minBySex[owner && owner.sex] ?? Math.min(...Object.values(n.minBySex));
+      return `norm ${v} or more`;
+    }
     if (n.min !== null && n.max !== null) return `norm ${n.min} to ${n.max}`;
     if (n.min !== null) return `norm ${n.min} or more`;
     return `norm ${n.maxExclusive ? 'below' : 'up to'} ${n.max}`;
@@ -227,24 +231,22 @@ function renderBar() {
   } else {
     byId('met').textContent = p && p.real ? 'Inspiration4, 2021' : '';
   }
-  const sys = (id, on, onText, offText) => { const n = byId(id); n.textContent = on ? onText : offText; n.classList.toggle('off', !on); };
-  sys('sys-ai', ui.ship.aiWorks, 'AI working', 'AI down');
-  sys('sys-doc', ui.ship.doctorOnBoard, 'Doctor on board', 'No doctor on board');
-  sys('sys-link', ui.ship.linkToEarth, 'Link to Earth', 'No link to Earth');
-  byId('mute-btn').textContent = ui.muted ? 'Sound: off' : 'Sound: on';
-  byId('mute-btn').setAttribute('aria-pressed', String(ui.muted));
+  // Quiet when all is well: only an exception gets a chip (NASA's "quiet and dark").
+  const exceptions = [];
+  if (!ui.ship.aiWorks) exceptions.push('AI down');
+  if (!ui.ship.linkToEarth) exceptions.push('No link to Earth');
+  if (ui.muted) exceptions.push('Sound off');
+  byId('sys-summary').replaceChildren(...exceptions.map((x) => h('span', { class: 'sys off' }, x)));
   const btn = byId('alerts-btn');
   btn.hidden = !p || p.real;
   if (p && !p.real) {
     const list = alertsFor(p.id);
     const count = (lv) => list.filter((a) => a.level === lv).length;
     const unseen = list.filter((a) => !ui.seen.has(a.id)).length;
-    btn.replaceChildren(
-      h('span', { class: 'count lv3', title: 'Urgent' }, h('i'), String(count(LEVEL.URGENT))),
-      h('span', { class: 'count lv2', title: 'Needs action' }, h('i'), String(count(LEVEL.ACTION))),
-      h('span', { class: 'count lv1', title: 'Attention' }, h('i'), String(count(LEVEL.ATTENTION))),
-      h('span', { class: 'count new' }, `${unseen} new`),
-    );
+    const top = list.length ? Math.max(...list.map((a) => a.level)) : LEVEL.FINE;
+    btn.className = `alert-btn ${LV_CLASS[top]}`;
+    btn.replaceChildren(unseen ? `${unseen} new ${unseen === 1 ? 'message' : 'messages'}` : 'Messages');
+    void count;
   }
 }
 
@@ -272,37 +274,42 @@ function renderHome() {
   const a = assess({ machine, person: p, cells: CELLS, mission: MISSION, now });
   const top = Math.max(a.body.level, a.psyche.level);
   byId('today').className = `today ${LV_CLASS[top]}`;
-  byId('today-kicker').textContent = `${fmtDate(now)} · ${p.name} · ${ui.example ? 'example flight, made-up data' : 'your data'}`;
+  byId('today-kicker').textContent = `${fmtDate(now)} · ${p.name}${ui.example ? ' · example flight, made-up data' : ''}`;
   byId('today-title').textContent = headline(fmtDate(now), a.body.level, a.psyche.level);
-  byId('today-levels').replaceChildren(
-    h('span', { class: `chip ${LV_CLASS[a.body.level]}` }, `Body: ${LEVEL_WORD[a.body.level]}`),
-    h('span', { class: `chip ${LV_CLASS[a.psyche.level]}` }, `Mind: ${LEVEL_WORD[a.psyche.level]}`),
-    ...(a.info.length ? [h('span', { class: 'chip stale' }, `No fresh data: ${a.info.map((x) => lower(x.cell.label)).join(', ')}`)] : []),
-  );
-  const items = [...a.body.items, ...a.psyche.items].sort((x, y) => y.level - x.level).slice(0, 4);
-  byId('today-reasons').replaceChildren(...items.map((it) => {
-    const t = itemText(it, p);
-    return h('li', { class: 'reason' },
+  const all = [...a.body.items, ...a.psyche.items].sort((x, y) => y.level - x.level);
+  const items = all.slice(0, 3);
+  const short = (it) => {
+    if (it.kind === 'camera') return 'The automation called the doctor';
+    if (it.kind === 'mood') return `${it.days} low days in the last two weeks`;
+    if (it.kind === 'forecast') return `may leave the norm around ${fmtDate(it.m.forecast.crossing.date)}`;
+    const v = `${valueText(it.cell.indicator, it.m.last.value)} ${it.cell.unit || ''}`.trim();
+    return `${v}, ${it.m.side === 'below' ? 'below' : 'above'} ${it.kind === 'standard' ? 'the NASA standard' : 'the norm'}${it.kind === 'expected' ? ' (common in flight)' : ''}`;
+  };
+  byId('today-reasons').className = 'attn';
+  byId('today-reasons').replaceChildren(...(items.length ? [
+    ...items.map((it) => h('li', {}, h('button', { type: 'button', onclick: () => (it.cell ? openDetail(it.cell.indicator) : it.kind === 'mood' ? openDetail('mood') : setScreen('alerts')) },
       h('span', { class: `chip ${LV_CLASS[it.level]}` }, LEVEL_WORD[it.level]),
-      h('div', {}, h('p', {}, h('b', {}, `${t.title}. `), t.text)));
-  }));
+      h('span', { class: 'what' }, h('b', {}, it.cell ? it.cell.label : it.kind === 'mood' ? 'Mood and energy' : 'Camera'), h('span', {}, short(it))),
+      h('span', { class: 'chev', 'aria-hidden': 'true' }, '›')))),
+    ...(all.length > items.length ? [h('li', {}, h('p', { class: 'calm' }, `${all.length - items.length} more in Messages.`))] : []),
+  ] : [h('li', {}, h('p', { class: 'calm' }, 'Nothing needs your attention.'))]));
   const first = a.body.items[0] && a.body.items[0].cell ? a.body.items[0].cell.indicator : null;
   const acts = [];
   if (a.body.level > LEVEL.FINE) {
-    acts.push(h('button', { type: 'button', class: 'cmd ghost', onclick: () => (first ? openDetail(first) : null) }, 'Details'));
-    acts.push(aiButton('Analyse with AI', 'body', a));
     acts.push(h('button', { type: 'button', class: 'cmd', onclick: () => openDoctor(a, 'body') }, 'Message the doctor'));
+    acts.push(aiButton('Analyse with AI', 'body', a));
+    acts.push(h('button', { type: 'button', class: 'cmd ghost', onclick: () => (first ? openDetail(first) : null) }, 'Details'));
   }
-  if (a.psyche.level > LEVEL.FINE) {
-    acts.push(h('button', { type: 'button', class: 'cmd ghost', onclick: () => openAdvice() }, 'Advice'));
+  if (a.psyche.level > LEVEL.FINE && a.body.level === LEVEL.FINE) {
     acts.push(aiButton('Anonymous session with AI', 'psyche', a));
-    acts.push(h('button', { type: 'button', class: 'cmd', onclick: () => openDoctor(a, 'psyche') }, 'Message the doctor on Earth'));
+    acts.push(h('button', { type: 'button', class: 'cmd ghost', onclick: () => openDoctor(a, 'psyche') }, 'Message the doctor on Earth'));
+    acts.push(h('button', { type: 'button', class: 'cmd ghost', onclick: () => openAdvice() }, 'Advice'));
   }
   byId('today-actions').replaceChildren(...acts);
-  byId('today-note').textContent = top > LEVEL.FINE
-    ? "The levels and thresholds here are drafts: Claude worked them out from the team's structure and NASA's alert levels; the team decides."
-    : '';
-  renderCheckin();
+  byId('today-note').textContent = top > LEVEL.FINE ? 'Draft levels: the team decides the final thresholds.' : '';
+  const offer = offerCard(p, a);
+  byId('offer-slot').replaceChildren(...(offer ? [offer] : []));
+  renderCheckin(p, now);
   renderGroups(p, a, now);
 }
 
@@ -312,7 +319,22 @@ function aiButton(label, kind, a) {
     label, off ? h('span', { class: 'why' }, 'AI unavailable now') : null);
 }
 
-function renderCheckin() {
+function renderCheckin(p, now) {
+  if (p && now) {
+    const day = new Date(now).toDateString();
+    const todays = (ind) => machine.history(p.id, ind).filter((x) => new Date(x.time).toDateString() === day).slice(-1)[0];
+    const m = todays('mood');
+    const e = todays('attitude');
+    const s = todays('sleepQuality');
+    const done = m && e && s && !ui.checkinOpen;
+    byId('ci-done').hidden = !done;
+    byId('ci-form').hidden = Boolean(done);
+    if (done) {
+      byId('ci-done').replaceChildren(`Today: mood ${m.value}, energy ${e.value}, sleep ${s.value} of 7. `,
+        h('button', { type: 'button', class: 'small-btn', onclick: () => { ui.checkinOpen = true; renderCheckin(p, now); } }, 'Change'));
+      return;
+    }
+  }
   const seg = (id, key, options) => byId(id).replaceChildren(...options.map(([value, label]) => h('button', {
     type: 'button', 'aria-pressed': String(ui.checkin[key] === value), onclick: () => { ui.checkin[key] = ui.checkin[key] === value ? null : value; renderCheckin(); },
   }, label)));
@@ -328,11 +350,20 @@ async function sendCheckin() {
   if (c.attitude) await addReading('attitude', c.attitude);
   if (c.sleepQuality) await addReading('sleepQuality', c.sleepQuality);
   ui.checkin = { mood: null, attitude: null, sleepQuality: null };
+  ui.checkinOpen = false;
   toast('Check-in saved. The planned review will look at it.');
   render();
 }
 
-function tile({ name, valueBig, unit, chip, level, foot, onOpen, sparkOpts, none, effort }) {
+// One measure as a calm row: name, value, and a status word only when something needs attention.
+function tile({ name, valueBig, unit, chip, level, foot, onOpen, none, effort }) {
+  const sub = [foot && foot[0] ? foot[0].textContent : '', effort ? `${effort} effort` : '', foot && foot[1] ? foot[1].textContent : ''].filter(Boolean).join(' · ');
+  return h('button', { type: 'button', class: `row ${LV_CLASS[level] || 'lv0'}`, onclick: onOpen },
+    h('span', { class: 'name' }, h('b', {}, name), h('span', {}, none || sub)),
+    h('span', { class: 'val' }, none ? '' : valueBig, !none && unit ? h('small', {}, unit) : null),
+    level > LEVEL.FINE || (chip && chip.classList.contains('stale')) ? chip : h('span', { class: 'chev', 'aria-hidden': 'true' }, '›'));
+}
+function tileOld({ name, valueBig, unit, chip, level, foot, onOpen, sparkOpts, none, effort }) {
   const host = h('div', { class: 'spark-host' });
   const effortTag = effort ? h('span', { class: `effort ${effort}`, title: "Effort of the measurement, on the team's scale: light, high, extreme" }, `${effort} effort`) : null;
   const node = h('button', { type: 'button', class: `tile ${LV_CLASS[level] || 'lv0'}`, onclick: onOpen },
@@ -470,15 +501,14 @@ function renderGroups(p, a, now) {
   const shipA = assessShip({ machine, ship: SHIP, cells: CELLS, mission: MISSION, now });
   const group = (title, hint, tiles) => h('section', { class: 'group' },
     h('div', { class: 'group-head' }, h('h2', {}, title), hint ? h('p', {}, hint) : null),
-    h('div', { class: 'tiles' }, ...tiles));
+    h('div', { class: 'rows' }, ...tiles));
   const shipItems = { body: { items: shipA.items }, psyche: { items: [] } };
   byId('groups').replaceChildren(...[
-    offerCard(p, a),
-    group('Body', 'Each measure is compared with its own norm. Press a tile to see its history.', [...BODY.map((ind) => measureTile(p, ind, a, now)), cameraTile(p)]),
-    group('Mind', 'Check-ins build up for the planned review.', PSYCHE.map((ind) => measureTile(p, ind, a, now))),
+    group('Body', 'Press a measure to see its history.', [...BODY.map((ind) => measureTile(p, ind, a, now)), cameraTile(p)]),
+    group('Mind', 'Your daily check-ins.', PSYCHE.map((ind) => measureTile(p, ind, a, now))),
     cycleCard(p, now),
-    group('Complex data', 'An image or a tracing cannot be compared with one number: it goes to the AI or a doctor.', COMPLEX_CELLS.map((ind) => complexTile(p, ind))),
-    group('Ship', 'The cabin air is shared by the whole crew.', SHIP_CELLS.map((ind) => measureTile(SHIP, ind, shipItems, now))),
+    group('Images and tracings', 'These go to the AI or a doctor.', COMPLEX_CELLS.map((ind) => complexTile(p, ind))),
+    group('Ship', 'Shared by the whole crew.', SHIP_CELLS.map((ind) => measureTile(SHIP, ind, shipItems, now))),
   ].filter(Boolean));
 }
 
@@ -536,7 +566,8 @@ function renderRealHome(p) {
   });
   byId('groups').replaceChildren(h('section', { class: 'group' },
     h('div', { class: 'group-head' }, h('h2', {}, 'Blood tests before and after flight'), h('p', {}, 'Reference ranges come from the same NASA tables (lab ranges).')),
-    h('div', { class: 'tiles' }, ...tiles)));
+    h('div', { class: 'rows' }, ...tiles)));
+  byId('today-reasons').replaceChildren(h('li', {}, h('p', { class: 'calm' }, 'Open "All measures" to see every blood value before and after the flight.')));
 }
 
 // ---------- rendering: one measure, with a choice of period ----------
@@ -560,6 +591,7 @@ function periodRange(points) {
 }
 
 function openDetail(indicator) {
+  ui.backTo = ui.screen === 'detail' ? ui.backTo : ui.screen;
   ui.detail = indicator;
   ui.screen = 'detail';
   render();
@@ -627,7 +659,7 @@ function renderDetail() {
   const a = assess({ machine, person: p, cells: CELLS, mission: MISSION, now });
   host.replaceChildren(
     h('div', { class: 'detail-head' },
-      h('button', { type: 'button', class: 'back', onclick: () => setScreen('home') }, '← Summary'),
+      h('button', { type: 'button', class: 'back', onclick: () => setScreen(ui.backTo || 'measures') }, '← Back'),
       h('h1', {}, cell.label, h('span', { class: 'muted', style: 'font-size:0.6em; margin-left:10px' }, owner === SHIP ? 'ship' : p.name))),
     periodBar,
     h('div', { class: 'chart-card' }, chart, tip),
@@ -662,7 +694,7 @@ function renderBloodDetail(host, p, code) {
   const chart = h('div', { class: 'chart', id: 'd-chart' });
   const tip = h('div', { class: 'tip', id: 'd-tip', hidden: true });
   host.replaceChildren(
-    h('div', { class: 'detail-head' }, h('button', { type: 'button', class: 'back', onclick: () => setScreen('home') }, '← Summary'), h('h1', {}, x.name, h('span', { class: 'muted', style: 'font-size:0.6em; margin-left:10px' }, p.name))),
+    h('div', { class: 'detail-head' }, h('button', { type: 'button', class: 'back', onclick: () => setScreen(ui.backTo || 'measures') }, '← Back'), h('h1', {}, x.name, h('span', { class: 'muted', style: 'font-size:0.6em; margin-left:10px' }, p.name))),
     h('div', { class: 'chart-card' }, chart, tip),
     h('div', { class: 'box' }, h('div', { class: 'prose' },
       h('p', {}, `Real de-identified data from NASA OSDR (the Inspiration4 mission, 2021). Lab range: ${x.min === null ? '' : x.min} to ${x.max === null ? '' : x.max} ${x.units}.`),
@@ -707,7 +739,7 @@ function renderAlerts() {
   const count = (lv) => list.filter((x) => x.level === lv).length;
   const unseen = list.filter((x) => !ui.seen.has(x.id));
   host.replaceChildren(
-    h('div', { class: 'detail-head' }, h('h1', {}, 'Alerts and messages')),
+    h('div', { class: 'detail-head' }, h('h1', {}, 'Messages')),
     h('div', { class: 'counts' },
       h('div', { class: 'box' }, h('span', { class: 'muted' }, 'Urgent'), h('b', {}, String(count(LEVEL.URGENT)))),
       h('div', { class: 'box' }, h('span', { class: 'muted' }, 'Needs action'), h('b', {}, String(count(LEVEL.ACTION)))),
@@ -966,10 +998,11 @@ function renderSetup() {
   }));
   const p = personById[ui.person];
   host.replaceChildren(
-    h('div', { class: 'detail-head' }, h('h1', {}, 'Situation and connections')),
+    h('div', { class: 'detail-head' }, h('h1', {}, 'Settings')),
     h('div', { class: 'setup' },
-      h('section', { class: 'box' }, h('h2', { class: 'panel-title' }, 'Situation on board'),
+      h('section', { class: 'box' }, h('h2', { class: 'panel-title' }, 'On board'),
         toggle('st-ai', 'AI is working', 'aiWorks'), toggle('st-doc', 'Doctor on board', 'doctorOnBoard'), toggle('st-link', 'Link to Earth', 'linkToEarth'),
+        h('label', { class: 'toggle', for: 'st-sound' }, h('span', {}, 'Sound and voice'), h('input', { type: 'checkbox', id: 'st-sound', checked: ui.muted ? null : true, onchange: (e) => { ui.muted = !e.target.checked; if (ui.muted) { try { speechSynthesis.cancel(); } catch { /* none */ } } savePrefs(); render(); } })),
         h('label', { class: 'toggle', for: 'st-example' }, h('span', {}, 'Example flight (made-up data)'), h('input', { type: 'checkbox', id: 'st-example', checked: ui.example ? true : null, onchange: (e) => { ui.example = e.target.checked; savePrefs(); rebuild(); render(); } })),
         h('p', { class: 'note' }, 'These switches decide where a reading goes: the AI, the doctor on board or the doctor on Earth.')),
       h('section', { class: 'box' }, h('h2', { class: 'panel-title' }, 'Camera'),
@@ -1005,16 +1038,17 @@ function render() {
   const p = personById[ui.person];
   byId('checkin').hidden = Boolean(p.real);
   for (const b of document.querySelectorAll('.nav [data-view]')) {
-    b.setAttribute('aria-current', b.dataset.view === ui.screen || (ui.screen === 'detail' && b.dataset.view === 'home') ? 'page' : 'false');
+    b.setAttribute('aria-current', b.dataset.view === ui.screen || (ui.screen === 'detail' && b.dataset.view === 'measures') ? 'page' : 'false');
     b.hidden = Boolean(p.real) && b.dataset.view === 'alerts';
   }
-  const names = { home: 'Summary', detail: 'Measure', alerts: 'Alerts and messages', setup: 'Situation and connections' };
+  const names = { home: 'Today', measures: 'All measures', detail: 'Measure', alerts: 'Messages', setup: 'Settings' };
   byId('screen-name').textContent = `Crew Health · ${names[ui.screen]}`;
   byId('screen-home').hidden = ui.screen !== 'home';
+  byId('screen-measures').hidden = ui.screen !== 'measures';
   byId('screen-detail').hidden = ui.screen !== 'detail';
   byId('screen-alerts').hidden = ui.screen !== 'alerts';
   byId('screen-setup').hidden = ui.screen !== 'setup';
-  if (ui.screen === 'home') renderHome();
+  if (ui.screen === 'home' || ui.screen === 'measures') renderHome();
   else if (ui.screen === 'detail') renderDetail();
   else if (ui.screen === 'alerts') renderAlerts();
   else if (ui.screen === 'setup' && !camStop) renderSetup();
@@ -1024,7 +1058,6 @@ function render() {
 for (const b of document.querySelectorAll('.nav [data-view]')) b.addEventListener('click', () => setScreen(b.dataset.view));
 byId('who-btn').addEventListener('click', () => { if (camStop) { camStop(); camStop = null; } ui.person = null; render(); });
 byId('alerts-btn').addEventListener('click', () => setScreen('alerts'));
-byId('mute-btn').addEventListener('click', () => { ui.muted = !ui.muted; if (ui.muted) { try { speechSynthesis.cancel(); } catch { /* none */ } } savePrefs(); renderBar(); });
 byId('ci-send').addEventListener('click', sendCheckin);
 byId('ask-ok').addEventListener('cancel', (ev) => ev.preventDefault());
 const clock = () => { const d = new Date(); byId('clock').textContent = `${two(d.getUTCHours())}:${two(d.getUTCMinutes())}:${two(d.getUTCSeconds())}`; };

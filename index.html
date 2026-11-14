@@ -170,6 +170,28 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .offer p, .cycle p { margin: 0; }
 .cycle h2 { margin: 0; font-family: var(--font-display); font-weight: 500; font-size: 17px; }
 
+/* Calm structure: one message, a short list, one place for everything else */
+.sys-summary { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.nav-link { align-self: center; margin-left: auto; font-size: 14px; color: var(--muted); }
+.attn { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.attn button { width: 100%; text-align: left; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer; }
+.attn button:hover { border-color: var(--cmd); }
+.attn .what { display: grid; gap: 2px; }
+.attn .what b { font-weight: 500; }
+.attn .what span { color: var(--muted); font-size: 14px; }
+.chev { color: var(--muted); font-size: 20px; line-height: 1; }
+.calm { margin: 0; color: var(--muted); }
+.ci-done { margin: 0; }
+.rows { display: grid; gap: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); overflow: hidden; }
+.row { width: 100%; text-align: left; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 12px 16px; border: 0; border-bottom: 1px solid var(--line); background: transparent; cursor: pointer; min-height: 56px; }
+.row:last-child { border-bottom: 0; }
+.row:hover { background: var(--panel-2); }
+.row .name { display: grid; gap: 2px; min-width: 0; }
+.row .name b { font-weight: 500; }
+.row .name span { color: var(--muted); font-size: 13px; }
+.row .val { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.row .val small { color: var(--muted); margin-left: 4px; font-size: 12px; }
+
 /* Detail */
 .detail { display: grid; gap: 14px; }
 .detail-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
@@ -280,11 +302,8 @@ dialog p { margin: 0 0 12px; }
     <button type="button" class="who" id="who-btn" hidden><span class="avatar" id="who-avatar"></span><span id="who-name"></span><span class="who-id" id="who-id"></span></button>
     <div class="bar-mid"><span id="met"></span><span>GMT <strong id="clock">--:--:--</strong></span></div>
     <div class="bar-right">
-      <button type="button" class="alert-btn" id="alerts-btn" hidden aria-label="Alerts and notices"></button>
-      <span class="sys" id="sys-ai">AI</span>
-      <span class="sys" id="sys-doc">Doctor</span>
-      <span class="sys" id="sys-link">Link to Earth</span>
-      <button type="button" class="icon-btn" id="mute-btn" aria-pressed="false">Sound: on</button>
+      <span id="sys-summary" class="sys-summary"></span>
+      <button type="button" class="alert-btn" id="alerts-btn" hidden aria-label="Messages and alerts"></button>
     </div>
   </div>
 </header>
@@ -302,31 +321,38 @@ dialog p { margin: 0 0 12px; }
 
   <section id="view-app" hidden>
     <nav class="nav" aria-label="Screens">
-      <button type="button" data-view="home">Summary</button>
-      <button type="button" data-view="alerts">Alerts and messages</button>
-      <button type="button" data-view="setup">Situation and connections</button>
-      <a class="nav-link" href="./machine.html" style="align-self:center; margin-left:auto; font-size:14px;">Technical view (the machine inside) →</a>
+      <button type="button" data-view="home">Today</button>
+      <button type="button" data-view="measures">All measures</button>
+      <button type="button" data-view="alerts">Messages</button>
+      <button type="button" data-view="setup">Settings</button>
+      <a class="nav-link" href="./machine.html">Technical view</a>
     </nav>
 
     <div id="screen-home" class="detail">
       <article class="today" id="today">
         <p class="kicker" id="today-kicker"></p>
         <h1 id="today-title"></h1>
-        <div class="levels" id="today-levels"></div>
         <ul class="reasons" id="today-reasons"></ul>
         <div class="actions" id="today-actions"></div>
         <p class="note" id="today-note"></p>
       </article>
+      <div id="offer-slot"></div>
 
       <section class="checkin" aria-labelledby="checkin-title" id="checkin">
         <h2 id="checkin-title">How are you today?</h2>
-        <div class="check-row"><span>Mood</span><div class="seg" id="ci-mood" role="group" aria-label="Mood"></div></div>
-        <div class="check-row"><span>Energy</span><div class="seg" id="ci-attitude" role="group" aria-label="Energy"></div></div>
-        <div class="check-row"><span>Last night's sleep (1-7)</span><div class="seg" id="ci-sleep" role="group" aria-label="Sleep rating"></div></div>
-        <div class="actions"><button type="button" class="cmd" id="ci-send">Send check-in</button></div>
-        <p class="note" id="ci-note">Check-ins build up and are looked at in the planned review (for example every two weeks). One bad check-in does not raise an alarm.</p>
+        <p class="ci-done" id="ci-done" hidden></p>
+        <div id="ci-form">
+          <div class="check-row"><span>Mood</span><div class="seg" id="ci-mood" role="group" aria-label="Mood"></div></div>
+          <div class="check-row"><span>Energy</span><div class="seg" id="ci-attitude" role="group" aria-label="Energy"></div></div>
+          <div class="check-row"><span>Last night's sleep (1 bad, 7 great)</span><div class="seg" id="ci-sleep" role="group" aria-label="Sleep rating"></div></div>
+          <div class="actions"><button type="button" class="cmd" id="ci-send">Save my check-in</button></div>
+          <p class="note" id="ci-note">Your answers build up for a planned review, for example every two weeks. One bad day never raises an alarm.</p>
+        </div>
       </section>
+    </div>
 
+    <div id="screen-measures" class="detail" hidden>
+      <div class="detail-head"><h1>All measures</h1></div>
       <div id="groups"></div>
     </div>
 
