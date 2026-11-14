@@ -1,0 +1,4 @@
+# Saved readings stay on the computer that made them
+data/
+node_modules/
+*.log
