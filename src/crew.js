@@ -479,8 +479,10 @@ async function shareCrewAlarm(personId, { force = false, falseAlarm = false, dri
   const p = personById[personId];
   if (!p || p.real || personId === SHIP.id) return null;
   // While a drill runs, its readings count for the alarm (src/drill.js); a real urgent sign is never marked as a drill.
+  // While a real urgent sign is present the line is the real one, made from the record's signs only, so a drill's
+  // value never reaches the crew or the doctor inside a real alarm (the drill's alarm still sounds on this screen).
   const real = drillMachine ? urgentSigns(p) : null;
-  const u = drillMachine ? withMachine(drillMachine, () => urgentSigns(p)) : urgentSigns(p);
+  const u = drillMachine && !real.tokens.length ? withMachine(drillMachine, () => urgentSigns(p)) : real || urgentSigns(p);
   const last = latestLine(stored, personId);
   if (!force && !needsNewLine(last, u.tokens, SIGN_TOKENS)) return null;
   const time = new Date().toISOString();
