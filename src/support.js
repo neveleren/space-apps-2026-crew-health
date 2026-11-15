@@ -160,7 +160,7 @@ export const MIND_TIPS = [
   },
   {
     id: 'meal', icon: 'utensils', title: 'Share a meal with the crew',
-    text: 'Eat together with the crew today, even a short meal. On the ISS it is the most common way crews keep together.',
+    text: 'Eat together with the crew today, even a short meal. In ISS astronauts\' journals it is perhaps the most often named way to keep a crew together.',
     badge: BADGE.iss, source: SRC.hrp2025,
     why: 'NASA\'s 2025 evidence report: "communal eating was perhaps the most commonly reported method of promoting crew cohesion on the ISS". In 64 people of NASA\'s HERA and the SIRIUS missions, more support from the crew went with less stress in the evening (Frontiers in Psychology, 2025).',
     also: [SRC.support2025],
@@ -178,7 +178,7 @@ export const MIND_TIPS = [
     id: 'plants', icon: 'sprout', title: 'Time with the plants',
     text: 'If a plant system is on board, spend some time looking after it, watching it grow or eating what it grew.',
     badge: BADGE.iss, source: SRC.veggie2024,
-    why: 'NASA asked 27 ISS astronauts about the station\'s plant garden (2019 to 2023): eating the harvest and simply watching the plants were rated the most enjoyable.',
+    why: 'NASA asked 27 ISS astronauts who worked with the station\'s plant garden (106 reports from flight): eating the harvest and simply watching the plants were rated the most enjoyable.',
     for: ['lowMood', 'topic:monotony', 'topic:home'],
   },
   {
@@ -461,6 +461,10 @@ export function openOverlay({ cls = '', labelledby = null, label = null, onEscap
   const focusables = () => [...root.querySelectorAll('button, a[href], input, textarea, select, [tabindex]:not([tabindex="-1"])')]
     .filter((x) => !x.disabled && !x.closest('[hidden]') && x.getClientRects().length);
   const keydown = (e) => {
+    // A dialog opened on top of this layer (the crew screen's camera question "Are you okay?") keeps its own
+    // keys: Tab, Space and Esc there must reach its buttons, not this layer.
+    const t = e.target;
+    if (t instanceof Node && t !== document.body && t !== document.documentElement && !root.contains(t)) return;
     if (e.key === 'Escape' || e.key === 'Esc') {
       e.preventDefault();
       e.stopPropagation();
@@ -676,7 +680,9 @@ export function renderJournal(host, { entries = [], onSave, onToggleTalk, onSend
         ? h('div', { class: 'sup-letter' },
           h('label', { for: ids.letter, class: 'sup-label' }, 'Your letter. Change anything you like.'),
           letter,
-          h('p', { class: 'note' }, linkNow ? 'It goes in the outbox and leaves with the next downlink. Only your psychologist reads it.' : 'There is no link to Earth now: it waits in the outbox and goes when the link is back. Only your psychologist reads it.'),
+          // Who may open it depends on the outbox the screen uses (today the flight surgeon's), so the box says
+          // only where it goes; "only your psychologist reads it" needs a recipient and key of its own first.
+          h('p', { class: 'note' }, linkNow ? 'It goes in the outbox and leaves with the next downlink, addressed to your psychologist.' : 'There is no link to Earth now: it waits in the outbox and goes when the link is back, addressed to your psychologist.'),
           h('div', { class: 'actions' }, btn('primary', 'Send', send, 'send'), btn('secondary', 'Cancel', () => { letterOpen = false; draw(); })))
         : h('div', { class: 'actions' }, btn('secondary', 'Send as a private letter to my psychologist', () => { letter.value = letterText(list); letterOpen = true; draw(); letter.focus(); }, 'mail', { disabled: talk.length ? null : true, 'data-tip': 'mind:letter' })));
     const sorted = [...list].sort((a, b) => msOf(b.time) - msOf(a.time));
