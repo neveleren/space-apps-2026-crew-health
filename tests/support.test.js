@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import {
   CHECKIN_TOPICS, TOPIC_RULE, topicSignal, topicCounts, offerText, MIND_TIPS, BADGE, pickTips, letterText,
   MISSION_CALENDAR, nextUp, crisisNotice, SUPPORT_TIPS, SRC,
+  withEntry, markSent, matchesRisk, plainText, RISK_RULE, TALK_REQUEST_TEXT, TALK_REQUEST_TOPIC, LETTER_TOPIC, isTalkRequest, isLetter,
 } from '../src/support.js';
 import { RT_RULES, scoreRun, createSession, compareToOwn, median, exampleEarlierRuns } from '../src/reaction-test.js';
 import { breathAt, photoAt, EARTH_PHOTOS } from '../src/earth-break.js';
@@ -120,6 +121,55 @@ test('the private letter holds only the ticked entries, oldest first', () => {
   assert.match(text, /1\. 10 Nov 2026: First thing\n2\. 14 Nov 2026: Second thing$/);
   assert.doesNotMatch(text, /Not for the talk/);
   assert.equal(letterText([]), '');
+});
+
+test('a saved entry is listed once, also when the screen has already handed the list back; a sent letter is not repeated', () => {
+  const entry = { id: 'j-1', time: '2026-11-14T08:00:00Z', text: 'Long day.', talk: true };
+  const handedBack = [entry];
+  const list = withEntry(handedBack, entry);
+  assert.equal(list.length, 1);
+  assert.equal(withEntry([], entry).length, 1);
+  assert.equal((letterText(list).match(/Long day\./g) || []).length, 1, 'the letter names the entry once');
+  const sent = markSent([...list, { id: 'j-2', time: '2026-11-13T08:00:00Z', text: 'Kept back.', talk: false }], '2026-11-15T09:00:00Z');
+  assert.deepEqual(sent.ids, ['j-1']);
+  assert.equal(sent.list[0].talk, false);
+  assert.equal(sent.list[0].sentAt, '2026-11-15T09:00:00Z');
+  assert.equal(sent.list[1].sentAt, undefined);
+  assert.equal(letterText(sent.list), '', 'nothing is left for the next letter');
+});
+
+// ---------- the word rule that opens Help now ----------
+test('Help now opens for the common ways people say it, with any apostrophe, case or spacing', () => {
+  const said = [
+    'I want to kill myself', "I can't go on", 'I keep thinking about killing myself', 'I have been thinking of ending my life',
+    'I can’t go on like this', 'I wish I were dead', 'I keep hurting myself', 'I want to end it all',
+    "I don't want to be alive anymore", 'Everyone would be better off without me', 'I want to disappear and never wake up',
+    'I CANNOT GO ON', 'i  wish i  was   dead', 'I dont want to live', 'thinking about suicide', 'I feel suicidal',
+    'I want to take my own life', 'no reason to live', 'I want to die', 'self-harm again', 'I can not go on',
+    // "wanna" already holds the "to"
+    'i wanna die', 'I dont wanna live anymore', 'I don’t wanna wake up tomorrow',
+  ];
+  for (const s of said) assert.equal(matchesRisk(s), true, s);
+  assert.equal(plainText('Can’t  GO\non'), "can't go on");
+});
+
+test('the word rule stays quiet for ordinary hard days, and the card never sends anything by itself', () => {
+  for (const s of ['Long day, the crew argument about the schedule.', 'I am tired and I miss home.', 'The skill test went badly.', 'I cannot sleep.', 'I wanna go home.', '', null]) {
+    assert.equal(matchesRisk(s), false, String(s));
+  }
+  assert.equal(RISK_RULE.draft, true);
+  assert.match(RISK_RULE.text, /draft/);
+  assert.match(RISK_RULE.text, /nothing was sent/);
+});
+
+test('a request for a private call is shown as it is sent, known by its topic, also an old one with the suffix', () => {
+  assert.equal(TALK_REQUEST_TEXT, 'I would like a private call with my psychologist or flight surgeon soon.');
+  assert.equal(TALK_REQUEST_TOPIC, 'talk-request');
+  assert.equal(isTalkRequest({ to: 'doctor-earth', text: TALK_REQUEST_TEXT, topic: TALK_REQUEST_TOPIC }), true);
+  assert.equal(isTalkRequest({ to: 'doctor-earth', text: `${TALK_REQUEST_TEXT} (Sent with "Talk to a person now".)` }), true);
+  assert.equal(isTalkRequest({ to: 'doctor-earth', text: 'Please look at my data.' }), false);
+  assert.equal(isLetter({ to: 'doctor-earth', text: 'Private letter for my psychologist, from my private journal.' }), true);
+  assert.equal(isLetter({ to: 'doctor-earth', text: 'Anything', topic: LETTER_TOPIC }), true);
 });
 
 // ---------- F5: the notice in the AI panel ----------

@@ -16,7 +16,7 @@ import { icon } from './icons.js';
 import { initTips, tipButton, hideTip } from './explain.js';
 import { TIPS, PROVENANCE } from './tips.js';
 import { symptomLog, medicineLog, logText, PRIVATE_NOTE } from './quicklog.js';
-import { topicSignal, offerText, renderTopicChips, renderTips, renderJournal, renderPlan, renderSteps, renderCalendar, nextUp, supportTip, TALK_REQUEST_TEXT } from './support.js';
+import { topicSignal, offerText, renderTopicChips, renderTips, renderJournal, renderPlan, renderSteps, renderCalendar, nextUp, supportTip, TALK_REQUEST_TEXT, TALK_REQUEST_TOPIC, LETTER_TOPIC, isTalkRequest, isLetter, matchesRisk, RISK_RULE } from './support.js';
 import { runReactionTest, compareToOwn, exampleEarlierRuns } from './reaction-test.js';
 import { runEarthBreak } from './earth-break.js';
 import { renderConnections, connectionTip, sourceInfo, toEvents, onlyNew, columnPicker } from './integrations.js';
@@ -32,6 +32,8 @@ import {
   needsNewLine, alarmReportText, messageStatus, lineStatus, statusFromOutbox, doctorWords, doctorShort, crewWords, clearWords, noteWords, askTimerText, sentChip,
   restorePlan, shortReason,
 } from './crew-alarm.js';
+import { shortLabel, WORDS, normalFind, findText, findHit } from './find.js';
+import { readMission, missionProblem, missionTimes, flightDay, missionDay, MISSION_RULES } from './mission.js';
 
 // One icon per measure, so a list can be read at a glance.
 const ICON_FOR = { pulse: 'heart-pulse', bp: 'activity', glucose: 'droplet', temp: 'thermometer', spo2: 'droplets', sleep: 'moon', resp: 'wind', fluid: 'glass-water', bodyMass: 'scale', eyePressure: 'eye', hearing: 'ear', radiation: 'radiation', vo2max: 'heart', strength: 'dumbbell', bone: 'bone', camera: 'camera', mood: 'smile', attitude: 'battery', sleepQuality: 'bed', cognition: 'brain', reaction: 'zap', cycle: 'calendar-heart', xray: 'scan-line', ecg: 'chart-line', ultrasound: 'waves', exercise: 'flame', visionCheck: 'eye', octChange: 'eye', octScan: 'scan-line', symptoms: 'stethoscope', medicines: 'pill', co2: 'cloud-fog', cabinTemp: 'thermometer', cabinO2: 'orbit', cabinPressure: 'gauge', noise: 'volume-2', blood: 'test-tube' };
@@ -76,14 +78,42 @@ const lower = (s) => s.charAt(0).toLowerCase() + s.slice(1);
 const msOf = (t) => (t instanceof Date ? t.getTime() : new Date(t).getTime());
 const LV_CLASS = ['lv0', 'lv1', 'lv2', 'lv3'];
 
-// One short notice at a time: a new one replaces the old, and a longer one stays longer.
-let lastToast = null;
+// One short notice at a time: a new one replaces the old, and a longer one stays longer. The box is always on the
+// page (a live region, index.html #toast), and only its words change, so a screen reader hears every notice.
+let toastTimer = 0;
+let toastSet = 0;
 function toast(text) {
-  if (lastToast) lastToast.remove();
-  const node = h('div', { class: 'toast', id: 'toast', role: 'status' }, text);
-  document.body.append(node);
-  lastToast = node;
-  setTimeout(() => { node.remove(); if (lastToast === node) lastToast = null; }, Math.max(3600, 70 * String(text).length));
+  const box = byId('toast');
+  if (!box || !text) return;
+  clearTimeout(toastTimer);
+  clearTimeout(toastSet);
+  box.classList.remove('on');
+  box.textContent = '';
+  // Emptied first and filled a moment later, so the same words twice are announced twice.
+  toastSet = setTimeout(() => {
+    box.textContent = String(text);
+    box.classList.add('on');
+    toastTimer = setTimeout(() => { box.classList.remove('on'); box.textContent = ''; }, Math.max(3600, 70 * String(text).length));
+  }, 40);
+}
+
+// Redrawing part of the screen must not drop the keyboard. The control that had the focus gets it back after the
+// redraw, found by its data-fk key or its id, so the next Tab goes on from the same place (WCAG 2.4.3).
+const selectorOf = (el) => (!el || el === document.body || !el.dataset ? null : el.dataset.fk ? `[data-fk="${CSS.escape(el.dataset.fk)}"]` : el.id ? `#${CSS.escape(el.id)}` : null);
+// The same control after a redraw: the element itself while it is on the page, otherwise the one with its key.
+function sameControl(el, sel) {
+  if (el && el.isConnected && el.getClientRects().length) return el;
+  return sel ? [...document.querySelectorAll(sel)].find((x) => x.getClientRects().length) || null : null;
+}
+function keepFocus(fn) {
+  const a = document.activeElement;
+  const sel = selectorOf(a);
+  const out = fn();
+  if (sel && (!a.isConnected || !document.activeElement || document.activeElement === document.body)) {
+    const next = sameControl(null, sel);
+    if (next) next.focus({ preventScroll: true });
+  }
+  return out;
 }
 function dropToast() {
   for (const n of document.querySelectorAll('.toast')) n.remove();
@@ -97,7 +127,7 @@ function loadPrefs() {
   try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { return {}; }
 }
 function savePrefs() {
-  try { localStorage.setItem(KEY, JSON.stringify({ ship: ui.ship, seen: [...ui.seen].slice(-2000), example: ui.example, profile: ui.profile })); } catch { /* storage blocked: the page still works */ }
+  try { localStorage.setItem(KEY, JSON.stringify({ ship: ui.ship, seen: [...ui.seen].slice(-2000), example: ui.example, profile: ui.profile, mission: ui.mission })); } catch { /* storage blocked: the page still works */ }
 }
 
 // ---------- state ----------
@@ -120,6 +150,8 @@ const ui = {
   stepsDone: {},
   openGroups: new Set(),
   profile: prefs.profile || 'iss',
+  // The crew's own mission, set in Settings while the example flight is off; kept on this device (src/mission.js).
+  mission: readMission(prefs.mission),
   conn: { on: { isslive: false, spaceweather: false }, connected: {}, busy: {}, live: {} },
   exercising: false,
   exerciseUntil: 0,
@@ -133,6 +165,17 @@ let camStop = null;
 function nowTime() {
   const latest = Math.max(0, ...stored.map((e) => msOf(e.time)).filter(Number.isFinite));
   return ui.example ? new Date(Math.max(msOf(MISSION.today), latest)) : new Date();
+}
+
+// The mission the screen lives in: the example flight while its switch is on, otherwise the crew's own mission
+// from Settings (src/mission.js). With neither, the example's dates still feed the charts and forecasts as before,
+// but no flight day is shown and About says that no mission is set.
+const ownMission = () => (!ui.example && ui.mission ? missionTimes(ui.mission, nowTime()) : null);
+const mission = () => ownMission() || MISSION;
+// The day count of the status line: FD n in flight, L-n before launch, R+n after landing, or null without a mission.
+function flightDayNow(now = nowTime()) {
+  if (ui.example) { const n = Math.floor((msOf(now) - msOf(MISSION.launch)) / DAY) + 1; return { kind: 'flight', n, short: `FD ${n}`, words: `Flight day ${n}` }; }
+  return ui.mission ? flightDay(ui.mission, now) : null;
 }
 
 function rebuild() {
@@ -371,7 +414,7 @@ function cameraAlarm(personId, now = nowTime()) {
 // The urgent signs of one person now, from real readings only.
 function urgentSigns(p) {
   const now = nowTime();
-  const a = assess({ machine, person: p, cells: CELLS, mission: MISSION, now });
+  const a = assess({ machine, person: p, cells: CELLS, mission: mission(), now });
   const reds = a.body.items.filter((x) => x.kind === 'red' && x.level >= LEVEL.URGENT && x.m && x.m.last && !x.m.last.example);
   const cam = cameraAlarm(p.id, now);
   const helpKey = Boolean(cam && cam.source === HELP_SOURCE.id);
@@ -541,7 +584,7 @@ function itemText(it, owner) {
   const v = `${valueText(cell.indicator, last.value)} ${cell.unit || ''}`.trim();
   if (it.kind === 'forecast') {
     const c = it.m.forecast.crossing;
-    return { title: cell.label, text: `The last reading, ${v}, is still within the normal range, but the line through the readings leaves it ${c.side === 'below' ? 'downwards' : 'upwards'} around ${fmtDate(c.date)}, before landing on ${fmtDate(MISSION.landing)}.`, time: last.time };
+    return { title: cell.label, text: `The last reading, ${v}, is still within the normal range, but the line through the readings leaves it ${c.side === 'below' ? 'downwards' : 'upwards'} around ${fmtDate(c.date)}, before landing on ${fmtDate(mission().landing)}.`, time: last.time };
   }
   const side = it.m.side === 'below' ? 'below' : 'above';
   if (it.kind === 'red') return { title: owner && owner.id === SHIP.id ? `${it.level >= LEVEL.URGENT ? 'Ship emergency' : 'Ship caution'}: ${lower(cell.label)}` : cell.label, text: `${v}: ${limitWords(it.red)}${it.red.part ? ` (${it.red.part})` : ''}, the ${it.level >= LEVEL.URGENT ? 'urgent' : 'needs-action'} limit (${it.red.source}).`, time: last.time };
@@ -652,6 +695,14 @@ function systemsTip() {
 }
 function tipContent(key) {
   if (key === 's:systems') return systemsTip();
+  // The day count of the crew's own mission explains itself; the example flight keeps its card in src/tips.js.
+  if (key === 't:flightday' && !ui.example && ui.mission) {
+    const fd = flightDayNow();
+    return h('div', {}, h('p', { class: 'tp-title' }, 'Flight day'),
+      h('p', {}, `${fd ? `${fd.words}. ` : ''}Counted in GMT days for ${ui.mission.name || MISSION_RULES.defaultName}: launch ${missionDay(ui.mission.launch)} is flight day 1 (FD 1), landing ${missionDay(ui.mission.landing)} is the last.`),
+      h('p', {}, 'Before launch it counts down: L-3 means 3 days to launch. After landing it counts up: R+2 means 2 days after landing.'),
+      h('p', {}, 'Set on this device in Settings, under Mission.'));
+  }
   if (key === 't:pin') return h('div', {}, h('p', { class: 'tp-title' }, 'PIN for my screen'), ...PIN_RULES.rules.map((r) => h('p', {}, `${r.text} `, r.src ? h('a', { href: r.src.url, target: '_blank', rel: 'noopener' }, r.src.name) : null)));
   const [kind, a1, a2] = String(key).split(':');
   if (kind === 'mind') return supportTip(a1);
@@ -670,24 +721,28 @@ const LEVEL_TITLE = LEVEL_WORD.map(cap);
 const chip = (lv, text) => h('span', { class: `chip ${LV_CLASS[lv]}`, 'data-tip': 't:level' }, icon(LEVEL_ICON[lv], { size: 16 }), text);
 const staleChip = (text) => h('span', { class: 'chip stale' }, icon('clock', { size: 16 }), text);
 const btn = (kind, label, onclick, ic = null, extra = {}) => h('button', { type: 'button', class: `btn ${kind}`, onclick, ...extra }, ic ? icon(ic, { size: 18 }) : null, label);
-// Short names for the lists; the full name stays on the measure's own page.
-const SHORT = { vo2max: 'Aerobic capacity', cabinO2: 'Cabin oxygen', noise: 'Cabin noise', spo2: 'Blood oxygen', sleepQuality: 'Sleep quality', bodyMass: 'Body mass', radiation: 'Radiation dose', mood: 'Mood', attitude: 'Energy' };
-const shortLabel = (cell) => SHORT[cell.indicator] || cell.label;
+// Short names for the lists (SHORT, shortLabel) and the words of "Find a measure" live in src/find.js.
 const unitShort = (cell) => (cell.unit || '').replace('of own pre-flight', 'pre-flight');
 // When a reading was taken, and how old it is when that matters.
 function stamp(t, now) {
   const base = `GMT ${gmtDOY(t)}`;
-  if (msOf(t) < msOf(MISSION.launch) && ui.example) return `${base} · before flight`;
+  const m = ui.example ? MISSION : ownMission();
+  if (m && msOf(t) < msOf(m.launch)) return `${base} · before flight`;
   const days = Math.floor((msOf(now) - msOf(t)) / DAY);
   return days >= 3 ? `${base} · ${days} days ago` : base;
 }
 
+// The keys are made once; a redraw changes only which one is current, so a pressed key keeps the focus.
 function renderNav() {
-  byId('tabs-in').replaceChildren(...NAV.map(([view, label, ic]) => h('button', {
-    type: 'button', class: 'key', 'data-view': view,
-    'aria-current': ui.screen === view || (ui.screen === 'detail' && view === (ui.backTo || 'measures')) ? 'page' : null,
-    onclick: () => { if (view === 'alerts') ackAll(); setScreen(view); },
-  }, icon(ic, { size: 22 }), h('span', {}, label))));
+  const host = byId('tabs-in');
+  if (!host.children.length) {
+    host.replaceChildren(...NAV.map(([view, label, ic]) => h('button', { type: 'button', class: 'key', 'data-view': view, onclick: () => { if (view === 'alerts') ackAll(); setScreen(view); } }, icon(ic, { size: 22 }), h('span', {}, label))));
+  }
+  for (const key of host.children) {
+    const view = key.dataset.view;
+    if (ui.screen === view || (ui.screen === 'detail' && view === (ui.backTo || 'measures'))) key.setAttribute('aria-current', 'page');
+    else key.removeAttribute('aria-current');
+  }
 }
 
 // Every crew screen shows when a crewmate needs help now: an urgent red limit or a camera or Help alarm.
@@ -699,7 +754,7 @@ function crewAlerts(now) {
   const seen = new Set();
   for (const c of CREW) {
     if (c.id === ui.person) continue;
-    const a = assess({ machine, person: c, cells: CELLS, mission: MISSION, now });
+    const a = assess({ machine, person: c, cells: CELLS, mission: mission(), now });
     const it = a.body.items.find((x) => x.level >= LEVEL.URGENT && (x.kind === 'red' || x.kind === 'camera'));
     if (it) {
       out.push({ id: `example|${ui.person}|${c.id}|${it.kind}|${it.cell ? it.cell.indicator : ''}`, person: c.id, text: `${c.name} needs help now: ${it.kind === 'red' ? `${it.cell.label} ${valueText(it.cell.indicator, it.m.last.value)} ${it.cell.unit || ''}`.trim() : 'an alarm was raised'}.` });
@@ -739,19 +794,32 @@ function renderBar() {
     byId('who-btn').setAttribute('aria-label', `${p.name}. Switch person`);
   }
   const now = nowTime();
-  if (p && !p.real) byId('met').replaceChildren(h('span', { 'aria-hidden': 'true' }, 'FD '), h('span', { class: 'sr-only' }, 'Flight day '), h('strong', {}, String(Math.floor((msOf(now) - msOf(MISSION.launch)) / DAY) + 1)));
-  else byId('met').textContent = p && p.real ? 'Inspiration4, 2021' : '';
+  // The day count comes from the example flight or the crew's own mission; with no mission set it is left out.
+  const fd = p && !p.real ? flightDayNow(now) : null;
+  if (fd) {
+    const [lead, num] = fd.kind === 'flight' ? ['FD ', String(fd.n)] : fd.kind === 'before' ? ['L-', String(fd.n)] : ['R+', String(fd.n)];
+    const spoken = fd.kind === 'flight' ? 'Flight day ' : fd.kind === 'before' ? 'Days to launch: ' : 'Days after landing: ';
+    byId('met').replaceChildren(h('span', { 'aria-hidden': 'true' }, lead), h('span', { class: 'sr-only' }, spoken), h('strong', {}, num));
+  } else byId('met').textContent = p && p.real ? 'Inspiration4, 2021' : '';
   // Quiet and dark: a tag appears only when something is off.
   const tags = [];
-  if (p && !p.real && ui.example) tags.push(h('span', { class: 'tag example', 'data-tip': 't:example', tabindex: '0' }, 'Example', h('span', { class: 'tag-long' }, ' data')));
-  if (p) tags.push(h('span', { class: 'tag plain systems', 'data-tip': 's:systems', tabindex: '0', role: 'img', 'aria-label': 'Systems: automation, AI, link, doctor, saving, sound' }, icon('cpu', { size: 18 })));
+  // The tags that can take the keyboard also open their card on a tap or a click (data-tip-press, src/explain.js),
+  // because a touch screen cannot point at them.
+  if (p && !p.real && ui.example) tags.push(h('span', { class: 'tag example', 'data-tip': 't:example', 'data-tip-press': '', 'data-fk': 'tag:example', tabindex: '0' }, 'Example', h('span', { class: 'tag-long' }, ' data')));
+  if (p) tags.push(h('span', { class: 'tag plain systems', 'data-tip': 's:systems', 'data-tip-press': '', 'data-fk': 'tag:systems', tabindex: '0', role: 'img', 'aria-label': 'Systems: automation, AI, link, doctor, saving, sound' }, icon('cpu', { size: 18 })));
+  // On a phone two or more of these fold into one tag ("3 off"), so the status line stays short; a tap on it opens
+  // the systems card, which says what is off, and a screen reader hears the list.
+  const off = [];
   if (p) {
-    if (!ui.ship.linkToEarth) tags.push(h('span', { class: 'tag stale', 'data-tip': 't:nolink' }, icon('unlink', { size: 16 }), 'No link to Earth'));
-    if (!ui.ship.aiWorks) tags.push(h('span', { class: 'tag', 'data-tip': 't:aioff' }, icon('ban', { size: 16 }), 'AI off'));
-    if (ui.muted) tags.push(h('span', { class: 'tag', 'data-tip': 't:soundoff' }, icon('bell-off', { size: 16 }), 'Sound off'));
-    if (camStop) tags.push(h('span', { class: 'tag plain', 'data-tip': 't:camon' }, icon('camera', { size: 16 }), 'Camera on'));
-    if (exercisingNow()) tags.push(h('span', { class: 'tag', 'data-tip': 't:exercising', tabindex: '0' }, icon('flame', { size: 16 }), 'Exercising'));
+    if (!ui.ship.linkToEarth) off.push(['No link to Earth', h('span', { class: 'tag stale off-tag', 'data-tip': 't:nolink' }, icon('unlink', { size: 16 }), 'No link', h('span', { class: 'tag-long' }, ' to Earth'))]);
+    if (!ui.ship.aiWorks) off.push(['AI off', h('span', { class: 'tag off-tag', 'data-tip': 't:aioff' }, icon('ban', { size: 16 }), 'AI off')]);
+    if (ui.muted) off.push(['Sound off', h('span', { class: 'tag off-tag', 'data-tip': 't:soundoff' }, icon('bell-off', { size: 16 }), 'Sound off')]);
   }
+  tags.push(...off.map(([, tag]) => tag));
+  if (off.length >= 2) tags.push(h('span', { class: 'tag fold-off', 'data-tip': 's:systems', 'data-tip-press': '', 'data-fk': 'tag:off', tabindex: '0' }, icon('ban', { size: 16 }), `${off.length} off`, h('span', { class: 'sr-only' }, `: ${off.map(([word]) => word).join(', ')}`)));
+  if (p && camStop) tags.push(h('span', { class: 'tag plain', 'data-tip': 't:camon' }, icon('camera', { size: 16 }), 'Camera on'));
+  if (p && exercisingNow()) tags.push(h('span', { class: 'tag', 'data-tip': 't:exercising', 'data-tip-press': '', tabindex: '0' }, icon('flame', { size: 16 }), 'Exercising'));
+  byId('sys-summary').classList.toggle('folded', off.length >= 2);
   byId('sys-summary').replaceChildren(...tags);
   // The crewmates' lines first, so the sound knows them too.
   const lines = p && !p.real ? crewAlerts(nowTime()) : [];
@@ -779,11 +847,34 @@ function renderBar() {
     banner.dataset.sig = sig;
     fill(banner,
       ...notes.map((n) => h('p', {}, icon(n.icon, { size: 18 }), h('b', {}, n.bold), n.rest ? ` ${n.rest}` : '')),
-      ...lines.map((l) => h('p', {}, icon('octagon-alert', { size: 18 }), h('b', {}, l.text), l.person === SHIP.id ? ' Nobody was signed in there; the crew medical officer has the steps.' : ' Go to them; the crew medical officer has the steps.')),
+      ...lines.map((l) => h('p', {}, icon('octagon-alert', { size: 18 }), h('b', {}, l.text), h('span', { class: 'then' }, l.person === SHIP.id ? ' Nobody was signed in there; the crew medical officer has the steps.' : ' Go to them; the crew medical officer has the steps.'))),
       sounding || lines.length ? h('p', {}, sounding ? btn('secondary small', 'Silence', () => { ackAll(); renderBar(); }, 'volume-x') : null, lines.length ? tipButton('t:crewalarm', 'crew alarms') : null) : null);
   }
   banner.hidden = !notes.length && !lines.length;
   renderNav();
+  measureBars();
+}
+
+// The real heights of the status line and of the keys go into --sl-h and --keys-h (index.html), for the sticky
+// keys, the side sheets, the "?" cards and the scroll padding. Tags and a crewmate's alarm line make the status
+// line taller, so it is measured, not assumed (a ResizeObserver keeps it right).
+function measureBars() {
+  const root = document.documentElement.style;
+  const bar = document.querySelector('.status-line');
+  const keys = byId('tabs');
+  const sl = `${Math.round(bar.getBoundingClientRect().height)}px`;
+  const kh = `${keys.hidden ? 0 : Math.round(keys.getBoundingClientRect().height)}px`;
+  if (root.getPropertyValue('--sl-h') !== sl) root.setProperty('--sl-h', sl);
+  if (root.getPropertyValue('--keys-h') !== kh) root.setProperty('--keys-h', kh);
+}
+function watchBars() {
+  measureBars();
+  if (typeof ResizeObserver === 'function') {
+    const ro = new ResizeObserver(() => measureBars());
+    ro.observe(document.querySelector('.status-line'));
+    ro.observe(byId('tabs'));
+  }
+  window.addEventListener('resize', measureBars);
 }
 
 // ---------- rendering: sign-in ----------
@@ -896,12 +987,17 @@ function clearPerson() {
   rebuild();
 }
 function signOut() {
+  const was = ui.person;
   clearPerson();
+  // Drafts stay with their person only while that person is signed in, so the next person never sees them.
+  const mine = [...drafts.keys()].filter((k) => k.startsWith(`${was}|`));
+  for (const k of mine) drafts.delete(k);
   ui.person = null;
   ui.screen = 'home';
   ui.detail = null;
   render();
   schedulePoll();
+  if (mine.length) toast('Switched person. Your unsent drafts were not kept, so nobody else at this computer sees them.');
 }
 function askPin(id) {
   const p = personById[id];
@@ -929,7 +1025,7 @@ function renderHome() {
   const p = personById[ui.person];
   if (p.real) return renderRealHome(p);
   const now = nowTime();
-  const a = assess({ machine, person: p, cells: CELLS, mission: MISSION, now });
+  const a = assess({ machine, person: p, cells: CELLS, mission: mission(), now });
   const top = topLevel(a);
   byId('today').className = `card today ${LV_CLASS[top]}`;
   byId('today-label').textContent = 'Your health today';
@@ -972,7 +1068,7 @@ function renderHome() {
     const first = a.body.items.find((x) => x.cell);
     acts.push(btn('primary', 'Details', () => (first ? openDetail(first.cell.indicator) : setScreen('alerts')), null, { 'data-tip': 't:details' }));
     acts.push(aiButton('Analyse with AI', 'body', a));
-    acts.push(btn('secondary', 'Message the doctor', () => openDoctor(a, 'body'), 'stethoscope', { 'data-tip': 't:doctor' }));
+    acts.push(btn('secondary', 'Message the doctor', () => openDoctor(a, 'body'), 'stethoscope', { 'data-tip': 't:doctor', 'data-fk': 'open:doctor' }));
   }
   byId('today-actions').replaceChildren(...acts);
   byId('today-actions').hidden = !acts.length;
@@ -992,7 +1088,13 @@ function renderHome() {
 
 function aiButton(label, kind, a, primary = false) {
   const off = !ui.ship.aiWorks;
-  const b = h('button', { type: 'button', class: `btn ${primary ? 'primary' : 'secondary'}`, 'data-tip': kind === 'psyche' ? 't:aisession' : 't:ai', 'aria-disabled': off ? 'true' : null, onclick: () => (off ? toast('The AI is off: only the automation is working.') : openAi(kind, a)) }, icon('sparkles', { size: 18 }), label);
+  // The mind session opens with the AI off too: Help now, the coping cards and the plan need no AI. Only the chat
+  // with the AI is missing then, and the panel says so.
+  if (kind === 'psyche') {
+    const s = h('button', { type: 'button', class: `btn ${primary ? 'primary' : 'secondary'}`, 'data-tip': 't:aisession', 'data-fk': 'open:session', onclick: () => openSupport(a) }, icon('sparkles', { size: 18 }), label);
+    return off ? h('span', { class: 'btn-wrap' }, s, h('span', { class: 'why' }, 'AI off: Help now and the coping steps still work')) : s;
+  }
+  const b = h('button', { type: 'button', class: `btn ${primary ? 'primary' : 'secondary'}`, 'data-tip': 't:ai', 'data-fk': `open:ai:${kind}`, 'aria-disabled': off ? 'true' : null, onclick: () => (off ? toast('The AI is off: only the automation is working.') : openAi(kind, a)) }, icon('sparkles', { size: 18 }), label);
   return off ? h('span', { class: 'btn-wrap' }, b, h('span', { class: 'why' }, 'AI unavailable now')) : b;
 }
 
@@ -1001,8 +1103,8 @@ function aiButton(label, kind, a, primary = false) {
 function mindChoice(p, a, primaryFirst) {
   const choices = h('div', { class: 'actions' },
     aiButton('Start an anonymous session with AI', 'psyche', a, primaryFirst),
-    btn('secondary', 'Tell the doctor on Earth', () => openDoctor(a, 'psyche'), 'stethoscope', { 'data-tip': 't:tellDoctor' }),
-    btn('secondary', 'Small things that help', () => openAdvice(), 'list', { 'data-tip': 't:advice' }));
+    btn('secondary', 'Tell the doctor on Earth', () => openDoctor(a, 'psyche'), 'stethoscope', { 'data-tip': 't:tellDoctor', 'data-fk': 'open:tell-earth' }),
+    btn('secondary', ADVICE, () => openAdvice(), 'list', { 'data-tip': 't:advice', 'data-fk': 'open:advice' }));
   if (offerDismissed.has(p.id)) return h('div', { class: 'advice' }, choices);
   return h('div', { class: 'advice' },
     h('p', { class: 'who-says' }, 'AI support (not a psychologist) · not connected yet'),
@@ -1031,7 +1133,8 @@ function renderComingUp(p, now) {
     eyeDays.length ? { ic: 'scan-line', what: 'Eye check: vision, retina scan (OCT)', in: eyeDays[0] - day } : { ic: 'scan-line', what: 'Eye check after landing', in: toLanding + 1 },
   ].sort((a, b) => a.in - b.in).slice(0, 3);
   const when = (n) => (n === 1 ? 'tomorrow' : `in ${n} days`);
-  byId('comingup-note').textContent = nextUp(day) || 'Example schedule';
+  // The card is already called "Coming up", so its note names where the line comes from instead.
+  byId('comingup-note').textContent = (nextUp(day) || 'Example schedule').replace(/^Coming up: /, 'Mission calendar: ');
   byId('comingup-list').replaceChildren(...items.map((it) => h('li', {}, icon(it.ic, { size: 18 }), h('span', {}, it.what, it.act ? [' ', btn('secondary small', it.actLabel || 'Prepare', it.act, null, it.actLabel === 'Prepare' ? { 'data-tip': 't:pmc' } : {})] : null), h('span', { class: 'when' }, when(it.in)))));
   card.hidden = false;
 }
@@ -1039,7 +1142,8 @@ function renderComingUp(p, now) {
 // A one-page summary of the last 7 days for the private medical conference; the person edits it and decides.
 function pmcSummary(p, now) {
   const since = msOf(now) - 7 * DAY;
-  const lines = [`For my private medical conference. ${p.name}, flight day ${Math.floor((msOf(now) - msOf(MISSION.launch)) / DAY) + 1}, the last 7 days:`];
+  const fd = flightDayNow(now);
+  const lines = [`For my private medical conference. ${p.name}${fd ? `, ${lower(fd.words)}` : ''}, the last 7 days:`];
   const nums = ['pulse', 'bp', 'spo2', 'temp', 'resp', 'sleep', 'fluid'];
   for (const ind of nums) {
     const cell = cellBy[ind];
@@ -1077,10 +1181,11 @@ function openPmc(p) {
     const to = ui.ship.doctorOnBoard ? 'doctor-onboard' : 'doctor-earth';
     const res = await keep({ v: 1, kind: 'report', time: new Date().toISOString(), person: ui.person, state: { ...ui.ship }, report: { to, text: area.value.slice(0, 6000), topic: 'pmc' } });
     if (!res.ok) return;
+    markSaved();
     closePanel();
     toast(sentText(to, res, 'Your summary'));
     render();
-  }, 'send')]);
+  }, 'send')], { key: 'pmc' });
 }
 
 // ---------- morning check-in ----------
@@ -1094,15 +1199,18 @@ function renderCheckin(p, now, top = LEVEL.FINE) {
   const open = ui.checkinOpen;
   byId('ci-form').hidden = !open;
   byId('ci-sub').textContent = done.length ? `Checked in today. ${done.join(' · ')}` : 'Three quick questions: mood, energy, last night\'s sleep.';
+  // Start and Change go away when the questions open, so the keyboard moves on to the first question.
+  const startIt = () => { ui.checkinOpen = true; renderCheckin(p, now, top); const first = byId('ci-mood').querySelector('button'); if (first) first.focus(); };
   byId('ci-start-slot').replaceChildren(...(open ? [] : [done.length
-    ? btn('secondary small', 'Change', () => { ui.checkinOpen = true; renderCheckin(p, now, top); })
-    : btn(top === LEVEL.FINE ? 'primary' : 'secondary', 'Start', () => { ui.checkinOpen = true; renderCheckin(p, now, top); })]));
+    ? btn('secondary small', 'Change', startIt)
+    : btn(top === LEVEL.FINE ? 'primary' : 'secondary', 'Start', startIt)]));
   byId('ci-extra').replaceChildren(
-    btn('secondary small', 'Log a symptom', () => openSymptomLog(), 'stethoscope', { 'data-tip': 't:symptomlog' }),
-    btn('secondary small', 'I took a medicine', () => openMedicineLog(), 'pill', { 'data-tip': 't:medicinelog' }),
-    btn('secondary small', 'Mind support', () => openMindSupport(), 'sparkles', { 'data-tip': 't:mindsupport' }));
+    btn('secondary small', 'Log a symptom', () => openSymptomLog(), 'stethoscope', { 'data-tip': 't:symptomlog', 'data-fk': 'open:symptom' }),
+    btn('secondary small', 'I took a medicine', () => openMedicineLog(), 'pill', { 'data-tip': 't:medicinelog', 'data-fk': 'open:medicine' }),
+    btn('secondary small', 'Mind support', () => openMindSupport(), 'sparkles', { 'data-tip': 't:mindsupport', 'data-fk': 'open:mind' }));
+  // A chosen answer keeps the focus on the button that was pressed (keepFocus), so the next Tab goes on from there.
   const seg = (id, key, options) => byId(id).replaceChildren(...options.map(([value, label]) => h('button', {
-    type: 'button', 'aria-pressed': String(ui.checkin[key] === value), onclick: () => { ui.checkin[key] = ui.checkin[key] === value ? null : value; renderCheckin(p, now, top); },
+    type: 'button', 'aria-pressed': String(ui.checkin[key] === value), 'data-fk': `ci:${key}:${value}`, onclick: () => { ui.checkin[key] = ui.checkin[key] === value ? null : value; keepFocus(() => renderCheckin(p, now, top)); },
   }, ui.checkin[key] === value ? icon('check', { size: 16 }) : null, label)));
   seg('ci-mood', 'mood', [['bad', 'Bad'], ['fair', 'Fair'], ['good', 'Good']]);
   seg('ci-attitude', 'attitude', [['sluggish', 'Sluggish'], ['energetic', 'Energetic']]);
@@ -1147,7 +1255,7 @@ function measureRow(owner, indicator, a, now) {
   const last = machine.history(owner.id, indicator).slice(-1)[0] || null;
   const item = a ? [...a.body.items, ...a.psyche.items].find((x) => x.cell && x.cell.indicator === indicator) : null;
   let level = item ? item.level : LEVEL.FINE;
-  const m = cell.kind === KIND.NUMBER ? measureState({ machine, person: owner, cell, mission: MISSION, now }) : null;
+  const m = cell.kind === KIND.NUMBER ? measureState({ machine, person: owner, cell, mission: mission(), now }) : null;
   const stale = Boolean(m && m.stale);
   const out = Boolean(last && last.status === STATUS.OUT);
   const forecast = Boolean(item && item.kind === 'forecast');
@@ -1156,15 +1264,18 @@ function measureRow(owner, indicator, a, now) {
   else if (!last) kids.push(h('span', { class: 'r-none' }, 'No readings yet'));
   else {
     const raw = valueText(indicator, last.value);
-    const word = indicator === 'sleepQuality' ? `${raw} of 7` : ORDINAL[indicator] ? cap(raw) : raw;
+    // A word answer starts with a capital letter, as on the measure's own page ("Same as before flight").
+    const word = indicator === 'sleepQuality' ? `${raw} of 7` : ORDINAL[indicator] || /[a-z]/i.test(String(raw)) ? cap(String(raw)) : raw;
     const isWord = !/^[0-9.,/% -]+$/.test(String(word));
     const hasUnit = cell.kind === KIND.NUMBER && Boolean(cell.unit);
     const arrow = out && m && m.side ? icon(m.side === 'below' ? 'arrow-down' : 'arrow-up', { size: 16, stroke: 2.4, label: m.side === 'below' ? 'below the normal range' : 'above the normal range' }) : null;
     const tint = out && level ? `lvc${level}` : '';
-    kids.push(h('span', { class: `r-num ${isWord ? 'word' : ''} ${hasUnit ? '' : 'nounit'} ${tint}` }, word, arrow));
+    // A long answer (more than a few words) gets a line of its own on narrow screens, so the name keeps its room.
+    const long = isWord && String(word).length > 16 ? 'long' : '';
+    kids.push(h('span', { class: `r-num ${isWord ? 'word' : ''} ${long} ${hasUnit ? '' : 'nounit'} ${tint}` }, word, arrow));
     if (hasUnit) kids.push(h('span', { class: 'r-unit' }, unitShort(cell)));
   }
-  kids.push(h('span', { class: 'r-time' }, last ? stamp(last.time, now) : cell.onlyOnEarth ? 'Before and after flight only' : ''));
+  kids.push(h('span', { class: last ? 'r-time' : 'r-time text' }, last ? stamp(last.time, now) : cell.onlyOnEarth ? 'Before and after flight only' : ''));
   if (forecast) kids.push(h('span', { class: 'r-state lvc1' }, icon('info', { size: 14 }), 'Forecast: may leave the range'));
   else if (level) kids.push(h('span', { class: `r-state lvc${level}` }, icon(LEVEL_ICON[level], { size: 14 }), LEVEL_TITLE[level]));
   else if (stale && last) kids.push(h('span', { class: 'r-state lvc-stale' }, icon('clock', { size: 14 }), `Old data, ${ageText(last.time, now)}`));
@@ -1256,19 +1367,8 @@ const GROUPS = [
   ['Mind', 'Your daily check-ins and your own tests.', ['mood', 'attitude', 'sleepQuality', 'cognition', 'reaction']],
   ['Images, tracings and camera', 'These go to the AI or a doctor.', ['xray', 'ecg', 'ultrasound', 'camera']],
 ];
-// Everyday words a person may type in "Find a measure".
-const WORDS = {
-  pulse: 'pulse heart rate hr bpm heartbeat', bp: 'bp blood pressure systolic diastolic hypertension', spo2: 'oxygen o2 sats saturation spo2 pulse ox',
-  temp: 'temperature fever temp', resp: 'breathing respiration breaths', sleep: 'sleep hours rest', fluid: 'water drink fluid hydration',
-  glucose: 'sugar glucose blood sugar', bodyMass: 'weight mass body', vo2max: 'fitness aerobic vo2 cardio exercise', strength: 'muscle strength',
-  bone: 'bone density dexa', eyePressure: 'eye vision iop', hearing: 'ear hearing audiogram', radiation: 'radiation dose msv dosimeter',
-  mood: 'mood feeling', attitude: 'energy tired fatigue', sleepQuality: 'sleep quality rest', cognition: 'thinking cognition memory test winscat monthly', reaction: 'reaction reflex speed alert alertness fatigue pvt rst test',
-  xray: 'x-ray xray image', exercise: 'exercise workout training treadmill bike ared cevis', visionCheck: 'vision eye eyes amsler sans sight', octChange: 'oct retina eye eyes sans', octScan: 'oct scan eye image retina', ecg: 'ecg ekg heart tracing', ultrasound: 'ultrasound echo scan image', camera: 'camera video chest sleep',
-  co2: 'co2 carbon dioxide air', cabinO2: 'oxygen o2 air', cabinPressure: 'pressure cabin air', noise: 'noise sound loud db', cabinTemp: 'temperature cabin air',
-};
-
 function renderGroups(p, a, now) {
-  const shipA = assessShip({ machine, ship: SHIP, cells: CELLS, mission: MISSION, now });
+  const shipA = assessShip({ machine, ship: SHIP, cells: CELLS, mission: mission(), now });
   const shipItems = { body: { items: shipA.items }, psyche: { items: [] } };
   const listed = new Set(GROUPS.flatMap((g) => g[2]));
   const others = [...BODY, ...PSYCHE].filter((ind) => !listed.has(ind));
@@ -1307,8 +1407,9 @@ function renderGroups(p, a, now) {
   applyFind();
 }
 
+// A row is found by the name it shows (.r-name), the measure's full name and the everyday words (src/find.js).
 function applyFind() {
-  const q = ui.find.trim().toLowerCase();
+  const q = normalFind(ui.find);
   byId('find').value = ui.find;
   byId('find-clear').hidden = !q;
   let shown = 0;
@@ -1317,13 +1418,13 @@ function applyFind() {
     for (const wrap of g.querySelectorAll('.row-wrap')) {
       const row = wrap.querySelector('.row');
       const ind = row.dataset.ind || '';
-      const hay = `${row.querySelector('.name b') ? row.querySelector('.name b').textContent : ''} ${WORDS[ind] || ''}`.toLowerCase();
-      const hit = !q || hay.includes(q);
+      const name = row.querySelector('.r-name');
+      const hit = findHit(q, findText({ name: name ? name.textContent : '', label: (cellBy[ind] || {}).label, words: WORDS[ind] }));
       wrap.hidden = !hit;
       if (hit) inGroup += 1;
     }
     const terms = g.dataset.terms || '';
-    g.hidden = Boolean(q) && !inGroup && !(terms && terms.includes(q));
+    g.hidden = Boolean(q) && !inGroup && !(terms && findHit(q, terms));
     const list = g.querySelector(':scope > .rows');
     if (list && g.dataset.foldable) list.hidden = q ? false : !ui.openGroups.has(g.dataset.title);
     if (!g.hidden) shown += 1;
@@ -1405,10 +1506,10 @@ function periodRange(points) {
   const now = msOf(nowTime());
   if (ui.period === '7') return { from: now - 7 * DAY, to: now + DAY };
   if (ui.period === '30') return { from: now - 30 * DAY, to: now + DAY };
-  if (ui.period === 'flight') return { from: msOf(MISSION.launch) - 2 * DAY, to: msOf(MISSION.landing) + 4 * DAY };
+  if (ui.period === 'flight') return { from: msOf(mission().launch) - 2 * DAY, to: msOf(mission().landing) + 4 * DAY };
   if (ui.period === 'before') {
-    const first = points.length ? Math.min(...points.map((p) => p.t)) : msOf(MISSION.launch) - 30 * DAY;
-    return { from: Math.min(first, msOf(MISSION.launch) - 7 * DAY) - 3 * DAY, to: msOf(MISSION.launch) + 2 * DAY };
+    const first = points.length ? Math.min(...points.map((p) => p.t)) : msOf(mission().launch) - 30 * DAY;
+    return { from: Math.min(first, msOf(mission().launch) - 7 * DAY) - 3 * DAY, to: msOf(mission().launch) + 2 * DAY };
   }
   if (ui.period === 'custom' && ui.from && ui.to) {
     const from = new Date(`${ui.from}T00:00:00Z`).getTime();
@@ -1430,18 +1531,28 @@ function openDetail(indicator) {
 const EXPECTED_EVERY_DAYS_ONE = ['pulse', 'bp', 'temp', 'sleep', 'resp', 'fluid', 'spo2', 'glucose'];
 const NORM_NAMES = { earthGeneral: 'General, Earth', spaceGeneral: 'General, space', personalEarth: 'Personal, Earth', personalSpace: 'Personal, space' };
 const BACK_LABEL = { home: 'Today', measures: 'All measures', alerts: 'Messages', setup: 'Settings' };
-const backButton = () => btn('secondary small back', BACK_LABEL[ui.backTo] || 'All measures', () => setScreen(ui.backTo || 'measures'), 'chevron-left');
+// Back returns to the screen before, with the keyboard on the row of the measure that was open, or on the heading.
+const backButton = () => btn('secondary small back', BACK_LABEL[ui.backTo] || 'All measures', () => {
+  const from = ui.detail;
+  const to = ui.backTo || 'measures';
+  setScreen(to);
+  const screen = byId(`screen-${to}`);
+  const row = screen && [...screen.querySelectorAll('.row[data-ind]')].find((r) => r.dataset.ind === String(from) && r.getClientRects().length);
+  if (row) { row.focus(); return; }
+  const head = screen && screen.querySelector('h1');
+  if (head) { head.setAttribute('tabindex', '-1'); head.focus(); }
+}, 'chevron-left');
 const cornerTip = (key, label) => { const b = tipButton(key, label); b.classList.add('corner'); return b; };
 const more = (title, ...children) => h('details', { class: 'more' }, h('summary', {}, icon('chevron-right', { size: 18 }), title), h('div', {}, ...children));
 
 function periodBar(onChange) {
   return h('div', { class: 'periods' },
     h('div', { class: 'seg small', role: 'group', 'aria-label': 'Period' }, ...PERIODS.map(([key, label]) => h('button', {
-      type: 'button', 'aria-pressed': String(ui.period === key), onclick: () => { ui.period = key; ui.periodChosen = true; onChange(); },
+      type: 'button', 'aria-pressed': String(ui.period === key), 'data-fk': `period:${key}`, onclick: () => { ui.period = key; ui.periodChosen = true; onChange(); },
     }, ui.period === key ? icon('check', { size: 14 }) : null, label))),
     ui.period === 'custom' ? h('span', { class: 'custom' },
-      h('label', {}, 'From (GMT)', h('input', { type: 'date', value: ui.from, onchange: (e) => { ui.from = e.target.value; onChange(); } })),
-      h('label', {}, 'To (GMT)', h('input', { type: 'date', value: ui.to, onchange: (e) => { ui.to = e.target.value; onChange(); } }))) : null);
+      h('label', {}, 'From (GMT)', h('input', { type: 'date', value: ui.from, 'data-fk': 'period:from', onchange: (e) => { ui.from = e.target.value; onChange(); } })),
+      h('label', {}, 'To (GMT)', h('input', { type: 'date', value: ui.to, 'data-fk': 'period:to', onchange: (e) => { ui.to = e.target.value; onChange(); } }))) : null);
 }
 
 function renderDetail() {
@@ -1455,7 +1566,7 @@ function renderDetail() {
   const allPoints = series.flatMap((s) => s.points);
   const range = periodRange(allPoints);
   const now = nowTime();
-  const m = cell.kind === KIND.NUMBER ? measureState({ machine, person: owner, cell, mission: MISSION, now }) : null;
+  const m = cell.kind === KIND.NUMBER ? measureState({ machine, person: owner, cell, mission: mission(), now }) : null;
   const fc = m && m.forecast && m.forecast.line && (SLOW_MEASURES.includes(indicator) || m.clearTrend) ? m.forecast : null;
   const showTrend = Boolean(fc) && (ui.period === 'flight' || ui.period === 'all');
   const lines = [];
@@ -1474,11 +1585,11 @@ function renderDetail() {
     if (lastOut) facts.push(`The last reading (${stamp(m.last.time, now)}) is outside the normal range.`);
     else if (fc.crossing && fc.crossing.already) facts.push(`If the line through the flight readings holds, ${lower(what)} is already ${side} the normal range.`);
     else if (fc.crossing && fc.crossedBeforeNow) facts.push(`If the line through the flight readings holds, ${lower(what)} left the normal range around ${fmtDate(fc.crossing.date)}, after the last reading. A new reading is needed.`);
-    else if (fc.crossing) facts.push(`${what} is going ${fc.crossing.side === 'below' ? 'down' : 'up'}: if this line holds, it goes ${side} the normal range around ${fmtDate(fc.crossing.date)}, before landing on ${fmtDate(MISSION.landing)}.`);
-    else facts.push(`Steady within the normal range until landing on ${fmtDate(MISSION.landing)}, if this line holds.`);
+    else if (fc.crossing) facts.push(`${what} is going ${fc.crossing.side === 'below' ? 'down' : 'up'}: if this line holds, it goes ${side} the normal range around ${fmtDate(fc.crossing.date)}, before landing on ${fmtDate(mission().landing)}.`);
+    else facts.push(`Steady within the normal range until landing on ${fmtDate(mission().landing)}, if this line holds.`);
     about.push("The forecast is a straight line through the in-flight readings (Claude's technical choice), not a validated medical model.");
   } else if (cell.kind === KIND.NUMBER) {
-    const flightDays = new Set(((m && m.list) || []).filter((x) => msOf(x.time) >= msOf(MISSION.launch)).map((x) => new Date(x.time).toISOString().slice(0, 10))).size;
+    const flightDays = new Set(((m && m.list) || []).filter((x) => msOf(x.time) >= msOf(mission().launch)).map((x) => new Date(x.time).toISOString().slice(0, 10))).size;
     facts.push(cell.onlyOnEarth ? 'Not measured in flight: only on Earth, before and after flight.'
       : cell.normType === 'record' ? 'Recorded for you and your doctor: there is no checked norm, so there is no forecast line.'
         : flightDays < 3 ? 'To see where a measure is going, in-flight readings on at least three different days are needed.'
@@ -1502,10 +1613,10 @@ function renderDetail() {
       h('dd', {}, n ? n.text : 'no data', n && n.src ? [' · ', h('a', { href: n.src.url, target: '_blank', rel: 'noopener' }, n.src.name)] : null));
   })) : h('p', {}, cell.normText || '');
 
-  const a = assess({ machine, person: p, cells: CELLS, mission: MISSION, now });
+  const a = assess({ machine, person: p, cells: CELLS, mission: mission(), now });
   const lastEntry = machine.history(owner.id, indicator).slice(-1)[0] || null;
   const item = [...a.body.items, ...a.psyche.items].find((x) => x.cell && x.cell.indicator === indicator);
-  const shipItem = owner === SHIP ? assessShip({ machine, ship: SHIP, cells: CELLS, mission: MISSION, now }).items.find((x) => x.cell.indicator === indicator) : null;
+  const shipItem = owner === SHIP ? assessShip({ machine, ship: SHIP, cells: CELLS, mission: mission(), now }).items.find((x) => x.cell.indicator === indicator) : null;
   const level = owner === SHIP ? (shipItem ? shipItem.level : LEVEL.FINE) : (item ? item.level : LEVEL.FINE);
   const info = owner === SHIP ? null : (a.info || []).find((x) => x.cell && x.cell.indicator === indicator && (x.kind === 'expected' || x.kind === 'watch'));
   if (info && info.kind === 'expected') facts.unshift(`Outside the Earth range, but common in flight: ${info.expected.text}`);
@@ -1519,7 +1630,8 @@ function renderDetail() {
   }
   const alert = owner === SHIP ? null : alertsFor(p.id).find((x) => x.indicator === indicator);
   const raw = lastEntry ? valueText(indicator, lastEntry.value) : '';
-  const shown = indicator === 'sleepQuality' && raw ? `${raw} of 7` : ORDINAL[indicator] ? cap(raw) : raw;
+  // Every word answer starts with a capital letter, as it does in the list of answers.
+  const shown = indicator === 'sleepQuality' && raw ? `${raw} of 7` : ORDINAL[indicator] || /[a-z]/i.test(String(raw)) ? cap(String(raw)) : raw;
   const arrow = lastEntry && lastEntry.status === STATUS.OUT && m && m.side ? icon(m.side === 'below' ? 'arrow-down' : 'arrow-up', { size: 28, stroke: 2.4, cls: `lvc${level || 1}`, label: m.side === 'below' ? 'below the normal range' : 'above the normal range' }) : null;
   const periodName = (PERIODS.find(([k]) => k === ui.period) || PERIODS[2])[2];
   const chart = h('div', { class: 'chart', id: 'd-chart' });
@@ -1558,8 +1670,8 @@ function renderDetail() {
     h('div', { class: 'prose' }, ...facts.map((x) => h('p', {}, x))),
     owner === SHIP ? null : cell.section === 'psyche' ? h('div', { class: 'actions' },
       aiButton('Start an anonymous session with AI', 'psyche', a),
-      btn('secondary', 'Tell the doctor on Earth', () => openDoctor(a, 'psyche'), 'stethoscope', { 'data-tip': 't:tellDoctor' }),
-      btn('secondary', 'Advice and articles', () => openAdvice(), 'list', { 'data-tip': 't:advice' })) : h('div', { class: 'actions' },
+      btn('secondary', 'Tell the doctor on Earth', () => openDoctor(a, 'psyche'), 'stethoscope', { 'data-tip': 't:tellDoctor', 'data-fk': 'open:tell-earth' }),
+      btn('secondary', ADVICE, () => openAdvice(), 'list', { 'data-tip': 't:advice', 'data-fk': 'open:advice' })) : h('div', { class: 'actions' },
       aiButton('Analyse with AI', 'body', a),
       btn('secondary', 'Message the doctor', () => openDoctor(a, 'body', indicator), 'stethoscope', { 'data-tip': 't:doctor' })),
     h('div', {},
@@ -1579,8 +1691,8 @@ function renderDetail() {
   );
   const ord = ORDINAL[indicator] || null;
   drawHistory(chart, tip, {
-    series, band, lines, mission: MISSION, fmt: fmtVal, ordinal: ord, outText: ord ? null : undefined, unit: cell.kind === KIND.NUMBER ? cell.unit : '',
-    trend: showTrend ? { from: Math.max(fc.line.from, msOf(MISSION.launch)), at: fc.line.at } : null,
+    series, band, lines, mission: mission(), fmt: fmtVal, ordinal: ord, outText: ord ? null : undefined, unit: cell.kind === KIND.NUMBER ? cell.unit : '',
+    trend: showTrend ? { from: Math.max(fc.line.from, msOf(mission().launch)), at: fc.line.at } : null,
     label: `${cell.label}, ${owner === SHIP ? 'ship' : p.name}`, range,
   });
   drawTable(byId('d-table'), { series, fmt: fmtVal, ordinal: ord, outText: ord ? null : undefined, range });
@@ -1617,8 +1729,10 @@ function amslerGrid() {
 // Redraw the measure page and keep the sections the person opened.
 function redrawDetail() {
   const open = [...document.querySelectorAll('#screen-detail details.more[open] > summary')].map((s) => s.textContent);
-  renderDetail();
-  for (const d of document.querySelectorAll('#screen-detail details.more')) if (open.includes(d.querySelector('summary').textContent)) d.open = true;
+  keepFocus(() => {
+    renderDetail();
+    for (const d of document.querySelectorAll('#screen-detail details.more')) if (open.includes(d.querySelector('summary').textContent)) d.open = true;
+  });
 }
 
 function renderBloodDetail(host, p, code) {
@@ -1670,8 +1784,8 @@ function episodeStart(personId, it) {
 function alertsFor(personId) {
   const p = personById[personId];
   const now = nowTime();
-  const a = assess({ machine, person: p, cells: CELLS, mission: MISSION, now });
-  const s = assessShip({ machine, ship: SHIP, cells: CELLS, mission: MISSION, now });
+  const a = assess({ machine, person: p, cells: CELLS, mission: mission(), now });
+  const s = assessShip({ machine, ship: SHIP, cells: CELLS, mission: mission(), now });
   const out = [];
   for (const it of [...a.body.items, ...a.psyche.items]) {
     const tx = itemText(it, p);
@@ -1690,8 +1804,8 @@ function alertsFor(personId) {
 function sentTitle(r) {
   const where = r.report.to === 'doctor-onboard' ? 'the doctor on board' : 'the doctor on Earth';
   const t = r.report.topic;
-  if (t === 'talk-request' || r.report.text === TALK_REQUEST_TEXT) return 'Request for a private call, to Earth';
-  if (t === 'letter-to-psychologist' || r.report.text.startsWith('Private letter for my psychologist')) return 'Private letter for your psychologist, to Earth';
+  if (isTalkRequest(r.report)) return 'Request for a private call, to Earth';
+  if (isLetter(r.report)) return 'Private letter for your psychologist, to Earth';
   if (t === 'alarm') return `Automatic alarm message, to ${where}`;
   if (t === 'alarm-clear') return `Automatic all clear, to ${where}`;
   if (t === 'pmc') return `Summary for the private medical conference, to ${where}`;
@@ -1720,13 +1834,14 @@ function renderAlerts() {
   const count = (lv) => list.filter((x) => x.level === lv).length;
   const unseen = list.filter((x) => !ui.seen.has(x.id));
   const cell = (lv, label) => { const n = count(lv); return h('div', { class: n ? 'on' : '' }, h('span', { class: n ? `lvc${lv}` : '' }, icon(LEVEL_ICON[lv], { size: 16 }), label), h('b', { class: n ? `lvc${lv}` : '' }, String(n))); };
-  const markRead = (x) => { ui.seen.add(x.id); acked.add(x.id); savePrefs(); render(); };
+  // The pressed button goes away once a message is read, so the keyboard moves to that message's "What to do".
+  const markRead = (x) => { ui.seen.add(x.id); acked.add(x.id); savePrefs(); render(); const next = document.querySelector(`[data-fk="todo:${CSS.escape(x.id)}"]`); if (next) next.focus(); };
   fill(host,
     h('div', { class: 'screen-head' }, h('h1', {}, 'Messages'), h('p', {}, list.length ? `${unseen.length ? `${unseen.length} new. ` : ''}The most important first. The levels and their thresholds are drafts; the team decides.` : 'You will see a message here only when something needs you.')),
     h('div', { class: 'count-strip' }, cell(LEVEL.URGENT, 'Urgent'), cell(LEVEL.ACTION, 'Needs action'), cell(LEVEL.ATTENTION, 'Attention')),
     h('div', { class: 'actions' },
-      unseen.length ? btn('secondary small', 'Mark all as read', () => { for (const x of list) { ui.seen.add(x.id); acked.add(x.id); } savePrefs(); render(); }, 'check') : null,
-      btn('secondary small', 'Silence all sounds', () => { silenceNow(); renderBar(); toast('Silenced. A new alert will sound again. Settings can turn off the needs-action tone; urgent alarms always sound.'); }, 'bell-off')),
+      unseen.length ? btn('secondary small', 'Mark all as read', () => { for (const x of list) { ui.seen.add(x.id); acked.add(x.id); } savePrefs(); render(); const next = document.querySelector('[data-fk="silence"]'); if (next) next.focus(); }, 'check') : null,
+      btn('secondary small', 'Silence all sounds', () => { silenceNow(); renderBar(); toast('Silenced. A new alert will sound again. Settings can turn off the needs-action tone; urgent alarms always sound.'); }, 'bell-off', { 'data-fk': 'silence' })),
     list.length ? h('ul', { class: 'msgs' }, ...list.map((x) => {
       const read = ui.seen.has(x.id);
       return h('li', { class: `card msg ${read ? 'read' : LV_CLASS[x.level]}` },
@@ -1734,11 +1849,12 @@ function renderAlerts() {
         h('h3', {}, x.title),
         h('p', {}, x.text, h('span', { class: 'muted' }, ` · ${x.system}`)),
         h('div', { class: 'actions' },
-          btn('proc small', 'What to do', () => openProcedure(x), 'list-checks'),
+          btn('proc small', 'What to do', () => openProcedure(x), 'list-checks', { 'data-fk': `todo:${x.id}` }),
           x.camera ? btn('secondary small', 'I am okay: false alarm', () => falseAlarm(x), 'check', { 'data-tip': 't:falsealarm' }) : null,
           x.indicator ? btn('secondary small', 'Chart', () => openDetail(x.indicator), 'chart-line') : null,
           read ? null : btn('secondary small', 'Mark as read', () => markRead(x), 'check')));
     })) : h('div', { class: 'card' }, h('p', {}, h('b', {}, 'No messages.')), h('p', { class: 'muted' }, 'You will see a message here only when something needs you.')),
+    reports.length ? pinNote(personById[ui.person], 'read your sent messages below') : null,
     h('h2', { class: 'section-title' }, 'Sent messages'),
     reports.length || notSent.length ? h('ul', { class: 'msgs' },
       ...notSent.map((u) => sentRow(u.event, 'unsent', u.why)),
@@ -1768,23 +1884,126 @@ async function falseAlarm(x) {
 }
 
 // ---------- panels: AI, doctor, advice, articles, procedure ----------
-// Panels open as a sheet beside the screen and do not block it (NASA's HIDH prefers non-modal dialogs).
+// Panels open as a sheet beside the screen and do not block it (NASA's HIDH prefers non-modal dialogs). The sheet
+// starts below the status line (index.html), so the Help key and a crewmate's alarm line stay in view. On a phone
+// the sheet covers the screen, so the page behind it is made inert: Tab stays in the sheet, the status line and the keys.
 let panelReturn = null;
-function openPanel(title, body, actions = [], { closeLabel = 'Close' } = {}) {
-  panelReturn = document.activeElement;
+let panelReturnSel = null;
+let panelKey = null;
+const narrowScreen = window.matchMedia('(max-width: 600px)');
+function syncInert() { byId('main').inert = byId('panel').open && narrowScreen.matches; }
+
+// Free text is never thrown away by Escape or Close (ISO 9241-110, error tolerance). What the person typed in a sheet
+// is kept as a draft of that sheet, in this page's memory only (never saved, never sent), and comes back when the
+// same sheet opens again. The anonymous session's box promises "not saved", so that sheet asks once instead.
+// Drafts belong to the signed-in person and are dropped when the person switches.
+const drafts = new Map(); // `${person}|${sheet}` -> { field: text }
+const typed = new Set(); // text boxes the person typed in since they were last saved or sent
+const beforeDraft = new WeakMap(); // a box's own text, before a draft was put back into it
+const fieldName = (ta) => ta.dataset.draft || ta.getAttribute('aria-label') || (ta.labels && ta.labels[0] ? ta.labels[0].textContent.trim() : '') || ta.id || 'text';
+const draftKey = () => (ui.person && panelKey ? `${ui.person}|${panelKey}` : null);
+const panelBoxes = () => [...byId('panel').querySelectorAll('textarea')];
+function keepDrafts() {
+  const k = draftKey();
+  if (!k) return 0;
+  const found = {};
+  for (const ta of panelBoxes()) if (typed.has(ta) && ta.dataset.nodraft === undefined && ta.value.trim()) found[fieldName(ta)] = ta.value;
+  const n = Object.keys(found).length;
+  if (n) drafts.set(k, { ...(drafts.get(k) || {}), ...found });
+  return n;
+}
+function restoreDrafts() {
+  const k = draftKey();
+  const saved = k ? drafts.get(k) : null;
+  if (!saved) return;
+  let back = 0;
+  for (const ta of panelBoxes()) {
+    const name = fieldName(ta);
+    if (saved[name] === undefined || ta.dataset.nodraft !== undefined) continue;
+    beforeDraft.set(ta, ta.value);
+    ta.value = saved[name];
+    typed.add(ta);
+    delete saved[name];
+    back += 1;
+  }
+  if (!Object.keys(saved).length) drafts.delete(k);
+  if (back) showDraftNote();
+}
+function showDraftNote() {
+  const note = h('div', { class: 'sheet-note', role: 'status' },
+    h('p', {}, 'Your unsent text from before is back. It was kept as a draft on this screen only, until this page closes.'),
+    h('div', { class: 'actions' }, btn('secondary small', 'Discard the draft', () => {
+      for (const ta of panelBoxes()) if (beforeDraft.has(ta)) { ta.value = beforeDraft.get(ta); beforeDraft.delete(ta); typed.delete(ta); }
+      byId('panel-ask').replaceChildren();
+      toast('Draft discarded.');
+    }, 'x')));
+  byId('panel-ask').replaceChildren(note);
+}
+// After a successful save or send, what is in the boxes is no longer a draft.
+function markSaved() { for (const ta of panelBoxes()) { typed.delete(ta); beforeDraft.delete(ta); } }
+// A box that appears later (the plan's fields, the journal's letter) gets its draft back too.
+const panelWatch = new MutationObserver((list) => { if (list.some((r) => [...r.addedNodes].some((n) => n.nodeType === 1 && (n.matches('textarea') || n.querySelector('textarea'))))) restoreDrafts(); });
+panelWatch.observe(byId('panel-body'), { childList: true, subtree: true });
+byId('panel').addEventListener('input', (e) => { if (e.target && e.target.matches && e.target.matches('textarea')) typed.add(e.target); });
+
+function openPanel(title, body, actions = [], { key = title, closeLabel = 'Close' } = {}) {
+  const dlg = byId('panel');
+  const kept = dlg.open ? keepDrafts() : 0;
+  if (dlg.open) forgetSessionText();
+  // The first opener keeps the focus to go back to, also while the person moves between the mind tools.
+  const a = document.activeElement;
+  if (!dlg.open || !panelReturn) { panelReturn = a && !dlg.contains(a) ? a : panelReturn; panelReturnSel = selectorOf(panelReturn); }
+  panelKey = key;
+  typed.clear();
+  byId('panel-ask').replaceChildren();
   byId('panel-title').textContent = title;
   byId('panel-body').replaceChildren(...body.filter(Boolean));
-  byId('panel-actions').replaceChildren(...actions.filter(Boolean), btn('secondary', closeLabel, () => closePanel()));
-  const dlg = byId('panel');
+  byId('panel-actions').replaceChildren(...actions.filter(Boolean), btn('secondary', closeLabel, () => closePanel({ asked: true })));
+  restoreDrafts();
   if (dlg.open) dlg.close();
   dlg.show();
+  dlg.scrollTop = 0;
+  syncInert();
   byId('panel-x').focus();
+  if (kept) toast('What you wrote there is kept as a draft on this screen: it comes back when you open it again.');
 }
-function closePanel() {
+
+// The anonymous session's box is never kept. Closing it with words in it asks once; any other way says so.
+function sessionBox() { const b = byId('panel').querySelector('textarea[data-session]'); return b && b.value.trim() ? b : null; }
+function forgetSessionText() { const b = sessionBox(); if (b) { b.value = ''; toast('What you wrote in the session was forgotten, as promised: it is never saved.'); } }
+function askBeforeClosing(box) {
+  const keepBtn = btn('primary small', 'Keep writing', () => { byId('panel-ask').replaceChildren(); box.focus(); }, 'check');
+  byId('panel-ask').replaceChildren(h('div', { class: 'sheet-note', role: 'alert' },
+    h('p', {}, h('b', {}, 'Close and forget what you wrote?'), ' It is not saved anywhere, so it cannot come back.'),
+    h('div', { class: 'actions' }, keepBtn, btn('secondary small', 'Forget it and close', () => { box.value = ''; closePanel(); }, 'x'))));
+  keepBtn.focus();
+}
+
+// asked: the person pressed Close or Escape. Text they typed is kept as a draft, or the session asks first.
+function closePanel({ asked = false } = {}) {
   const dlg = byId('panel');
-  if (dlg.open) dlg.close();
-  if (panelReturn && document.contains(panelReturn)) panelReturn.focus();
+  if (dlg.open) {
+    const box = sessionBox();
+    if (asked && box) {
+      if (byId('panel-ask').querySelector('[role="alert"]')) { byId('panel-ask').replaceChildren(); box.focus(); return; }
+      askBeforeClosing(box);
+      return;
+    }
+    const kept = keepDrafts();
+    forgetSessionText();
+    dlg.close();
+    if (kept) toast('What you wrote is kept as a draft on this screen: it comes back when you open this again.');
+  }
+  panelKey = null;
+  typed.clear();
+  byId('panel-ask').replaceChildren();
+  syncInert();
+  const back = sameControl(panelReturn, panelReturnSel);
+  if (back) back.focus();
+  panelReturn = null;
+  panelReturnSel = null;
 }
+narrowScreen.addEventListener('change', syncInert);
 
 function summaryFor(a, kind, indicator) {
   const p = personById[ui.person];
@@ -1807,38 +2026,72 @@ const COPING = [
   { id: 'ground', topic: 'Frustrated with the ground', title: 'Frustrated with the ground', steps: ['This is common: in Mars-500, conflicts with mission control were reported five times more often than conflicts within the crew.', 'Write it down first and read it again after sleep.', 'Raise it calmly in a planning conference or your private conference.'], src: 'Mars-500 (PLoS ONE, 2014); ISS weekly questionnaires (Kanas, 2007).' },
   { id: 'low', topic: 'Low days', title: 'Low days', steps: ['Pick one small, doable thing you used to enjoy, and decide when.', 'Have one real conversation today, even a short one.', 'Check your sleep: in ISS crews, nights under 6 hours went with more stress.', "If low days keep coming, use 'Tell the doctor on Earth'."], src: 'CBT steps; CBT-based chatbots reduced depression symptoms in 29 trials (2026).' },
 ];
-// Simple word rules, outside any AI: these words open Help now at once (APA 2025: detect and interrupt; the AI never decides alone).
-const RISK_WORDS = ['suicide', 'suicidal', 'kill myself', 'end my life', 'want to die', 'wish i was dead', 'hurt myself', 'harm myself', 'better off dead', 'no reason to live', 'cannot go on', "can't go on"];
-const matchesRisk = (text) => RISK_WORDS.some((w) => String(text || '').toLowerCase().includes(w));
+// The word rule that opens Help now lives in src/support.js (matchesRisk), so every mind tool uses the same one.
 const privacyShown = new Set();
 
-function helpNowCard() {
+// "Help now": fixed steps to a person, not AI, that work with the AI off. Three ways to a person now: a crewmate,
+// a private call with the ground (the line it sends is shown before it goes, and it is sent with its topic), and
+// the plan for hard days. The Help key on the status line reaches the crew and the doctor at once.
+function lastTalkRequest() {
+  const times = stored.filter((e) => e.kind === 'report' && e.person === ui.person && isTalkRequest(e.report)).map((e) => e.time).sort();
+  return times.length ? times[times.length - 1] : null;
+}
+function helpNowCard({ withPlan = true } = {}) {
+  const p = personById[ui.person];
+  const plan = p ? loadMind(p.id).plan : null;
+  const who = plan && !plan.example ? String(plan.onboard || '').trim() : '';
+  const result = h('div', { class: 'help-result' });
+  const crewmate = () => fill(result, h('p', { role: 'status' }, `Go to a crewmate now, in person.${who ? ` From your plan: ${who}` : ''} You do not have to explain everything: "I am having a hard day, can we talk?" is enough. Nothing was sent.`));
+  const ground = () => {
+    const before = lastTalkRequest();
+    const send = async () => {
+      const res = await queueReport('doctor-earth', TALK_REQUEST_TEXT, TALK_REQUEST_TOPIC);
+      if (!res.ok) { fill(result, h('p', { role: 'status' }, 'Could not queue the request. Please go to a crewmate or your crew medical officer now.')); return; }
+      fill(result, h('p', { role: 'status' }, `Requested at GMT ${gmtDOY(new Date())}. ${sentText('doctor-earth', res, 'Your request')} Until then, a crewmate or your crew medical officer is close by.`));
+    };
+    fill(result,
+      before ? h('p', {}, `Already requested at GMT ${gmtDOY(before)}. You can ask again.`) : null,
+      h('p', {}, 'This line goes to your psychologist or flight surgeon on Earth:'),
+      h('blockquote', { class: 'help-quote' }, TALK_REQUEST_TEXT),
+      ui.ship.linkToEarth ? null : h('p', { class: 'note' }, 'There is no link to Earth now: it waits in the outbox and goes when the link is back. Tell the crew medical officer on board too.'),
+      h('div', { class: 'actions' }, btn('primary small', before ? 'Send it again' : 'Send the request', send, 'send'), btn('secondary small', 'Cancel', () => fill(result, h('p', { role: 'status' }, 'Nothing was sent.')), 'x')));
+    const first = result.querySelector('.btn');
+    if (first) first.focus();
+  };
   return h('div', { class: 'help-now', role: 'group', 'aria-label': 'Help now' },
     h('p', { class: 'tp-title' }, 'Help now'),
-    h('ol', { class: 'links' },
-      h('li', {}, 'Tell a crewmate now, in person.'),
-      h('li', {}, 'Ask the ground for a private medical conference with your flight surgeon or psychologist.', ui.ship.linkToEarth ? '' : ' There is no link now: the request waits in the outbox, so also tell the crew medical officer on board.'),
-      h('li', {}, 'Use your plan for hard days, written before flight with your psychologist.')),
+    h('p', {}, 'You do not have to handle this alone. Reach a person now:'),
     h('div', { class: 'actions' },
-      btn('primary small', 'Ask for a private conference', () => openDoctor({ body: { items: [] }, psyche: { items: [] } }, 'psyche'), 'stethoscope'),
-      btn('secondary small', 'Open my plan', () => openPlan(), 'shield')),
-    h('p', { class: 'note' }, 'Fixed steps, not AI; they work with the AI off. Nothing is sent by itself. Whether anything more should happen in immediate danger is the team\'s decision.'));
+      btn('primary small', 'Talk to a crewmate now', crewmate, 'users'),
+      btn('secondary small', 'Request a private call with the ground', ground, 'message-square'),
+      withPlan ? btn('secondary small', 'Open my plan', () => openPlan(), 'shield') : null),
+    result,
+    h('p', {}, h('b', {}, 'In immediate danger: '), 'hold the Help key on the status line for 2 seconds. It alerts the crew and the doctor.'),
+    h('p', { class: 'note' }, "Fixed steps, not AI; they work with the AI off. Nothing is sent unless you press Send. Whether anything more should happen in immediate danger is the team's decision."));
 }
 
+// The anonymous session. It opens with the AI off too: then only the chat with the AI is missing, while Help now,
+// the coping cards, writing it out and the plan work as always.
 function openSupport(a) {
   const p = personById[ui.person];
-  const body = h('div', { class: 'support' });
-  const helpSlot = h('div', {});
-  const showHelp = () => { helpSlot.replaceChildren(helpNowCard()); helpSlot.scrollIntoView({ block: 'nearest' }); };
+  const view = h('div', { class: 'support' });
+  // A live alert region that is always there, so Help now is announced when the word rule opens it.
+  const helpSlot = h('div', { class: 'help-slot', role: 'alert' });
+  const showHelp = ({ byRule = false, focus = false } = {}) => {
+    if (!helpSlot.firstChild) helpSlot.replaceChildren(...[helpNowCard(), byRule ? h('p', { class: 'note' }, RISK_RULE.text) : null].filter(Boolean));
+    helpSlot.scrollIntoView({ block: 'nearest' });
+    if (focus) { const b = helpSlot.querySelector('.btn'); if (b) b.focus(); }
+  };
   const cardSlot = h('div', {});
   const openCard = (cd) => cardSlot.replaceChildren(h('div', { class: 'coping' },
     h('p', { class: 'tp-title' }, cd.title),
     h('ol', { class: 'links' }, ...cd.steps.map((s) => h('li', {}, s))),
     h('p', { class: 'note' }, cd.src)));
-  const box = h('textarea', { 'aria-label': 'Write it out. Not saved.', placeholder: 'Write it out. This is not saved and not sent.', oninput: (e) => { if (matchesRisk(e.target.value)) showHelp(); } });
-  const talk = () => fill(body,
-    h('div', { class: 'actions' }, btn('secondary small', 'Help now', showHelp, 'circle-alert', { 'data-tip': 't:helpnow' })),
-    helpSlot,
+  const box = h('textarea', { 'aria-label': 'Write it out. Not saved.', placeholder: 'Write it out. This is not saved and not sent.', 'data-session': '', 'data-nodraft': '', oninput: (e) => { if (matchesRisk(e.target.value)) showHelp({ byRule: true }); } });
+  const talk = () => fill(view,
+    h('div', { class: 'actions' },
+      btn('secondary small', 'Help now', () => showHelp({ focus: true }), 'circle-alert', { 'data-tip': 't:helpnow', 'data-fk': 'session:help' }),
+      btn('secondary small', 'My plan for hard days', () => openPlan(), 'shield')),
     h('p', {}, h('b', {}, 'What is it about?'), ' ', h('span', { class: 'muted' }, 'Pick one for a few steps that help.')),
     h('div', { class: 'chips' }, ...COPING.map((cd) => h('button', { type: 'button', class: 'chip neutral topic', onclick: () => openCard(cd) }, cd.topic))),
     cardSlot,
@@ -1847,39 +2100,48 @@ function openSupport(a) {
     h('p', {}, h('b', {}, 'Is there one person you could talk to today?'), ' A crewmate, a family call, or your next private talk with your psychologist.'),
     h('div', { class: 'actions' }, btn('secondary small', 'Tell the doctor on Earth', () => openDoctor(a, 'psyche'), 'stethoscope', { 'data-tip': 't:tellDoctor' })),
     h('p', { class: 'note' }, `No AI model is connected in this version${ui.ship.aiWorks ? '' : ', and the AI is off'}; everything above works without it. When one is connected it is told it is an AI and says so, gives no diagnosis or medicine advice, uses only the on-board library with sources, and ends every talk by pointing to a person.`));
-  const privacy = () => fill(body,
+  const privacy = () => fill(view,
     h('div', { class: 'privacy-card' },
       h('p', { class: 'tp-title' }, 'Before you talk: how private is this?'),
       h('ul', { class: 'links' },
         h('li', {}, 'This is AI support: a program, not a person and not a psychologist.'),
         h('li', {}, 'What you write here is not saved and not sent. Nobody reads it.'),
-        h('li', {}, 'Your daily check-ins are saved, like NASA\'s health monitoring, and go to the doctor only if you choose.'),
+        h('li', {}, "Your daily check-ins are saved in your record on this station computer, like NASA's health monitoring. This screen sends them to a doctor only if you choose."),
         h('li', {}, 'Help now is always here: fixed steps to reach a person, even with the AI off.'),
-        h('li', {}, 'Whether anything more happens in immediate danger is the team\'s decision; until then nothing is sent by itself.')),
-      h('div', { class: 'actions' }, btn('primary small', 'I understand', () => { privacyShown.add(p.id); talk(); }, 'check'))));
+        h('li', {}, "Whether anything more happens in immediate danger is the team's decision; until then nothing is sent by itself.")),
+      h('div', { class: 'actions' },
+        btn('primary small', 'I understand', () => { privacyShown.add(p.id); talk(); const first = view.querySelector('.btn'); if (first) first.focus(); }, 'check'),
+        btn('secondary small', 'Help now', () => showHelp({ focus: true }), 'circle-alert', { 'data-tip': 't:helpnow' }))));
   if (privacyShown.has(p.id)) talk(); else privacy();
-  openPanel('Anonymous session with AI support', [h('p', { class: 'ai-badge' }, icon('sparkles', { size: 16 }), 'AI support, not a psychologist'), body]);
+  openPanel('Anonymous session with AI', [
+    h('p', { class: 'ai-badge' }, icon('sparkles', { size: 16 }), 'AI support, not a psychologist'),
+    ui.ship.aiWorks ? null : h('p', { class: 'sheet-note' }, h('b', {}, 'The AI is off now. '), 'The chat with the AI is not available; Help now, the coping cards, writing it out and your plan below work without it.'),
+    helpSlot,
+    view,
+  ], [], { key: 'session' });
 }
 
 function openAi(kind, a) {
   if (kind === 'psyche') { openSupport(a); return; }
   const summary = summaryFor(a, kind);
   openPanel('Analyse with AI', [
-    h('p', {}, 'No AI is connected to this version yet. Which AI, and what exactly it does, is the team\'s decision.'),
+    h('p', {}, "No AI is connected to this version yet. Which AI, and what exactly it does, is the team's decision."),
     h('p', {}, "What checked facts say: NASA's crew medical officer assistant (CMO-DA) runs with no link to Earth on a ground copy of the ISS computer and is tested only on Earth so far; open models can run right in a web browser without internet."),
     h('p', { class: 'muted' }, kind === 'psyche' ? 'Anonymous session: these check-ins do not go to the doctor unless you press "Tell the doctor on Earth" yourself.' : 'This is what the AI would get from the automation:'),
     summary ? h('pre', { class: 'code', style: 'white-space: pre-wrap' }, summary) : null,
   ]);
 }
 
+// One name for the panel of checked suggestions everywhere: "Small things that help".
+const ADVICE = 'Small things that help';
 const backToMind = () => btn('secondary small back', 'All mind tools', () => openMindSupport(), 'chevron-left');
 function openAdvice() {
   const host = h('div');
   const p = personById[ui.person];
-  const a = assess({ machine, person: p, cells: CELLS, mission: MISSION, now: nowTime() });
+  const a = assess({ machine, person: p, cells: CELLS, mission: mission(), now: nowTime() });
   const sig = topicSignal(machine.history(p.id, 'weighing'), nowTime());
   renderTips(host, { signals: { topic: sig ? sig.id : null, lowMood: a.psyche.level > LEVEL.FINE, poorSleep: (a.info || []).some((x) => x.cell && x.cell.indicator === 'sleep') }, onOpenBreak: () => { closePanel(); openEarthBreak(); }, onOpenJournal: () => openJournal() });
-  openPanel('Mind support', [backToMind(), host, h('p', { class: 'note' }, 'Who gives advice, the automation or the AI, is still the team\'s open question. These are checked suggestions with their sources.'), h('p', {}, h('b', {}, 'Reading for people who prefer to read without the AI')), articleLinks(null)]);
+  openPanel(ADVICE, [backToMind(), host, h('p', { class: 'note' }, "Who gives advice, the automation or the AI, is still the team's open question. These are checked suggestions with their sources."), h('p', {}, h('b', {}, 'Reading for people who prefer to read without the AI')), articleLinks(null)], [], { key: 'advice' });
 }
 
 // ---------- private mind tools: journal, plan, steps, Earth break; kept only in this browser for this person ----------
@@ -1890,6 +2152,23 @@ function saveMind(id, data) { try { localStorage.setItem(MIND_KEY(id), JSON.stri
 // src/security.js takes a short id of lower-case letters, digits and hyphens).
 const queueReport = async (to, text, topic = null) => keep({ v: 1, kind: 'report', time: new Date().toISOString(), person: ui.person, state: { ...ui.ship }, report: { to, text: String(text).slice(0, 6000), ...(topic ? { topic } : {}) } });
 
+// The private tools say truly who can read them: anyone who opens this person's screen on this computer, unless a
+// PIN is set (src/privacy.js). "Set a PIN" goes straight to the PIN in Settings.
+const pinIsSet = (p) => Boolean(p && pinAvailable() && hasPin(p.id));
+function goToPin() {
+  setScreen('setup');
+  const field = byId('pin-new');
+  if (field) { field.scrollIntoView({ block: 'center' }); field.focus({ preventScroll: true }); }
+}
+const setPinHandler = (p) => (p && !p.real && pinAvailable() && !hasPin(p.id) ? () => goToPin() : null);
+function pinNote(p, what = 'open these tools and read what you wrote') {
+  if (!p || p.real) return null;
+  if (pinIsSet(p)) return h('p', { class: 'note' }, 'Your screen opens only with your PIN on this computer.');
+  return h('div', { class: 'sheet-note' },
+    h('p', {}, `Anyone who opens your screen on this computer can ${what}, unless you set a PIN.`),
+    pinAvailable() ? h('div', { class: 'actions' }, btn('secondary small', 'Set a PIN', () => goToPin(), 'shield')) : h('p', { class: 'note' }, 'A PIN needs a secure page: open the program on this computer (127.0.0.1) or over https.'));
+}
+
 function openMindSupport() {
   const p = personById[ui.person];
   const day = Math.floor((msOf(nowTime()) - msOf(MISSION.launch)) / DAY) + 1;
@@ -1897,29 +2176,31 @@ function openMindSupport() {
   if (ui.example) renderCalendar(cal, { flightDay: day, onOpen: () => {} });
   openPanel('Mind support', [
     h('p', {}, 'Tools that work on board with no AI and no link to Earth, from NASA research and proven methods. What you write stays in this browser and is sent only if you choose.'),
+    pinNote(p),
     h('div', { class: 'tool-list' },
-      btn('secondary', 'Small things that help', () => openAdvice(), 'list'),
+      btn('secondary', ADVICE, () => openAdvice(), 'list'),
+      btn('secondary', 'Start an anonymous session with AI', () => openSupport(assess({ machine, person: p, cells: CELLS, mission: mission(), now: nowTime() })), 'sparkles'),
       btn('secondary', 'Private journal', () => openJournal(), 'message-square'),
       btn('secondary', 'My plan for hard days', () => openPlan(), 'shield'),
       btn('secondary', 'Work through it in 5 steps', () => openSteps(), 'list-checks'),
       btn('secondary', 'Take a 3-minute Earth break', () => { closePanel(); openEarthBreak(); }, 'orbit'),
-      btn('secondary', 'Do the 3-minute reaction test', () => { closePanel(); openReactionTest('full'); }, 'zap'),
-      btn('secondary', 'Anonymous session with AI support', () => openSupport(assess({ machine, person: p, cells: CELLS, mission: MISSION, now: nowTime() })), 'sparkles')),
+      btn('secondary', 'Do the 3-minute reaction test', () => { closePanel(); openReactionTest('full'); }, 'zap')),
     ui.example ? cal : null,
-  ]);
+  ], [], { key: 'mind' });
 }
 function openJournal() {
   const p = personById[ui.person];
   const data = loadMind(p.id);
   const host = h('div');
   const ctl = renderJournal(host, {
-    entries: data.journal, link: ui.ship.linkToEarth,
+    entries: data.journal, link: ui.ship.linkToEarth, helpNow: () => helpNowCard(), pinSet: pinIsSet(p), onSetPin: setPinHandler(p),
     onSave: (entry) => { const d = loadMind(p.id); d.journal = [entry, ...d.journal.filter((e) => e.id !== entry.id)]; if (!saveMind(p.id, d)) throw new Error('storage'); ctl && ctl.update(d.journal, { link: ui.ship.linkToEarth }); },
     onToggleTalk: (id, on) => { const d = loadMind(p.id); d.journal = d.journal.map((e) => (e.id === id ? { ...e, talk: on } : e)); saveMind(p.id, d); ctl && ctl.update(d.journal, { link: ui.ship.linkToEarth }); },
     onDelete: (id) => { const d = loadMind(p.id); d.journal = d.journal.filter((e) => e.id !== id); saveMind(p.id, d); ctl && ctl.update(d.journal, { link: ui.ship.linkToEarth }); },
-    onSendLetter: async (text) => { const res = await queueReport('doctor-earth', text, 'letter-to-psychologist'); if (!res.ok) throw new Error('not saved'); toast(sentText('doctor-earth', res, 'Your letter')); },
+    onSendLetter: async (text) => { const res = await queueReport('doctor-earth', text, LETTER_TOPIC); if (!res.ok) throw new Error('not saved'); toast(sentText('doctor-earth', res, 'Your letter')); },
+    onSent: (ids, time) => { const d = loadMind(p.id); d.journal = d.journal.map((e) => (ids.includes(e.id) ? { ...e, talk: false, sentAt: time } : e)); saveMind(p.id, d); },
   });
-  openPanel('Mind support', [backToMind(), host]);
+  openPanel('Mind support', [backToMind(), host], [], { key: 'journal' });
 }
 function openPlan() {
   const p = personById[ui.person];
@@ -1927,17 +2208,18 @@ function openPlan() {
   const host = h('div');
   renderPlan(host, {
     plan: data.plan, example: ui.example && !p.real, link: ui.ship.linkToEarth, doctorOnBoard: ui.ship.doctorOnBoard,
-    onSave: (plan) => { const d = loadMind(p.id); d.plan = plan; if (!saveMind(p.id, d)) throw new Error('storage'); toast('Your plan is saved in this browser only.'); },
-    onTalkNow: async (kind) => { if (kind === 'ground') { const res = await queueReport('doctor-earth', TALK_REQUEST_TEXT, 'talk-request'); if (!res.ok) throw new Error('not saved'); toast(sentText('doctor-earth', res, 'Your request for a private call')); } },
+    helpNow: () => helpNowCard({ withPlan: false }), pinSet: pinIsSet(p), onSetPin: setPinHandler(p),
+    onSave: (plan) => { const d = loadMind(p.id); d.plan = plan; if (!saveMind(p.id, d)) throw new Error('storage'); markSaved(); toast('Your plan is saved in this browser only.'); },
+    onTalkNow: async (kind) => { if (kind === 'ground') { const res = await queueReport('doctor-earth', TALK_REQUEST_TEXT, TALK_REQUEST_TOPIC); if (!res.ok) throw new Error('not saved'); toast(sentText('doctor-earth', res, 'Your request for a private call')); } },
   });
-  openPanel('Mind support', [backToMind(), host]);
+  openPanel('Mind support', [backToMind(), host], [], { key: 'plan' });
 }
 function openSteps() {
   const p = personById[ui.person];
   const data = loadMind(p.id);
   const host = h('div');
-  renderSteps(host, { worksheet: data.worksheets[0] || null, onSave: (ws) => { const d = loadMind(p.id); d.worksheets = [ws, ...d.worksheets.filter((w) => w.id !== ws.id)].slice(0, 20); if (!saveMind(p.id, d)) throw new Error('storage'); toast('Saved in this browser only.'); } });
-  openPanel('Mind support', [backToMind(), host]);
+  renderSteps(host, { worksheet: data.worksheets[0] || null, helpNow: () => helpNowCard(), onSave: (ws) => { const d = loadMind(p.id); d.worksheets = [ws, ...d.worksheets.filter((w) => w.id !== ws.id)].slice(0, 20); if (!saveMind(p.id, d)) throw new Error('storage'); markSaved(); toast('Saved in this browser only.'); } });
+  openPanel('Mind support', [backToMind(), host], [], { key: 'steps' });
 }
 function openEarthBreak() {
   const p = personById[ui.person];
@@ -1962,12 +2244,12 @@ function openReactionTest(mode) {
 // ---------- quick logs: a symptom in about ten seconds, a medicine in two taps (private) ----------
 function openSymptomLog() {
   const host = h('div');
-  symptomLog(host, { onSave: async (e) => { const r = await addReading(e.indicator, e.value, { time: e.time }); if (!r.ok) throw new Error('not saved'); closePanel(); toast('Logged privately.'); }, onCancel: () => closePanel() });
+  symptomLog(host, { onSave: async (e) => { const r = await addReading(e.indicator, e.value, { time: e.time }); if (!r.ok) throw new Error('not saved'); closePanel(); toast('Logged in your record on this station computer. Not sent to anyone.'); }, onCancel: () => closePanel() });
   openPanel('Log a symptom', [host]);
 }
 function openMedicineLog() {
   const host = h('div');
-  medicineLog(host, { onSave: async (e) => { const r = await addReading(e.indicator, e.value, { time: e.time }); if (!r.ok) throw new Error('not saved'); closePanel(); toast('Logged privately.'); }, onCancel: () => closePanel() });
+  medicineLog(host, { onSave: async (e) => { const r = await addReading(e.indicator, e.value, { time: e.time }); if (!r.ok) throw new Error('not saved'); closePanel(); toast('Logged in your record on this station computer. Not sent to anyone.'); }, onCancel: () => closePanel() });
   openPanel('I took a medicine', [host]);
 }
 function privateLogCard(p, now) {
@@ -2007,7 +2289,7 @@ function openProcedure(x) {
     list.replaceChildren(...x.steps.map((s, i) => h('li', { class: `step ${done.has(i) ? 'done' : ''} ${i === current ? 'current' : ''}` },
       h('span', { class: 'n' }, String(i + 1)),
       typeof s === 'string' ? h('p', {}, s) : h('p', {}, s.text, s.link ? [' ', h('a', { href: s.link.url, target: '_blank', rel: 'noopener' }, s.link.name)] : null),
-      h('input', { type: 'checkbox', 'aria-label': `Step ${i + 1} done`, checked: done.has(i) ? true : null, onchange: (e) => { if (e.target.checked) done.add(i); else done.delete(i); draw(); } }))));
+      h('input', { type: 'checkbox', 'aria-label': `Step ${i + 1} done`, 'data-fk': `step:${i}`, checked: done.has(i) ? true : null, onchange: (e) => { if (e.target.checked) done.add(i); else done.delete(i); keepFocus(draw); } }))));
   };
   draw();
   openPanel(x.title, [
@@ -2016,28 +2298,54 @@ function openProcedure(x) {
     h('p', { class: 'because' }, h('b', {}, 'Because: '), x.text),
     list,
     h('p', { class: 'note' }, "By the program's rules: a draft; the team decides."),
-  ], [x.indicator ? btn('secondary', 'Open the chart', () => { closePanel(); openDetail(x.indicator); }, 'chart-line') : null]);
+  ], [x.indicator ? btn('secondary', 'Open the chart', () => { closePanel(); openDetail(x.indicator); }, 'chart-line') : null], { key: `todo:${x.id}` });
+}
+
+// The results of the mind check-ins in plain words, for "Tell the doctor on Earth": the counts of the last days and
+// a place for the person's own words. They see all of it and can change it before it goes.
+function psycheSummary(p, now) {
+  const days = LEVEL_RULES.psycheDays;
+  const since = msOf(now) - days * DAY;
+  const recent = (ind) => machine.history(p.id, ind).filter((x) => msOf(x.time) >= since && msOf(x.time) <= msOf(now));
+  const count = (ind, val) => recent(ind).filter((x) => x.value === val).length;
+  const sleep = recent('sleepQuality').map((x) => Number(x.value)).filter(Number.isFinite);
+  const lines = [`The results of my check-ins in the last ${days} days:`];
+  if (recent('mood').length) lines.push(`- Mood: ${count('mood', 'bad')} bad, ${count('mood', 'fair')} fair, ${count('mood', 'good')} good.`);
+  if (recent('attitude').length) lines.push(`- Energy: ${count('attitude', 'sluggish')} sluggish, ${count('attitude', 'energetic')} energetic.`);
+  if (sleep.length) lines.push(`- Sleep rating: ${fmtVal(sleep.reduce((t, x) => t + x, 0) / sleep.length)} of 7 on average, over ${sleep.length} ${sleep.length === 1 ? 'night' : 'nights'}.`);
+  if (lines.length === 1) lines.push('- No check-ins in these days.');
+  lines.push('', 'What I want to say:', '');
+  return lines.join('\n');
 }
 
 function openDoctor(a, kind, indicator = null) {
-  const to = ui.ship.doctorOnBoard ? 'doctor-onboard' : 'doctor-earth';
+  // The owner's mind button says "Tell the doctor on Earth", so a mind message always goes to Earth, also with a
+  // doctor on board (a crewmate). Body messages go to the doctor on board when there is one.
+  const to = kind === 'psyche' ? 'doctor-earth' : ui.ship.doctorOnBoard ? 'doctor-onboard' : 'doctor-earth';
   const toText = to === 'doctor-onboard' ? 'the doctor on board' : 'the doctor on Earth';
+  const p = personById[ui.person];
   const area = h('textarea', { id: 'doc-text', 'aria-label': 'Message text' });
-  area.value = summaryFor(a, kind, indicator) || 'Please look at my data.';
+  area.value = kind === 'psyche' ? psycheSummary(p, nowTime()) : summaryFor(a, kind, indicator) || 'Please look at my data.';
   // What will really happen to it, said before Send: the same cases as sentText() after it (FS-02).
   const status = serverDown ? 'The station server is not answering: the message is kept in this browser and goes to the station computer, and from there to the doctor, when it answers again.'
     : store && store.kind !== 'server' ? 'This copy runs without the station server: the message is saved on this computer only, and nothing is sent.'
       : to === 'doctor-earth' ? `${ui.ship.linkToEarth ? 'The message is saved in the outbox and goes to the ground with the next downlink.' : 'There is no link to Earth: the message waits in the outbox and goes when the link is back.'} ${profile().name}: ${profile().reply}.` : 'The message goes to the doctor on board.';
-  openPanel(`Message ${toText}`, [h('p', {}, status), area, h('p', { class: 'note' }, 'The automation drafted this text from your data; you can change it.')], [
+  openPanel(`Message ${toText}`, [
+    h('p', {}, status),
+    kind === 'psyche' && ui.ship.doctorOnBoard ? h('p', { class: 'note' }, 'It goes to the doctor on Earth, as the button says, not to the doctor on board.') : null,
+    area,
+    h('p', { class: 'note' }, 'The automation drafted this text from your data; you can change it.'),
+  ], [
     btn('primary', 'Send', async () => {
-      const event = { v: 1, kind: 'report', time: new Date().toISOString(), person: ui.person, state: { ...ui.ship }, report: { to, text: area.value.slice(0, 4000) } };
+      const event = { v: 1, kind: 'report', time: new Date().toISOString(), person: ui.person, state: { ...ui.ship }, report: { to, text: area.value.slice(0, 4000), ...(kind === 'psyche' ? { topic: 'mind-checkins' } : {}) } };
       const res = await keep(event);
       if (!res.ok) return;
+      markSaved();
       closePanel();
       toast(sentText(to, res));
       render();
     }, 'send'),
-  ]);
+  ], { key: `doctor:${kind}:${to}:${indicator || ''}` });
 }
 
 // ---------- alert sounds ----------
@@ -2319,7 +2627,7 @@ const saveFile = (text, type, name) => {
 
 function drawConnections(host = byId('conn-host'), p = personById[ui.person]) {
   if (!host || !p) return;
-  renderConnections(host, { state: { real: Boolean(p.real), ...ui.conn }, onToggle: toggleFeed, onImport: importFile, onConnect: connectKind });
+  keepFocus(() => renderConnections(host, { state: { real: Boolean(p.real), ...ui.conn }, onToggle: toggleFeed, onImport: importFile, onConnect: connectKind }));
 }
 
 // Standard Bluetooth health devices: heart rate strap, thermometer, blood pressure cuff, pulse oximeter (src/ble.js).
@@ -2602,6 +2910,35 @@ function pinCard(p) {
     status);
 }
 
+// The crew's own mission, for a real flight or an analog: with the example flight off, a name and the launch and
+// landing dates (GMT), kept on this device only (src/mission.js). The status line counts its days and About shows it.
+function missionFields() {
+  if (ui.example) return h('p', { class: 'note' }, 'The example flight is on, so its made-up dates are used. Turn it off under "Simulation, for the demonstration" to set your own mission.');
+  const m = ui.mission || { name: '', launch: '', landing: '' };
+  const name = h('input', { id: 'mi-name', type: 'text', maxlength: String(MISSION_RULES.nameMax), autocomplete: 'off', value: m.name, placeholder: MISSION_RULES.defaultName });
+  const launch = h('input', { id: 'mi-launch', type: 'date', value: m.launch });
+  const landing = h('input', { id: 'mi-landing', type: 'date', value: m.landing });
+  const status = h('p', { class: 'note', id: 'mi-status', role: 'status' });
+  const save = () => {
+    const next = { name: name.value.trim(), launch: launch.value, landing: landing.value };
+    const why = missionProblem(next);
+    if (why) { status.textContent = why; return; }
+    ui.mission = readMission(next);
+    savePrefs();
+    render();
+    toast(`Mission saved on this device: ${flightDayNow() ? flightDayNow().words.toLowerCase() : 'its days are counted on the status line'}.`);
+  };
+  const clear = () => { ui.mission = null; savePrefs(); render(); toast('Mission cleared: no flight day is shown.'); };
+  return h('div', { class: 'mission-own' },
+    h('p', {}, h('b', {}, 'Your mission'), ' ', h('span', { class: 'muted' }, 'For a real flight or an analog. Kept on this device only; the dates are GMT.')),
+    h('div', { class: 'log-form' },
+      h('label', { class: 'log-field mission-name' }, h('span', {}, 'Mission name'), name),
+      h('label', { class: 'log-field' }, h('span', {}, 'Launch'), launch),
+      h('label', { class: 'log-field' }, h('span', {}, 'Landing'), landing)),
+    h('div', { class: 'actions' }, btn('primary small', 'Save the mission', save, 'check', { 'data-fk': 'mission:save' }), ui.mission ? btn('secondary small', 'Clear the mission', clear, 'x') : null),
+    status);
+}
+
 function renderSetup() {
   const host = byId('screen-setup');
   const p = personById[ui.person];
@@ -2616,10 +2953,11 @@ function renderSetup() {
         h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Test the alert sounds'), h('small', {}, 'Plays the needs-action tone, then the urgent tone, so the crew can check them (NASA-STD-3001 Vol 2, 10117).')),
           btn('secondary small', 'Test', () => { caution(); later(() => { warning(0.10); later(() => warning(0.32), 1400); say('Warning. This is a test.'); }, 4200); toast('Sound test: needs action, then urgent.'); }, 'volume-2')),
         h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Display'), h('small', {}, 'Dark suits a dim cabin; light suits a bright one.')),
-          h('div', { class: 'seg small', role: 'group', 'aria-label': 'Display' }, ...THEMES.map(([k, label]) => h('button', { type: 'button', 'aria-pressed': String(pick === k), onclick: () => { setTheme(k); renderSetup(); } }, pick === k ? icon('check', { size: 14 }) : null, label))))),
+          h('div', { class: 'seg small', role: 'group', 'aria-label': 'Display' }, ...THEMES.map(([k, label]) => h('button', { type: 'button', 'aria-pressed': String(pick === k), 'data-fk': `theme:${k}`, onclick: () => { setTheme(k); keepFocus(renderSetup); } }, pick === k ? icon('check', { size: 14 }) : null, label))))),
       h('section', { class: 'card' }, cornerTip('t:mission', 'the mission profile'), h('h2', {}, 'Mission'),
         h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Where the crew is'), h('small', {}, `${profile().name}: signal delay ${profile().delay} one way; ${profile().evac}.`)),
-          h('div', { class: 'seg small', role: 'group', 'aria-label': 'Mission' }, ...[['iss', 'ISS'], ['moon', 'Moon'], ['mars', 'Mars']].map(([k, label]) => h('button', { type: 'button', 'aria-pressed': String(ui.profile === k), onclick: () => { ui.profile = k; savePrefs(); renderSetup(); renderBar(); } }, ui.profile === k ? icon('check', { size: 14 }) : null, label))))),
+          h('div', { class: 'seg small', role: 'group', 'aria-label': 'Mission' }, ...[['iss', 'ISS'], ['moon', 'Moon'], ['mars', 'Mars']].map(([k, label]) => h('button', { type: 'button', 'aria-pressed': String(ui.profile === k), 'data-fk': `profile:${k}`, onclick: () => { ui.profile = k; savePrefs(); keepFocus(() => { renderSetup(); renderBar(); }); } }, ui.profile === k ? icon('check', { size: 14 }) : null, label)))),
+        missionFields()),
       h('section', { class: 'card' }, cornerTip('t:camera', 'the camera'), h('h2', {}, 'Camera'),
         h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, camOn ? 'The camera is on' : 'The camera is off'), h('small', {}, 'It watches for a hand held to the chest and asks "Are you okay?" first. A sleeping person is ignored. It never guesses feelings from your face or voice. It turns itself off after an hour; not for crew quarters. Video never leaves this computer and is never stored.')),
           h('button', { type: 'button', class: camOn ? 'btn secondary' : 'btn primary', id: 'cam-toggle', onclick: toggleCamera }, camOn ? 'Turn the camera off' : 'Turn the camera on')),
@@ -2632,7 +2970,9 @@ function renderSetup() {
           h('p', { class: 'note' }, "Google MediaPipe models (Apache 2.0) run on this computer. Google's model cards say they are not meant for decisions a human life depends on: this is a demonstration."))),
       connectionsCard(p),
       h('section', { class: 'card' }, h('h2', {}, 'About'),
-        h('p', {}, `${MISSION.name}: launch ${fmtDate(MISSION.launch)}, landing ${fmtDate(MISSION.landing)}.`),
+        h('p', {}, ui.example ? `${MISSION.name}: launch ${fmtDate(MISSION.launch)}, landing ${fmtDate(MISSION.landing)}.`
+          : ui.mission ? `${ui.mission.name || MISSION_RULES.defaultName}: launch ${missionDay(ui.mission.launch)}, landing ${missionDay(ui.mission.landing)} (GMT), set on this device.`
+            : 'No mission is set on this device, so no flight day is shown. Set it under Mission.'),
         h('p', {}, 'The levels (attention, needs action, urgent) and their thresholds are drafts: the team decides the final ones.'),
         h('p', { class: 'muted' }, 'Idea and decisions: team Just For Fun, NASA Space Apps Challenge 2026. Code written with Claude (Anthropic), an AI system.'),
         h('p', {}, h('a', { href: './machine.html' }, 'Technical view, for engineers'))),
@@ -2655,12 +2995,16 @@ function setScreen(name) {
   hideTip();
   ui.screen = name;
   if (name !== 'detail') ui.detail = null;
-  if (byId('panel').open) closePanel();
+  // A key pressed while a sheet is open keeps the focus: the sheet closes without sending the keyboard back to the
+  // button that opened it, which is on the screen being left.
+  if (byId('panel').open) { panelReturn = null; panelReturnSel = null; closePanel(); }
   render();
   window.scrollTo(0, 0);
 }
 
-function render() {
+// Every redraw keeps the keyboard where it was (keepFocus): a pressed switch, answer or key keeps the focus.
+function render() { keepFocus(drawAll); }
+function drawAll() {
   renderBar();
   const logged = Boolean(ui.person);
   byId('view-login').hidden = logged;
@@ -2707,7 +3051,7 @@ byId('find-clear').append(icon('x', { size: 18 }));
 byId('find').addEventListener('input', (e) => { ui.find = e.target.value; applyFind(); });
 byId('find-clear').addEventListener('click', () => { ui.find = ''; applyFind(); byId('find').focus(); });
 byId('panel-x').append(icon('x', { size: 20 }));
-byId('panel-x').addEventListener('click', () => closePanel());
+byId('panel-x').addEventListener('click', () => closePanel({ asked: true }));
 byId('ask-ok').addEventListener('cancel', (ev) => ev.preventDefault());
 // A file picker drawn as a button (a label around a hidden file input) opens with Enter or Space too.
 document.addEventListener('keydown', (ev) => {
@@ -2717,7 +3061,8 @@ document.addEventListener('keydown', (ev) => {
   ev.preventDefault();
   if (!input.disabled) input.click();
 });
-document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && byId('panel').open && !byId('ask-ok').open) closePanel(); });
+// Escape closes the sheet, unless it only closed a "?" card (src/explain.js marks that). Typed text is kept.
+document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !ev.defaultPrevented && byId('panel').open && !byId('ask-ok').open) closePanel({ asked: true }); });
 const clock = () => { const d = new Date(); byId('clock').textContent = `${doy(d)}/${two(d.getUTCHours())}:${two(d.getUTCMinutes())}:${two(d.getUTCSeconds())}`; };
 clock();
 setInterval(clock, 1000);
@@ -2729,3 +3074,4 @@ rebuild();
 render();
 // Something from an earlier visit still waits for the station server: it is sent as soon as the server answers.
 schedulePoll(ALARM_RULES.retrySeconds);
+watchBars();

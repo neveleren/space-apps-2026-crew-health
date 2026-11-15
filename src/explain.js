@@ -4,6 +4,8 @@
 // and how this very value was produced. The owner's request; text and sources gathered by Claude (Anthropic), an AI system.
 //
 // Use: put data-tip="<key>" on any element; a "?" button made with tipButton() opens the same card on press.
+// An element that also has data-tip-press (the status line's tags) opens its card on a tap or a click and on
+// keyboard focus too, like a "?" button, since a touch screen cannot point at it.
 // initTips(resolve) takes a function that turns a key into the card's content (a DOM node).
 
 let pop = null;
@@ -13,6 +15,7 @@ let showTimer = 0;
 let hideTimer = 0;
 let resolve = () => null;
 const HOVER_MS = 550;
+const PRESS = '.tip-btn, [data-tip][data-tip-press]';
 
 export function tipButton(key, label) {
   const b = document.createElement('button');
@@ -25,18 +28,67 @@ export function tipButton(key, label) {
   return b;
 }
 
+// The free part of the window for a card: below the status line (and the row of keys under it on a wide screen),
+// above the bar of keys at the bottom of a phone or tablet. So a card never covers the Help key or the messages,
+// and never runs under the keys. Pages without these bars use the whole window.
+function freeArea() {
+  const vh = window.innerHeight;
+  let seenTop = 0; // the visible part of the page, between the bars
+  let seenBottom = vh;
+  const bar = document.querySelector('.status-line');
+  if (bar) { const r = bar.getBoundingClientRect(); if (r.height) seenTop = Math.max(seenTop, r.bottom); }
+  const keys = document.getElementById('tabs');
+  if (keys && !keys.hidden) {
+    const r = keys.getBoundingClientRect();
+    const pos = getComputedStyle(keys).position;
+    if (r.height && pos === 'fixed') seenBottom = Math.min(seenBottom, r.top);
+    else if (r.height && pos === 'sticky' && r.top < vh / 2) seenTop = Math.max(seenTop, r.bottom);
+  }
+  const top = Math.max(12, seenTop + 8);
+  return { seenTop, seenBottom, top, bottom: Math.max(top + 120, seenBottom - 8 - (seenBottom === vh ? 4 : 0)) };
+}
+
 function place() {
   if (!current || !pop || pop.hidden) return;
+  const area = freeArea();
   const r = current.getBoundingClientRect();
+  // A card whose "?" has scrolled out of sight (under the status line or the keys) closes, instead of floating
+  // over the status line. Things on the status line itself keep their card, placed just below it.
+  const onBar = current.closest && current.closest('.status-line, #tabs');
+  if (!onBar && (r.bottom <= area.seenTop || r.top >= area.seenBottom)) { hideTip(); return; }
+  const room = area.bottom - area.top;
+  pop.style.maxHeight = `${Math.round(room)}px`;
   const pw = pop.offsetWidth;
-  const ph = pop.offsetHeight;
+  const full = pop.offsetHeight;
   const vw = document.documentElement.clientWidth;
-  const vh = window.innerHeight;
   const left = Math.min(vw - pw - 12, Math.max(12, r.left + r.width / 2 - pw / 2));
-  let top = r.bottom + 8;
-  if (top + ph > vh - 12 && r.top - ph - 8 > 12) top = r.top - ph - 8;
+  const below = area.bottom - (r.bottom + 8);
+  const above = r.top - 8 - area.top;
+  let top;
+  let maxH = room;
+  if (full <= below) top = r.bottom + 8; // below the "?"
+  else if (full <= above) top = r.top - 8 - full; // above it
+  else if (Math.max(below, above) >= 240) { maxH = Math.max(below, above); top = below >= above ? r.bottom + 8 : area.top; } // the roomier side, scrolling inside
+  else top = area.top; // no room on either side: at the top of the free area, scrolling inside
+  pop.style.maxHeight = `${Math.round(maxH)}px`;
+  const ph = Math.min(full, maxH);
   pop.style.left = `${Math.round(left)}px`;
-  pop.style.top = `${Math.round(Math.max(12, top))}px`;
+  pop.style.top = `${Math.round(Math.max(area.top, Math.min(top, area.bottom - ph)))}px`;
+  markMore();
+}
+
+// A card that scrolls inside fades out at its bottom edge until it is read to the end, so the sources below are
+// not taken for missing: a strip in the card's own colour lies over the last lines (index.html .tp-fade).
+function markMore() {
+  if (!pop || pop.hidden) return;
+  const more = pop.scrollTop + pop.clientHeight < pop.scrollHeight - 4;
+  if (more && !pop.querySelector(':scope > .tp-fade')) {
+    const fade = document.createElement('div');
+    fade.className = 'tp-fade';
+    fade.setAttribute('aria-hidden', 'true');
+    pop.append(fade);
+  }
+  pop.classList.toggle('more', more);
 }
 
 function show(target, pin) {
@@ -78,6 +130,7 @@ export function initTips(resolver) {
   pop.className = 'tip-pop';
   pop.hidden = true;
   document.body.append(pop);
+  pop.addEventListener('scroll', markMore, { passive: true });
 
   document.addEventListener('pointerover', (e) => {
     if (e.pointerType === 'touch') return;
@@ -100,9 +153,15 @@ export function initTips(resolver) {
       hideTimer = setTimeout(() => { if (!pinned) hideTip(); }, 220);
     }
   });
+  // Keyboard focus on a "?" shows its card at once. A press with a mouse or a finger also focuses the button, but
+  // then the card waits for the click, so it never opens under the pointer between press and release.
+  let pressing = false;
+  document.addEventListener('pointerdown', () => { pressing = true; }, true);
+  document.addEventListener('pointerup', () => { setTimeout(() => { pressing = false; }, 0); }, true);
+  document.addEventListener('pointercancel', () => { pressing = false; }, true);
   document.addEventListener('focusin', (e) => {
-    const t = e.target.closest && e.target.closest('.tip-btn');
-    if (t && !pinned) show(t, false);
+    const t = e.target.closest && e.target.closest(PRESS);
+    if (t && !pinned && !pressing) show(t, false);
   });
   document.addEventListener('focusout', (e) => {
     if (pinned || !current) return;
@@ -110,7 +169,7 @@ export function initTips(resolver) {
     hideTimer = setTimeout(() => { if (!pinned) hideTip(); }, 120);
   });
   document.addEventListener('click', (e) => {
-    const b = e.target.closest && e.target.closest('.tip-btn');
+    const b = e.target.closest && e.target.closest(PRESS);
     if (b) {
       e.preventDefault();
       e.stopPropagation();
@@ -121,11 +180,15 @@ export function initTips(resolver) {
     if (current && !pop.contains(e.target)) hideTip();
   }, true);
   document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape' || !current) return;
+    if (e.key !== 'Escape' || !current || pop.hidden) return;
     const back = current;
     hideTip();
+    // This Escape closed the card only: the page's own Escape (closing a side sheet) leaves it alone.
+    e.preventDefault();
     if (back.classList.contains('tip-btn')) back.focus();
   });
-  window.addEventListener('scroll', () => { if (pinned) place(); else if (current) hideTip(); }, { passive: true });
+  // A card shown for the keyboard stays when the page scrolls to bring its "?" into view (the scroll padding does
+  // that on Tab); place() closes it once the "?" is out of sight. A card shown for the pointer closes on scroll.
+  window.addEventListener('scroll', () => { if (pinned || (current && current === document.activeElement)) place(); else if (current) hideTip(); }, { passive: true });
   window.addEventListener('resize', () => hideTip());
 }

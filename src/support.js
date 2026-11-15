@@ -237,6 +237,14 @@ export function pickTips(signals = {}, tips = MIND_TIPS) {
 }
 
 // ---------- F4: the private journal and the letter to the psychologist ----------
+// A new entry joins the list once: the screen may already have handed back the saved list with it.
+export const withEntry = (list, entry) => (list.some((x) => x.id === entry.id) ? list : [...list, entry]);
+// After a letter went: the ticked entries are unticked and carry the time they were sent, so the next letter does
+// not repeat them. Returns the new list and the ids that went.
+export function markSent(list, time) {
+  const ids = list.filter((e) => e.talk).map((e) => e.id);
+  return { ids, list: list.map((e) => (e.talk ? { ...e, talk: false, sentAt: time } : e)) };
+}
 // The text of the private letter, made from the entries the person ticked for the next private talk.
 export function letterText(entries) {
   const list = (entries || []).filter((e) => e && e.talk && String(e.text || '').trim()).sort((a, b) => msOf(a.time) - msOf(b.time));
@@ -262,8 +270,56 @@ export const EXAMPLE_PLAN = {
   reach: 'Ask Houston for a private call with my psychologist or flight surgeon. With no link: our crew medical officer.',
 };
 
-// The fixed text the screen can queue in the outbox when the person asks for a private call.
-export const TALK_REQUEST_TEXT = 'I would like a private call with my psychologist or flight surgeon soon. (Sent with "Talk to a person now".)';
+// The fixed text the screen can queue in the outbox when the person asks for a private call. The person sees it
+// before it goes. It is sent with the topic below, so a list of sent messages knows it by its topic.
+export const TALK_REQUEST_TEXT = 'I would like a private call with my psychologist or flight surgeon soon.';
+export const TALK_REQUEST_TOPIC = 'talk-request';
+export const LETTER_TOPIC = 'letter-to-psychologist';
+// A request for a private call, also one saved before the topic existed (its text then had a suffix).
+export const isTalkRequest = (report) => Boolean(report) && (report.topic === TALK_REQUEST_TOPIC || String(report.text || '').startsWith(TALK_REQUEST_TEXT));
+export const isLetter = (report) => Boolean(report) && (report.topic === LETTER_TOPIC || String(report.text || '').startsWith('Private letter for my psychologist'));
+
+// ---------- the word rule that opens Help now ----------
+// Simple word rules, outside any AI, open Help now at once (APA 2025: detect and interrupt; the AI never decides
+// alone). The text is made plain first: lower case, every kind of apostrophe typed as ', one space between words,
+// so "can’t" from a phone keyboard counts like "can't". The rules match word stems and the common ways people say
+// it. Catching too much is cheap here: the card only shows fixed help and sends nothing. Which words belong on the
+// list is the owner's open decision, so the list is a draft and the screen says so.
+export const RISK_RULE = Object.freeze({
+  draft: true,
+  text: 'Help now opened because of words in what you wrote. A simple word list, not AI, and nothing was sent. The words on the list are a draft: the team decides them.',
+});
+export function plainText(text) {
+  return String(text ?? '')
+    .toLowerCase()
+    .replace(/[‘’‛ʼ′＇`´]/g, "'")
+    .replace(/[‐‑‒−]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+const RISK_PATTERNS = [
+  /\bsuicid/,
+  /\b(kill|killing|hurt|hurting|harm|harming|cut|cutting|hang|hanging) ?(my ?self|myself)\b/,
+  /\bself[- ]?harm/,
+  /\b(end|ending|take|taking) (my (own )?life|it all)\b/,
+  /\bwant to end it\b/,
+  // "wanna" already holds the "to": "I wanna die", "I dont wanna live".
+  /\b(want to|wanna|going to|ready to) die\b/,
+  /\bwish (i|i'd) (was|were|had been) dead\b/,
+  /\bbetter off (dead|without me)\b/,
+  /\b(don'?t|do not) (want to|wanna) (live|be alive|be here|exist|wake up)\b/,
+  /\bno (reason|point) (to live|in living|living|to go on|in going on|going on)\b/,
+  /\b(can'?t|cannot|can not) (go on|keep going|do this anymore)\b/,
+  /\bnever wake up\b/,
+  /\bwant to disappear\b/,
+  /\boverdose\b/,
+];
+// Does this text call for Help now? Used on every box of the mind tools: the session, the journal and its letter,
+// the five steps and the plan.
+export function matchesRisk(text) {
+  const t = plainText(text);
+  return Boolean(t) && RISK_PATTERNS.some((re) => re.test(t));
+}
 
 // The fixed text the AI session panel shows at its top. Plain and gentle. The exception is the owner's
 // decision: the screen shows it marked "to confirm" until he settles it.
@@ -323,7 +379,7 @@ export function nextUp(flightDay, calendar = MISSION_CALENDAR) {
 export const SUPPORT_TIPS = {
   topics: {
     title: 'What is weighing on you?',
-    lines: ['These topics come from NASA\'s list for private talks with the crew psychologist and from 10 astronauts\' ISS journals.', 'Optional. Only you see them. ' + TOPIC_RULE.text],
+    lines: ['These topics come from NASA\'s list for private talks with the crew psychologist and from 10 astronauts\' ISS journals.', 'Optional. Your screen shows them only to you; they are saved in your record on this station computer. ' + TOPIC_RULE.text],
     badge: BADGE.iss, sources: [SRC.bhp2024, SRC.journals2010],
   },
   tips: {
@@ -333,7 +389,7 @@ export const SUPPORT_TIPS = {
   },
   journal: {
     title: 'Private journal',
-    lines: ['NASA\'s Journals study (10 ISS astronauts) found that writing helped astronauts keep perspective.', 'Private: only you see it, and nothing is sent unless you press Send. Not encrypted in this prototype; a passphrase lock is the next step.'],
+    lines: ['NASA\'s Journals study (10 ISS astronauts) found that writing helped astronauts keep perspective.', 'Kept in this browser on this computer, and nothing is sent unless you press Send. Anyone who opens your screen here can read it, unless you set a PIN. Not encrypted in this prototype; a passphrase lock is the next step.'],
     badge: BADGE.iss, sources: [SRC.journals2010, SRC.bhPage2024],
   },
   letter: {
@@ -443,8 +499,23 @@ export function sourceLine(...sources) {
 }
 const tipBtn = (key, label) => tipButton(`mind:${key}`, label);
 const exampleTag = () => h('span', { class: 'tag example sup-example', 'data-tip': 't:example', tabindex: '0' }, 'EXAMPLE');
-const privateLine = (lead, text) => h('p', { class: 'sup-private' }, supIcon('lock', { size: 18 }), h('span', {}, h('b', {}, lead), ' ', text));
+// Who can read the private tools, in true words: the person on their own screen, and anyone else who opens that
+// screen on this computer unless a PIN is set (src/privacy.js). onSetPin(), when given, opens the PIN in Settings.
+const whoCanRead = ({ pinSet = false, onSetPin = null } = {}) => h('div', { class: 'sup-private' }, supIcon('lock', { size: 18 }),
+  h('span', {}, h('b', {}, 'Who can read it:'), ' ', pinSet
+    ? 'you. Your screen opens only with your PIN on this computer. Not encrypted in this prototype.'
+    : 'you on your screen, and anyone who opens your screen on this computer, unless you set a PIN. Not encrypted in this prototype.'),
+  !pinSet && typeof onSetPin === 'function' ? btn('secondary small', 'Set a PIN', () => onSetPin(), 'lock') : null);
 const status = () => h('p', { class: 'sup-status', role: 'status', 'aria-live': 'polite' });
+// Help now inside a tool: a live alert region that is always there, so the card is announced when the word rule
+// (matchesRisk) opens it. helpNow() comes from the screen and returns the fixed Help now card; nothing is sent.
+const riskSlot = () => h('div', { class: 'sup-risk', role: 'alert' });
+function showRisk(slot, helpNow) {
+  if (typeof helpNow !== 'function') return false;
+  if (!slot.firstChild) slot.replaceChildren(helpNow(), h('p', { class: 'note' }, RISK_RULE.text));
+  return true;
+}
+const checkRisk = (slot, helpNow, ...texts) => texts.some((t) => matchesRisk(t)) && showRisk(slot, helpNow);
 const asPromise = (fn, ...args) => { try { return Promise.resolve(typeof fn === 'function' ? fn(...args) : undefined); } catch (e) { return Promise.reject(e); } };
 const prep = (host, cls) => { host.classList.add('sup', cls); return host; };
 // Element ids are unique per builder call, so the same builder can be on the screen and in the side sheet at once.
@@ -538,7 +609,7 @@ export function renderTopicChips(host, { selected = [], onChange } = {}) {
       return b;
     }));
   fill(host,
-    h('div', { class: 'q-label', id: labelId }, 'What is weighing on you?', h('span', {}, 'Optional. Only you see it.'), tipBtn('topics', 'these topics')),
+    h('div', { class: 'q-label', id: labelId }, 'What is weighing on you?', h('span', {}, 'Optional. Your screen shows it only to you; it is saved in your record on this station computer.'), tipBtn('topics', 'these topics')),
     group);
   paint();
   return { get: () => [...chosen], set(ids) { chosen = new Set(topicsOf({ topics: ids })); paint(); } };
@@ -585,13 +656,16 @@ export function renderTips(host, { onOpenBreak, onOpenJournal, signals = {}, per
   return { show(n) { page = Math.max(0, Math.min(pages - 1, n)); draw(); } };
 }
 
-// F4. The private journal. entries: [{ id, time, text, talk }]. onSave(entry) for a new entry,
+// F4. The private journal. entries: [{ id, time, text, talk, sentAt }]. onSave(entry) for a new entry,
 // onToggleTalk(id, on) for the tick, onSendLetter(text) to queue the private letter (the screen routes it to its
-// outbox), onDelete(id) optional. link: whether there is a link to Earth now (only changes the wording).
-export function renderJournal(host, { entries = [], onSave, onToggleTalk, onSendLetter, onDelete, link = true, now } = {}) {
+// outbox), onSent(ids, time) after it went (those entries are then unticked and marked as sent), onDelete(id)
+// optional. link: whether there is a link to Earth now (only changes the wording). helpNow(): the screen's Help
+// now card, shown when the word rule matches what is saved or sent. pinSet and onSetPin: see whoCanRead.
+export function renderJournal(host, { entries = [], onSave, onToggleTalk, onSendLetter, onSent, onDelete, link = true, now, helpNow, pinSet = false, onSetPin = null } = {}) {
   prep(host, 'sup-journal');
-  const norm = (list) => (Array.isArray(list) ? list : []).filter((e) => e && e.id && String(e.text || '').trim()).map((e) => ({ id: String(e.id), time: e.time, text: String(e.text), talk: Boolean(e.talk) }));
+  const norm = (list) => (Array.isArray(list) ? list : []).filter((e) => e && e.id && String(e.text || '').trim()).map((e) => ({ id: String(e.id), time: e.time, text: String(e.text), talk: Boolean(e.talk), ...(e.sentAt ? { sentAt: e.sentAt } : {}) }));
   let list = norm(entries);
+  const risk = riskSlot();
   let showAll = false;
   let letterOpen = false;
   let confirmDelete = null;
@@ -613,11 +687,13 @@ export function renderJournal(host, { entries = [], onSave, onToggleTalk, onSend
     const entry = { id: makeId('j'), time: nowOf(now).toISOString(), text: text.slice(0, 4000), talk: tick.checked };
     try {
       await asPromise(onSave, entry);
-      list = [...list, entry];
+      // The screen may already have handed the saved list back (update()); the entry is listed once either way.
+      list = withEntry(list, entry);
       area.value = '';
       tick.checked = false;
-      say(`Saved, ${fmtDay(entry.time)} ${fmtTime(entry.time)}. Only you see it.`);
+      say(`Saved in this browser, ${fmtDay(entry.time)} ${fmtTime(entry.time)}.`);
       draw();
+      checkRisk(risk, helpNow, entry.text);
     } catch {
       say('Could not save. Your text is still in the box.');
     }
@@ -633,8 +709,14 @@ export function renderJournal(host, { entries = [], onSave, onToggleTalk, onSend
   const send = async () => {
     const text = letter.value.trim();
     if (!text) { say('The letter is empty.'); return; }
+    checkRisk(risk, helpNow, text);
     try {
       await asPromise(onSendLetter, text);
+      // The entries that went are unticked and marked, so the next letter does not repeat them.
+      const time = nowOf(now).toISOString();
+      const done = markSent(list, time);
+      list = done.list;
+      try { await asPromise(onSent, done.ids, time); } catch { /* the letter went; only the marks were not kept */ }
       letterOpen = false;
       say(linkNow ? 'In the outbox: it goes to Earth with the next downlink.' : 'In the outbox: there is no link to Earth now, so it goes when the link is back.');
       draw();
@@ -659,6 +741,7 @@ export function renderJournal(host, { entries = [], onSave, onToggleTalk, onSend
   const entryNode = (e) => h('li', { class: 'sup-entry' },
     h('p', { class: 'sup-entry-date mono' }, `${fmtDay(e.time)}, ${fmtTime(e.time)}`),
     h('p', { class: 'sup-entry-text' }, e.text),
+    e.sentAt ? h('p', { class: 'note' }, `Sent in a letter to your psychologist on ${fmtDay(e.sentAt)}.`) : null,
     h('div', { class: 'sup-entry-foot' },
       h('label', { class: 'sup-check' }, h('input', { type: 'checkbox', dataset: { entry: e.id }, checked: e.talk ? true : null, onchange: (ev) => setTalk(e.id, ev.target.checked) }), 'Bring up at my next private talk'),
       typeof onDelete === 'function'
@@ -683,8 +766,11 @@ export function renderJournal(host, { entries = [], onSave, onToggleTalk, onSend
           // Who may open it depends on the outbox the screen uses (today the flight surgeon's), so the box says
           // only where it goes; "only your psychologist reads it" needs a recipient and key of its own first.
           h('p', { class: 'note' }, linkNow ? 'It goes in the outbox and leaves with the next downlink, addressed to your psychologist.' : 'There is no link to Earth now: it waits in the outbox and goes when the link is back, addressed to your psychologist.'),
+          // A letter is read hours or days later, so it never stands in for help now (the safety-plan rule).
+          h('p', { class: 'sup-urgent' }, h('b', {}, 'A letter is not for an emergency:'), ' it may be read hours or days later. Need someone now? ',
+            typeof helpNow === 'function' ? btn('secondary small', 'Talk to a person now', () => { showRisk(risk, helpNow); const b = risk.querySelector('.btn'); if (b) b.focus(); }, 'heart-handshake') : 'Talk to a crewmate or your crew medical officer.'),
           h('div', { class: 'actions' }, btn('primary', 'Send', send, 'send'), btn('secondary', 'Cancel', () => { letterOpen = false; draw(); })))
-        : h('div', { class: 'actions' }, btn('secondary', 'Send as a private letter to my psychologist', () => { letter.value = letterText(list); letterOpen = true; draw(); letter.focus(); }, 'mail', { disabled: talk.length ? null : true, 'data-tip': 'mind:letter' })));
+        : h('div', { class: 'actions' }, btn('secondary', 'Send as a private letter to my psychologist', () => { letter.value = letterText(list); letterOpen = true; draw(); letter.focus(); checkRisk(risk, helpNow, letter.value); }, 'mail', { disabled: talk.length ? null : true, 'data-tip': 'mind:letter' })));
     const sorted = [...list].sort((a, b) => msOf(b.time) - msOf(a.time));
     const shown = showAll ? sorted : sorted.slice(0, 5);
     fill(entryBox,
@@ -695,7 +781,8 @@ export function renderJournal(host, { entries = [], onSave, onToggleTalk, onSend
 
   fill(host,
     h('div', { class: 'sup-head' }, supIcon('notebook-pen', { size: 22 }), h('h2', {}, 'Private journal'), tipBtn('journal', 'the private journal')),
-    privateLine('Private:', 'only you see this. Not encrypted in this prototype.'),
+    whoCanRead({ pinSet, onSetPin }),
+    risk,
     h('div', { class: 'sup-compose' },
       h('label', { for: ids.text, class: 'sup-label' }, 'Write something down'),
       area,
@@ -711,9 +798,22 @@ export function renderJournal(host, { entries = [], onSave, onToggleTalk, onSend
 }
 
 // "Talk to a person now": two choices. onTalkNow('crewmate' | 'ground'); for 'ground' the screen queues
-// TALK_REQUEST_TEXT in its outbox. The block itself sends nothing.
+// TALK_REQUEST_TEXT in its outbox, but only after the person has seen that line and pressed Send. The block
+// itself sends nothing.
 function talkNowBlock({ onTalkNow, link = true, doctorOnBoard = false, getPlan = () => null, open = true } = {}) {
   const result = status();
+  const confirmBox = h('div', { class: 'sup-confirm-send', hidden: true });
+  const askFirst = () => {
+    fill(confirmBox,
+      h('p', {}, 'This line goes to your psychologist or flight surgeon on Earth:'),
+      h('blockquote', { class: 'sup-quote' }, TALK_REQUEST_TEXT),
+      h('div', { class: 'actions' },
+        btn('primary small', 'Send the request', () => { confirmBox.hidden = true; choose('ground'); }, 'send'),
+        btn('secondary small', 'Cancel', () => { confirmBox.hidden = true; result.textContent = 'Nothing was sent.'; })));
+    confirmBox.hidden = false;
+    const first = confirmBox.querySelector('.btn');
+    if (first) first.focus();
+  };
   const choose = async (kind) => {
     try {
       await asPromise(onTalkNow, kind);
@@ -735,8 +835,9 @@ function talkNowBlock({ onTalkNow, link = true, doctorOnBoard = false, getPlan =
     h('p', {}, 'Choose one. Nothing is sent unless you press it.'),
     h('div', { class: 'actions' },
       btn('primary', 'A crewmate on board', () => choose('crewmate'), 'users'),
-      btn('secondary', 'A private call with my psychologist or flight surgeon', () => choose('ground'), 'phone')),
+      btn('secondary', 'A private call with my psychologist or flight surgeon', () => askFirst(), 'phone')),
     link ? null : h('p', { class: 'note' }, 'No link to Earth right now: a request to Earth waits in the outbox until the link is back.'),
+    confirmBox,
     result);
   return h('section', { class: 'sup-talknow', 'aria-label': 'Talk to a person now' },
     h('div', { class: 'sup-head' }, supIcon('heart-handshake', { size: 22 }), h('h3', {}, 'Talk to a person now'), tipBtn('talknow', 'talk to a person now')),
@@ -745,12 +846,14 @@ function talkNowBlock({ onTalkNow, link = true, doctorOnBoard = false, getPlan =
 
 // F5. "My plan for hard days" with "Talk to a person now" on top. plan: { signs, helps, onboard, reach } or
 // null; example: true shows EXAMPLE_PLAN marked as an example when there is no plan yet. onSave(plan) with
-// { signs, helps, onboard, reach, example: false, updated }; onTalkNow(kind) as above.
-export function renderPlan(host, { plan = null, example = false, onSave, onTalkNow, link = true, doctorOnBoard = false, now } = {}) {
+// { signs, helps, onboard, reach, example: false, updated }; onTalkNow(kind) as above. helpNow, pinSet and
+// onSetPin as for the journal.
+export function renderPlan(host, { plan = null, example = false, onSave, onTalkNow, link = true, doctorOnBoard = false, now, helpNow, pinSet = false, onSetPin = null } = {}) {
   prep(host, 'sup-plan');
   let current = plan && PLAN_FIELDS.some((f) => String(plan[f.key] || '').trim()) ? { ...plan } : (example ? { ...EXAMPLE_PLAN } : null);
   let editing = false;
   const msg = status();
+  const risk = riskSlot();
   const fieldId = Object.fromEntries(PLAN_FIELDS.map((f) => [f.key, uid(`p-${f.key}`)]));
   const fields = Object.fromEntries(PLAN_FIELDS.map((f) => [f.key, h('textarea', { class: 'sup-textarea', id: fieldId[f.key], rows: '3', maxlength: '1000' })]));
   const save = async () => {
@@ -759,9 +862,10 @@ export function renderPlan(host, { plan = null, example = false, onSave, onTalkN
       await asPromise(onSave, next);
       current = next;
       editing = false;
-      say('Saved. Only you see it.');
+      say('Saved in this browser.');
       draw();
       focusEdit();
+      checkRisk(risk, helpNow, ...PLAN_FIELDS.map((f) => next[f.key]));
     } catch {
       say('Could not save. Your text is still in the boxes.');
     }
@@ -794,7 +898,8 @@ export function renderPlan(host, { plan = null, example = false, onSave, onTalkN
   fill(host,
     h('div', { class: 'sup-head' }, h('h2', {}, 'My plan for hard days'), tipBtn('plan', 'my plan for hard days')),
     talkNowBlock({ onTalkNow, link, doctorOnBoard, getPlan: () => (current && !current.example ? current : null) }),
-    privateLine('Private:', 'only you see it. Not encrypted in this prototype.'),
+    risk,
+    whoCanRead({ pinSet, onSetPin }),
     h('p', { class: 'note' }, 'Written before flight with your crew psychologist, in your own words. Never written by the AI.'),
     planBox,
     msg,
@@ -827,10 +932,12 @@ export function renderCrisisNotice(host, { onTalkNow, onOpenPlan, link = true, d
 }
 
 // F9. Problem solving in five steps. onSave(worksheet) with { id, time, problem, better, options, plan,
-// checkBack: 'YYYY-MM-DD', review }. worksheet: an earlier one to continue, or null for a new one.
-export function renderSteps(host, { onSave, worksheet = null, now } = {}) {
+// checkBack: 'YYYY-MM-DD', review }. worksheet: an earlier one to continue, or null for a new one. helpNow as
+// for the journal: when the word rule matches, a week's wait is never the answer; a person today is.
+export function renderSteps(host, { onSave, worksheet = null, now, helpNow } = {}) {
   prep(host, 'sup-steps-box');
   const msg = status();
+  const risk = riskSlot();
   const sid = Object.fromEntries([...STEPS.map((s) => s.key), 'date'].map((k) => [k, uid(`s-${k}`)]));
   const boxes = Object.fromEntries(STEPS.slice(0, 4).map((s) => [s.key, h('textarea', { class: 'sup-textarea', id: sid[s.key], rows: '3', maxlength: '2000' })]));
   const review = h('textarea', { class: 'sup-textarea', id: sid.review, rows: '3', maxlength: '2000' });
@@ -849,14 +956,19 @@ export function renderSteps(host, { onSave, worksheet = null, now } = {}) {
     try {
       await asPromise(onSave, sheet);
       id = sheet.id;
-      msg.textContent = `Saved for you only.${sheet.checkBack ? ` Check back on ${fmtDay(`${sheet.checkBack}T12:00:00Z`)}.` : ''}`;
+      if (checkRisk(risk, helpNow, sheet.problem, sheet.better, sheet.options, sheet.plan, sheet.review)) {
+        msg.textContent = 'Saved in this browser. This needs a person today, not in a week: Help now is above.';
+        const b = risk.querySelector('.btn');
+        if (b) b.focus();
+      } else msg.textContent = `Saved in this browser.${sheet.checkBack ? ` Check back on ${fmtDay(`${sheet.checkBack}T12:00:00Z`)}.` : ''}`;
     } catch {
       msg.textContent = 'Could not save. Your text is still here.';
     }
   };
   fill(host,
     h('div', { class: 'sup-head' }, h('h2', {}, 'Work through it in 5 steps'), tipBtn('steps', 'the five steps')),
-    h('p', { class: 'note' }, 'A worksheet that works with the AI off. Saved only for you. When the AI is on, it follows the same steps.'),
+    h('p', { class: 'note' }, 'A worksheet that works with the AI off. Saved in this browser only. When the AI is on, it follows the same steps.'),
+    risk,
     h('ol', { class: 'sup-steps' }, STEPS.map((s, i) => h('li', { class: 'sup-step' },
       h('span', { class: 'sup-step-n', 'aria-hidden': 'true' }, String(i + 1)),
       h('div', { class: 'sup-step-body' },

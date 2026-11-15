@@ -32,10 +32,12 @@ for (const name of ['index.html', 'machine.html']) {
 test('a "?" card opens for a thing the pointer rests on, never for one that left the page in the meantime', async () => {
   const on = {};
   const made = [];
-  const element = () => ({ hidden: false, style: {}, classList: { toggle() {}, contains: () => false }, setAttribute() {}, replaceChildren() {}, contains: () => false, offsetWidth: 300, offsetHeight: 80 });
+  const element = () => ({ hidden: false, style: {}, classList: { toggle() {}, contains: () => false }, setAttribute() {}, replaceChildren() {}, addEventListener() {}, append() {}, querySelector: () => null, contains: () => false, offsetWidth: 300, offsetHeight: 80, scrollTop: 0, clientHeight: 80, scrollHeight: 80 });
   globalThis.document = {
     createElement: () => { const el = element(); made.push(el); return el; },
     body: { append() {} },
+    querySelector: () => null, // no status line or key bar here: the card may use the whole window
+    getElementById: () => null,
     documentElement: { clientWidth: 1366 },
     addEventListener: (type, fn) => { (on[type] = on[type] || []).push(fn); },
   };
