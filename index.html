@@ -255,6 +255,9 @@ h1 .tip-btn, h2 .tip-btn, p .tip-btn { width: 30px; height: 30px; margin-left: 2
 .needs .link { min-height: 32px; }
 .link.ink { color: var(--ink); text-decoration-color: var(--axis); }
 .empty-find { margin: 0; color: var(--muted); }
+.crew-banner { background: var(--lv3-fill); border-bottom: 2px solid var(--lv3-stripe); padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.crew-banner p { max-width: 928px; margin: 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; color: var(--ink); }
+.crew-banner .icon { color: var(--lv3); }
 .support { display: grid; gap: 14px; }
 .support textarea { min-height: 110px; width: 100%; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--axis); background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 16px; font-weight: 400; }
 .support .chips .topic { cursor: pointer; min-height: 40px; }
@@ -495,6 +498,7 @@ dialog p { margin: 0; }
   </div>
 </header>
 <nav class="keys" id="tabs" hidden aria-label="Screens"><div class="keys-in" id="tabs-in"></div></nav>
+<div class="crew-banner" id="crew-banner" role="alert" hidden></div>
 
 <main class="main" id="main">
   <section id="view-login" class="login" aria-labelledby="login-title">

@@ -10,7 +10,7 @@ import { INSPIRATION4 } from './inspiration4.js';
 import { openStore } from './store.js';
 import { exampleFlight, MISSION } from './demo-crew.js';
 import { drawHistory, drawTable, fmtDate, fmtGMT } from './history-view.js';
-import { assess, assessShip, measureState, headline, LEVEL, LEVEL_WORD, EXPECTED, RULES as LEVEL_RULES } from './state-levels.js';
+import { assess, assessShip, measureState, headline, headlineFor, topLevel, LEVEL, LEVEL_WORD, EXPECTED, RULES as LEVEL_RULES, RULE_NOTES, SLOW_MEASURES } from './state-levels.js';
 import { RULES as CAM_RULES } from './camera-rules.js';
 import { icon } from './icons.js';
 import { initTips, tipButton, hideTip } from './explain.js';
@@ -128,9 +128,9 @@ async function keep(event) {
 }
 
 // Every new reading goes through the machine and is saved, exactly like on the technical page.
-async function addReading(indicator, value, { source = null, person = ui.person } = {}) {
+async function addReading(indicator, value, { source = null, person = ui.person, context = null } = {}) {
   const src = source || sourceFor(indicator);
-  const event = { v: 1, kind: 'reading', time: new Date().toISOString(), person, state: { ...ui.ship }, reading: { source: src.id, indicator, value } };
+  const event = { v: 1, kind: 'reading', time: new Date().toISOString(), person, state: { ...ui.ship }, reading: { source: src.id, indicator, value, ...(context ? { context } : {}) } };
   machine.setState(event.state);
   const entry = machine.receive({ ...event.reading, person, time: event.time });
   await keep(event);
@@ -210,7 +210,9 @@ function valueText(indicator, value) {
   return fmtVal(value);
 }
 
-const whereDoctor = () => (ui.ship.doctorOnBoard ? 'on board' : ui.ship.linkToEarth ? 'on Earth' : 'nowhere: no doctor on board and no link to Earth; what then is still the team\'s open question');
+const whereDoctor = () => (ui.ship.doctorOnBoard ? 'on board' : ui.ship.linkToEarth ? 'on Earth' : 'when the link is back; until then the crew on board and the crew medical officer were alerted (a draft default; the team decides)');
+// The words of a red limit: "at or below 88", "above 180".
+const limitWords = (red) => `${({ atOrBelow: 'at or below', atOrAbove: 'at or above', below: 'below', above: 'above' })[red.when] || red.when} ${red.value}`;
 
 // What one item of the assessment says, in plain words.
 function itemText(it, owner) {
@@ -228,6 +230,7 @@ function itemText(it, owner) {
     return { title: cell.label, text: `The last reading, ${v}, is still within the normal range, but the line through the readings leaves it ${c.side === 'below' ? 'downwards' : 'upwards'} around ${fmtDate(c.date)}, before landing on ${fmtDate(MISSION.landing)}.`, time: last.time };
   }
   const side = it.m.side === 'below' ? 'below' : 'above';
+  if (it.kind === 'red') return { title: owner && owner.id === SHIP.id ? `${it.level >= LEVEL.URGENT ? 'Ship emergency' : 'Ship caution'}: ${lower(cell.label)}` : cell.label, text: `${v}: ${limitWords(it.red)}${it.red.part ? ` (${it.red.part})` : ''}, the ${it.level >= LEVEL.URGENT ? 'urgent' : 'needs-action'} limit (${it.red.source}).`, time: last.time };
   if (it.kind === 'standard') return { title: cell.label, text: `${v}: ${side} the NASA standard (${normShort(cell, owner)}).`, time: last.time };
   if (it.kind === 'expected') return { title: cell.label, text: `${v}: ${side} the usual range on Earth (${rangeText(cell, owner)}). ${it.expected.text}`, time: last.time };
   return { title: cell.label, text: `${v}: ${side} the normal range (${rangeText(cell, owner)})${it.m.streak > 1 ? `, ${it.m.streak} readings in a row` : ''}. Reading of ${fmtDT(last.time)}.`, time: last.time };
@@ -235,6 +238,10 @@ function itemText(it, owner) {
 
 // What to do, by the program's rules (shown in magenta, like NASA's electronic procedures).
 function procedureFor(it) {
+  const reachable = ui.ship.doctorOnBoard || ui.ship.linkToEarth;
+  if (it.kind === 'red' && it.cell && it.cell.section === 'env') return ['Follow the ship\'s own procedure for this alarm; this screen only mirrors the ship.', 'The crew and mission control decide.'];
+  if (it.kind === 'red' && it.level >= LEVEL.URGENT) return ['Automation: your crewmates and the crew medical officer have been alerted.', 'You: repeat the reading now if you can, at rest.', reachable ? 'Automation: the doctor has been called.' : 'Automation: the message to the doctor waits for the next link.', 'Crew medical officer: open the emergency procedure for this sign.'];
+  if (it.kind === 'red') return ['You: repeat the reading now, at rest if you can.', 'You: if it stays past the limit, tell the crew medical officer.', reachable ? 'You: message the doctor with the "Message the doctor" button.' : 'Automation: the message to the doctor waits for the next link.'];
   switch (it.kind) {
     case 'camera': return ['The automation has already called the doctor.', 'If the alarm was a mistake, tell the doctor with "Message the doctor".', 'The question "Are you okay?" and its waiting time can be changed in the rules.'];
     case 'standard': return ['Repeat the test in the next few days.', 'Show the result to the doctor: the "Message the doctor" button.', 'NASA standard: at least 80% of your own pre-flight level.'];
@@ -348,6 +355,19 @@ function renderNav() {
   }, icon(ic, { size: 22 }), h('span', {}, label))));
 }
 
+// Every crew screen shows when a crewmate needs help now: an urgent red limit or a camera or Help alarm.
+// Only the name and the measure, nothing else (ISS crew code of conduct: disclosure for immediate crew safety).
+function crewAlerts(now) {
+  const out = [];
+  for (const c of CREW) {
+    if (c.id === ui.person) continue;
+    const a = assess({ machine, person: c, cells: CELLS, mission: MISSION, now });
+    const it = a.body.items.find((x) => x.level >= LEVEL.URGENT && (x.kind === 'red' || x.kind === 'camera'));
+    if (it) out.push(`${c.name} needs help now: ${it.kind === 'red' ? `${it.cell.label} ${valueText(it.cell.indicator, it.m.last.value)} ${it.cell.unit || ''}`.trim() : 'an alarm was raised'}.`);
+  }
+  return out;
+}
+
 function renderBar() {
   const p = ui.person ? personById[ui.person] : null;
   byId('brand').replaceChildren(icon('orbit', { size: 22, label: 'Crew Health Console' }), h('span', { class: p ? 'sr-only' : '' }, 'Crew Health'));
@@ -386,6 +406,10 @@ function renderBar() {
     else box.replaceChildren(icon(LEVEL_ICON[top], { size: 18 }), h('span', { class: 'ann-word' }, 'Messages'), h('b', {}, unseen ? `${unseen} new` : String(list.length)));
     box.setAttribute('aria-label', list.length ? `Messages: ${list.length}, ${unseen} new, highest level ${LEVEL_WORD[top]}` : 'No messages');
   }
+  const banner = byId('crew-banner');
+  const alerts = p && !p.real ? crewAlerts(nowTime()) : [];
+  banner.hidden = !alerts.length;
+  banner.replaceChildren(...alerts.map((t) => h('p', {}, icon('octagon-alert', { size: 18 }), h('b', {}, t), ' Go to them; the crew medical officer has the steps.')));
   renderNav();
 }
 
@@ -418,29 +442,32 @@ function renderHome() {
   if (p.real) return renderRealHome(p);
   const now = nowTime();
   const a = assess({ machine, person: p, cells: CELLS, mission: MISSION, now });
-  const top = Math.max(a.body.level, a.psyche.level);
+  const top = topLevel(a);
   byId('today').className = `card today ${LV_CLASS[top]}`;
   byId('today-label').textContent = 'Your health today';
   byId('today-time').textContent = `Updated GMT ${gmtDOY(now)}`;
-  byId('today-title').textContent = headline(fmtDate(now), a.body.level, a.psyche.level);
+  byId('today-title').textContent = headlineFor(fmtDate(now), a);
   const chips = [];
+  if (a.ship && a.ship.level) chips.push(chip(a.ship.level, `Ship: ${LEVEL_WORD[a.ship.level]}`));
   if (a.body.level) chips.push(chip(a.body.level, `Body: ${LEVEL_WORD[a.body.level]}`));
   if (a.psyche.level) chips.push(chip(a.psyche.level, `Mind: ${LEVEL_WORD[a.psyche.level]}`));
+  for (const x of (a.fresh && a.fresh.missing) || []) chips.push(staleChip(x.days === null ? `No ${lower(x.label)} yet` : `No new ${lower(x.label)} for ${x.days} days`));
   byId('today-chips').replaceChildren(...chips);
   byId('today-chips').hidden = !chips.length;
 
   // The short explanation, in the same order as Messages: level first, then outside the range now, then forecasts.
-  const all = [...a.body.items, ...a.psyche.items].sort((x, y) => y.level - x.level);
+  const all = [...(a.ship ? a.ship.items : []), ...a.body.items, ...a.psyche.items].sort((x, y) => y.level - x.level);
   const items = all.length === 4 ? all : all.slice(0, 3);
   const short = (it) => {
     if (it.kind === 'camera') return 'The automation called the doctor';
     if (it.kind === 'mood') return `${it.days} low days in the last two weeks`;
     if (it.kind === 'forecast') return `Forecast: in the normal range now, may leave it around ${fmtDate(it.m.forecast.crossing.date)}`;
+    if (it.kind === 'red') return `${valueText(it.cell.indicator, it.m.last.value)} ${it.cell.unit || ''}: ${limitWords(it.red)}, the ${it.level >= LEVEL.URGENT ? 'urgent' : 'needs-action'} limit`.replace(/ +:/, ':');
     const v = `${valueText(it.cell.indicator, it.m.last.value)} ${it.cell.unit || ''}`.trim();
     const where = it.kind === 'standard' ? 'the NASA standard' : 'the normal range';
     return `${v}, ${it.m.side === 'below' ? 'below' : 'above'} ${where}${it.m.streak > 1 && it.kind === 'out' ? ` in the last ${it.m.streak} readings` : ''}${it.kind === 'expected' ? ' (common in flight)' : ''}`;
   };
-  const name = (it) => (it.cell ? it.cell.label : it.kind === 'mood' ? 'Mood and energy' : 'Camera');
+  const name = (it) => (it.cell ? (it.cell.section === 'env' ? `${it.cell.label} (ship)` : it.cell.label) : it.kind === 'mood' ? 'Mood and energy' : 'Camera');
   const open = (it) => (it.cell ? openDetail(it.cell.indicator) : it.kind === 'mood' ? openDetail('mood') : setScreen('alerts'));
   byId('today-reasons').hidden = !items.length;
   byId('today-reasons').replaceChildren(
@@ -610,7 +637,6 @@ function measureRow(owner, indicator, a, now) {
   const last = machine.history(owner.id, indicator).slice(-1)[0] || null;
   const item = a ? [...a.body.items, ...a.psyche.items].find((x) => x.cell && x.cell.indicator === indicator) : null;
   let level = item ? item.level : LEVEL.FINE;
-  if (owner === SHIP && last && last.status === STATUS.OUT) level = LEVEL.ATTENTION;
   const m = cell.kind === KIND.NUMBER ? measureState({ machine, person: owner, cell, mission: MISSION, now }) : null;
   const stale = Boolean(m && m.stale);
   const out = Boolean(last && last.status === STATUS.OUT);
@@ -884,6 +910,7 @@ function openDetail(indicator) {
   window.scrollTo(0, 0);
 }
 
+const EXPECTED_EVERY_DAYS_ONE = ['pulse', 'bp', 'temp', 'sleep', 'resp', 'fluid', 'spo2', 'glucose'];
 const NORM_NAMES = { earthGeneral: 'General, Earth', spaceGeneral: 'General, space', personalEarth: 'Personal, Earth', personalSpace: 'Personal, space' };
 const BACK_LABEL = { home: 'Today', measures: 'All measures', alerts: 'Messages', setup: 'Settings' };
 const backButton = () => btn('secondary small back', BACK_LABEL[ui.backTo] || 'All measures', () => setScreen(ui.backTo || 'measures'), 'chevron-left');
@@ -912,7 +939,7 @@ function renderDetail() {
   const range = periodRange(allPoints);
   const now = nowTime();
   const m = cell.kind === KIND.NUMBER ? measureState({ machine, person: owner, cell, mission: MISSION, now }) : null;
-  const fc = m && m.forecast && m.forecast.line ? m.forecast : null;
+  const fc = m && m.forecast && m.forecast.line && (SLOW_MEASURES.includes(indicator) || m.clearTrend) ? m.forecast : null;
   const showTrend = Boolean(fc) && (ui.period === 'flight' || ui.period === 'all');
   const lines = [];
   if (cell.normType === 'baseline-percent') { const b = bandOf(cell, owner); if (b) lines.push({ v: b.min, label: `Limit: ${cell.norm.minPercent}% of own pre-flight level` }); }
@@ -950,7 +977,11 @@ function renderDetail() {
   const a = assess({ machine, person: p, cells: CELLS, mission: MISSION, now });
   const lastEntry = machine.history(owner.id, indicator).slice(-1)[0] || null;
   const item = [...a.body.items, ...a.psyche.items].find((x) => x.cell && x.cell.indicator === indicator);
-  const level = owner === SHIP ? (lastEntry && lastEntry.status === STATUS.OUT ? LEVEL.ATTENTION : LEVEL.FINE) : (item ? item.level : LEVEL.FINE);
+  const shipItem = owner === SHIP ? assessShip({ machine, ship: SHIP, cells: CELLS, mission: MISSION, now }).items.find((x) => x.cell.indicator === indicator) : null;
+  const level = owner === SHIP ? (shipItem ? shipItem.level : LEVEL.FINE) : (item ? item.level : LEVEL.FINE);
+  const info = owner === SHIP ? null : (a.info || []).find((x) => x.cell && x.cell.indicator === indicator && (x.kind === 'expected' || x.kind === 'watch'));
+  if (info && info.kind === 'expected') facts.unshift(`Outside the Earth range, but common in flight: ${info.expected.text}`);
+  if (info && info.kind === 'watch') facts.unshift(`Outside the normal range in the last ${info.m.streak} reading${info.m.streak === 1 ? '' : 's'}; it becomes "attention" only if it stays outside for ${info.needed} readings in a row (a draft rule).`);
   const norm = cell.kind === KIND.NUMBER ? normShort(cell, owner) : '';
   let verdict = 'No readings yet.';
   if (lastEntry) {
@@ -999,6 +1030,9 @@ function renderDetail() {
       more('About this measure',
         cell.effort ? h('p', {}, `Effort to measure: ${cell.effort}, on the team's scale of light, high and extreme.`) : null,
         ...about.map((x) => h('p', {}, x)),
+        cell.red && cell.red.length ? h('div', { class: 'prose' }, h('p', {}, h('b', {}, 'Red limits'), ' (drafts for the team and flight surgeons): a single reading past one raises the alert at once, without the AI.'),
+          h('ul', { class: 'links' }, ...cell.red.map((r) => h('li', {}, `${limitWords(r)}${r.part ? ` (${r.part})` : ''} ${cell.unit || ''}: ${r.level === 'urgent' ? 'urgent' : 'needs action'}. `, h('a', { href: r.url, target: '_blank', rel: 'noopener' }, r.source), r.note ? h('span', { class: 'muted' }, ` ${r.note}`) : null)))) : null,
+        EXPECTED_EVERY_DAYS_ONE.includes(indicator) ? h('p', { class: 'muted' }, RULE_NOTES.outStreakForAttention.text, ' ', h('a', { href: RULE_NOTES.outStreakForAttention.url, target: '_blank', rel: 'noopener' }, RULE_NOTES.outStreakForAttention.source)) : null,
         h('p', { class: 'muted' }, 'Which normal range it is compared with, and the sources:'),
         normsBox,
         owner === SHIP ? null : h('p', {}, h('button', { type: 'button', class: 'link', onclick: () => openArticles(indicator) }, 'Articles on this, to read without the AI'))),
@@ -1088,7 +1122,8 @@ function alertsFor(personId) {
   }
   for (const it of s.items) {
     const last = it.m.last;
-    out.push({ id: `ship|${it.cell.indicator}|${new Date(msOf(last.time)).toISOString().slice(0, 13)}`, level: it.level, title: `Ship: ${lower(it.cell.label)}`, text: `${valueText(it.cell.indicator, last.value)} ${it.cell.unit}: outside the normal range (${rangeText(it.cell, SHIP)}).`, time: msOf(last.time), steps: ["Check the ship system's readings.", 'The crew and mission control decide.'], indicator: it.cell.indicator, system: 'Ship' });
+    const tx = it.kind === 'red' ? itemText(it, SHIP) : { title: `Ship: ${lower(it.cell.label)}`, text: `${valueText(it.cell.indicator, last.value)} ${it.cell.unit}: outside the normal range (${rangeText(it.cell, SHIP)}).` };
+    out.push({ id: `ship|${it.cell.indicator}|${it.level}|${new Date(msOf(last.time)).toISOString().slice(0, 10)}`, level: it.level, title: tx.title, text: tx.text, time: msOf(last.time), steps: it.kind === 'red' ? procedureFor(it) : ["Check the ship system's readings.", 'The crew and mission control decide.'], indicator: it.cell.indicator, system: 'Ship' });
   }
   return out.sort((x, y) => y.level - x.level || y.time - x.time);
 }
@@ -1471,7 +1506,7 @@ async function connectHeartRate() {
       if (live) live.textContent = `${hr.bpm} bpm`;
       if (Date.now() - hr.savedAt > 60 * 1000 && ui.person && !personById[ui.person].real) {
         hr.savedAt = Date.now();
-        addReading('pulse', hr.bpm, { source: { id: 'ble-heart-rate', indicator: 'pulse' } });
+        addReading('pulse', hr.bpm, { source: { id: 'ble-heart-rate', indicator: 'pulse' }, context: ui.exercising ? 'exercise' : null });
       }
     });
     device.addEventListener('gattserverdisconnected', () => { hr = { device: null, bpm: null, savedAt: 0 }; render(); });
@@ -1645,6 +1680,7 @@ function renderSetup() {
       h('section', { class: 'card' }, cornerTip('t:connections', 'connections'), h('h2', {}, 'Connections'),
         h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Bluetooth heart rate monitor'), h('small', { id: 'hr-live' }, hr.device ? `${hr.bpm ?? '…'} bpm` : 'Any chest strap or watch with the standard Bluetooth Heart Rate profile.')),
           btn('secondary small', hr.device ? 'Connected' : 'Connect', connectHeartRate, 'bluetooth', { disabled: p.real ? true : null, 'data-tip': 't:bluetooth' })),
+        switchRow('st-exercise', 'I am exercising', 'Heart rate from the strap is then recorded, not judged against the resting range, so a workout raises no alarm. Low limits still count.', Boolean(ui.exercising), (on) => { ui.exercising = on; }),
         h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Export for the doctor'), h('small', {}, 'A file medical record systems can read (HL7 FHIR).')),
           btn('secondary small', 'Open', openFhir, 'file-json-2', { disabled: p.real ? true : null, 'data-tip': 't:fhir' })),
         h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'NASA data'), h('small', {}, 'Real Inspiration4 blood tests from NASA OSDR.')),
