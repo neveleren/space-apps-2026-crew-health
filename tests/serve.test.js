@@ -507,6 +507,44 @@ test('crew alarms reach every crewmate, without the rest of the record', async (
   });
 });
 
+// "I am okay: false alarm" leaves an all-clear line, so every crewmate's screen can call the alarm off too.
+test('an all-clear crew line (alarm.clear: true) is kept and reaches every crewmate; nothing else rides along', async () => {
+  await withServer(async (srv, dir) => {
+    const line = (alarm, time) => ({ v: 1, kind: 'alarm', time, person: 'crew-2', alarm });
+    assert.equal((await postJson(srv, line({ text: 'Elly needs help now: an alarm was raised.' }, minutes(-10)))).status, 204);
+    assert.equal((await postJson(srv, line({ text: 'Elly is okay: false alarm.', clear: true }, minutes(-5)))).status, 204);
+    for (const bad of [{ text: 'x', clear: false }, { text: 'x', clear: 'yes' }, { text: 'x', clear: 1 }, { text: 'x', clear: null }, { clear: true }, { text: 'x', clear: true, by: 'crew-1' }]) {
+      const res = await postJson(srv, line(bad, minutes(-1)));
+      assert.equal(res.status, 400, JSON.stringify(bad));
+    }
+    const got = (await getJson(srv, '/api/events?person=crew-1')).value;
+    assert.deepEqual(got.map((e) => e.alarm), [{ text: 'Elly needs help now: an alarm was raised.' }, { text: 'Elly is okay: false alarm.', clear: true }]);
+    const kept = (await readFile(join(dir, 'crew-2.jsonl'), 'utf8')).trim().split('\n').map((l) => JSON.parse(l));
+    assert.deepEqual(kept.map((e) => Object.keys(e.alarm)), [['text'], ['text', 'clear']]);
+  });
+});
+
+test('the alarm line and the message topics in the checked copy', () => {
+  const now = Date.parse('2026-11-15T12:00:00.000Z');
+  const t = '2026-11-15T11:00:00.000Z';
+  const alarm = (a) => ({ v: 1, kind: 'alarm', time: t, person: 'crew-2', alarm: a });
+  assert.equal(eventProblem(alarm({ text: 'Elly is okay: false alarm.', clear: true }), { now }), null);
+  assert.equal(eventProblem(alarm({ text: 'Elly needs help now.' }), { now }), null, 'clear may be left out');
+  for (const clear of [false, 'true', 1, null, {}]) assert.match(eventProblem(alarm({ text: 'x', clear }), { now }), /alarm\.clear must be true/, JSON.stringify(clear));
+  assert.match(eventProblem(alarm({ text: 'x', extra: 1 }), { now }), /only text and clear/);
+  assert.match(eventProblem(alarm({ clear: true }), { now }), /alarm\.text/);
+  assert.deepEqual(cleanEvent(alarm({ text: 'Elly is okay.', clear: true })), { v: 1, kind: 'alarm', time: t, person: 'crew-2', alarm: { text: 'Elly is okay.', clear: true } });
+  assert.deepEqual(cleanEvent(alarm({ text: 'Elly needs help now.' })).alarm, { text: 'Elly needs help now.' });
+  // The crew screen names three kinds of message: the weekly conference summary, the letter to the psychologist and
+  // the call request. Each topic passes the check and is kept.
+  for (const topic of ['pmc', 'letter-to-psychologist', 'talk-request']) {
+    const e = { ...report('crew-1', 'hi', t), report: { to: 'doctor-earth', text: 'hi', topic } };
+    assert.equal(eventProblem(e, { now }), null, topic);
+    assert.deepEqual(cleanEvent(e).report, { to: 'doctor-earth', text: 'hi', topic }, topic);
+  }
+  assert.match(SECURITY_RULES.find((r) => r.id === 'event-shape').rule, /clear: true/);
+});
+
 test('the new answers are kept in their checked shapes, and nothing else', () => {
   const now = Date.parse('2026-11-15T12:00:00.000Z');
   const t = '2026-11-15T11:00:00.000Z';
