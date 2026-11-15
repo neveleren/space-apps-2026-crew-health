@@ -74,6 +74,13 @@ These screenshots show the crew screen with the made-up example flight. The app'
 - Every connection says Working, Simulated or Planned, with its sources.
 - Sound and display (a sound test; dark, light or follow the device), mission profile (ISS, Moon, Mars: the signal delay), camera, "I am exercising" (turns itself off after 2 hours, draft), save a copy of your data and bring it back, the PIN, and the simulation switches.
 
+**5. The menstrual cycle log** (on All measures, and "Cycle log" on Today; private to the person).
+
+- A month calendar: press a day to log its bleeding (no bleeding, spotting, light, medium or heavy, the four kinds ACOG asks people to note on a calendar) and symptoms from a sourced list (cramps, headache, back pain, bloating, tender breasts, acne or skin problems, nausea, tiredness, constipation or diarrhea, large clots). Today and the 89 days before can be logged or changed (a draft), never a day still to come. Each day is drawn with marks of different shapes and says in words what was logged; there is no red on it.
+- The summary and the history: the cycle day, the periods with their length and cycle length, the plain averages of the last cycles and the estimated next period ("a plain average, not a medical model"), and the ACOG and Endocrine Society flags, plus a draft flag for spotting apart from periods.
+- Periods suppressed with hormones, as many astronauts choose: no estimate and no flags; the log asks about breakthrough bleeding instead and counts it over the last 90 days, in the words of 2022 recommendations for describing bleeding on hormonal methods (Creinin and others, Contraception). On the ISS this matters: the US systems that reclaim water from urine were not designed for menstrual blood (Jain and Wotring, 2016).
+- Nothing from it goes by itself into crew lines, doctor messages, the FHIR export or the technical view, which shows only "a private cycle log entry"; the person's own "Save a copy of my data" file holds it. No fertility or ovulation features. The example flight's days of flow and symptoms are made up.
+
 ## Working now, simulated, planned
 
 | Part | Status | Note |
@@ -207,6 +214,7 @@ These stay with the team. The thresholds in the program are marked as drafts on 
 - The alarm timings (a look for new crew lines every 15 s, a repeat every 4 s, the spoken line every 16 s, a call for help tried again every 5 s); whether an eye self-check answer other than "no change" is attention or needs action; the symptom score (8 of 10 in 24 hours) that asks to tell the crew medical officer; the 12 hours for two sleep medicines.
 - On the public copy, which has no station server, the urgent sentence still says "a doctor has been called", while the message panel says the message is saved on this computer only. The sentence is the team's own wording.
 - Who can clear the line "Help was pressed at this computer" (it stays for 24 hours); how a forecast works when no mission is set (it then uses the example dates).
+- The cycle log's drafts: how far back a day can be logged (90 days); bleeding or spotting days with one free day between them counted as one episode, a period from its first day of bleeding to its last day of bleeding or spotting; the flag for spotting apart from periods; whether bleeding while periods are suppressed should ever reach the flight surgeon by itself (today it never does).
 
 ## Use of SI
 

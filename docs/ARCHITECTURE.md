@@ -20,6 +20,7 @@ Written by Claude (Anthropic), an AI system, for team Just For Fun. The idea, th
 | Crew screen | `index.html`, `src/crew.js`, `support.css` | browser | The astronaut's own screen: Today, all measures, messages, settings |
 | Crew alarm | `src/crew-alarm.js` | browser; Node in the tests | The rules and words of the crew alarm: which line is new, the all clear, what a save became, the automatic message to the doctor, the timings (`ALARM_RULES`, drafts) |
 | Find, mission, fatigue scale | `src/find.js`, `src/mission.js`, `src/fatigue.js` | browser; Node in the tests | Find a measure by the name on its row; the crew's own mission dates and the flight day; the seven statements of the energy question and its low-day rule |
+| Cycle log | `src/cycle-log.js`, `src/cycle.js`, `src/cycle-view.js`, `cycle.css` | browser; the value check also in the server; Node in the tests | The private menstrual cycle log: a day's bleeding and symptoms, its checks and the periods found in it (`cycle-log.js`); the summary, its flags and plain averages (`cycle.js`); the month calendar, the day editor and the history (`cycle-view.js`) |
 | Technical view | `machine.html`, `src/ui.js` | browser | Simulated devices, the cells, who gets each reading, the log, history and forecast |
 | The machine | `src/engine.js` | browser; its value checks also run in the server; Node in the tests | Cell, norm, red limit, route, history per person |
 | Cells and norms | `src/config.js` | everywhere | Every measure with its norms, sources and red limits; the people; the simulated sources; the team's open questions |
@@ -64,7 +65,7 @@ The technical view opens the store for everyone (`openStore()`, which reads `/ap
 
 ### A new reading
 
-1. A source makes a reading: a Bluetooth device (`connectHealthDevice()` in `src/ble.js`), a CSV file (`importCsv()` in `src/csv-import.js`), the ISSLive feed (`readCabinAir()` in `src/isslive.js`), a hand-entry form on a measure page, the daily check-in, a quick log (`src/quicklog.js`), the reaction test, an eye self-check answer, the camera, or the Help key (held for 2 s, it records `chest_grab_help` through the camera cell).
+1. A source makes a reading: a Bluetooth device (`connectHealthDevice()` in `src/ble.js`), a CSV file (`importCsv()` in `src/csv-import.js`), the ISSLive feed (`readCabinAir()` in `src/isslive.js`), a hand-entry form on a measure page, the daily check-in, a quick log (`src/quicklog.js`), a day of the cycle log (`src/cycle-view.js`), the reaction test, an eye self-check answer, the camera, or the Help key (held for 2 s, it records `chest_grab_help` through the camera cell).
 2. Device, form, log, test, camera and Help key readings go through `addReading()` in `src/crew.js`: it wraps the reading as an event, sends it through `machine.receive()` and saves it with `keep()`, which calls `store.append()`. Feed and file readings take another path: `onlyNew()` leaves out a value already saved (same person, source, measure and time), `toEvents()` makes the rest events, `keep()` saves them and `rebuild()` sends everything through a fresh machine.
 3. If a reading leaves the person with an urgent item (a red limit, or a camera or Help key alarm), `shareCrewAlarm()` saves one `alarm` event with a single line, "<name> needs help now: <measure> <value> <unit>." (for the Help key: "<name> pressed the Help key."), and a `report` to the doctor with the topic `alarm`, written by the program: to the doctor on board, or sealed in the outbox for Earth. A new line is written only when the set of urgent signs changes (`needsNewLine` in `src/crew-alarm.js`). When the last sign ends, or the person presses "I am okay: false alarm", it saves an all clear, `{ text, clear: true }`, and a report with the topic `alarm-clear`. Never for the ship or a real Inspiration4 participant. A CSV import shares alarm lines too.
 4. While someone is signed in, the screen asks the server for that person's events every 15 s (`ALARM_RULES.pollSeconds`, a draft). New crew lines and ship readings redraw the banner, the Messages key and Today, and a new crewmate line sounds. An urgent alarm repeats its tone every 4 s and its spoken line every 16 s until someone acknowledges it.
@@ -142,6 +143,7 @@ No other field is accepted; only extra switches inside `state` (from an older sa
 | medicines | `{ medicine, name, strength, amount, unit, takenAt? }`: a kit medicine, or `"other"` with a name; an amount above 0 and at most 10 |
 | what is weighing on you | a list of topic ids, no repeats: `home`, `crew`, `ground`, `workload`, `sleep`, `monotony`, `health`, `nothing` |
 | eye self-check | one of the four answers of the cell |
+| menstrual cycle | one day of the log, `{ day, flow, symptoms }`: `day` a calendar day `YYYY-MM-DD`, not after the event's own time and at most 89 days before it (90 days in all, a draft), so a saved line passes again when read back; `flow` one of `none`, `spotting`, `light`, `medium`, `heavy`; `symptoms` a list without repeats from the cycle log's list. `none` with no symptoms clears the day. The old values `period_start`, `period_end`, `suppression_on` and `suppression_off` are still accepted and read; nothing else |
 | sleep quality | a number from 1 to 7 |
 | other self-reports | a short text (at most 200 characters) or a number |
 
@@ -247,7 +249,10 @@ What is checked on every request, and what is not protected, is in `docs/SECURIT
 | `src/privacy.js` | The optional PIN, kept as a salted PBKDF2 hash |
 | `src/demo-crew.js` | The made-up example flight and example logs, which follow the calendar |
 | `src/inspiration4.js` | Real Inspiration4 blood tests from NASA OSDR (OSD-575, OSD-569) |
-| `src/cycle.js` | The menstrual cycle log, its checked flags and low days by phase |
+| `src/cycle.js` | The menstrual cycle summary: cycle day, plain averages, the next estimate, the checked flags (and a draft one), the sentences of the card, low days by phase |
+| `src/cycle-log.js` | The cycle log day by day: the value and its check (also used by the server), the old values read, days, episodes and periods, bleeding while suppressed, the month grid, the words |
+| `src/cycle-view.js` | The cycle card's calendar, day editor and history, drawn into a host element like the quick logs |
+| `cycle.css` | Styles of the cycle log |
 | `src/quicklog.js` | The symptom and medicine quick logs, their checks and their wording |
 | `src/support.js` | Mind support: topics, small things that help, journal, plan for hard days, five steps, mission calendar |
 | `src/reaction-test.js` | The 3-minute reaction test after NASA's Reaction Self Test (PVT-B rules) |
