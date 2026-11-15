@@ -139,11 +139,16 @@ function normOf(cell, person) {
 
 const valueOf = (cell, v) => (cell.normType === 'below-both' ? Number(v && v.sys) : Number(v));
 
+// Does the mission have the dates the flight rules need? With the example flight off and no mission set, the crew
+// screen passes a mission with no launch and no landing (review finding PO-5): then nothing counts as "in flight"
+// and there is no forecast, instead of the example's made-up dates driving them.
+export const hasMissionDates = (mission) => Boolean(mission && mission.launch && mission.landing && Number.isFinite(ms(mission.launch)) && Number.isFinite(ms(mission.landing)));
+
 // Is this reading outside the norm only by a change that flight studies call common, inside its band?
 // The temperature band grows with the flight day, as the rise does; both bands hold in flight only.
 export function commonInFlight(cell, entry, norm, mission) {
   const e = EXPECTED[cell.indicator];
-  if (!e || !entry || entry.status !== STATUS.OUT || entry.red || entry.side !== e.side || !norm) return false;
+  if (!e || !entry || entry.status !== STATUS.OUT || entry.red || entry.side !== e.side || !norm || !hasMissionDates(mission)) return false;
   const t = ms(entry.time);
   if (!(t >= ms(mission.launch) && t <= ms(mission.landing))) return false;
   const v = valueOf(cell, entry.value);
@@ -183,7 +188,10 @@ export function measureState({ machine, person, cell, mission, now }) {
   const runFrom = streak ? judged[judged.length - streak].time : null;
   const side = last && last.status === STATUS.OUT ? (last.side || (cell.normType === 'below-both' ? 'above' : null)) : null;
   const points = judged.map((x) => ({ time: x.time, value: valueOf(cell, x.value) }));
-  const fc = norm && cell.kind === 'number'
+  // The forecast runs to landing, so it needs the mission's dates and stops once the landing is past: after it the
+  // measure's page shows recovery against the pre-flight level instead (src/landing.js).
+  const toLanding = hasMissionDates(mission) && !(ms(mission.today || now) > ms(mission.landing));
+  const fc = norm && cell.kind === 'number' && toLanding
     ? forecast(points, { norm, flatPerDay: 0, now: mission.today, landing: mission.landing, window: { from: mission.launch, to: mission.landing } })
     : null;
   const every = EXPECTED_EVERY_DAYS[cell.indicator];
