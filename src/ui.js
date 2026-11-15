@@ -3,6 +3,7 @@
 import { createMachine, STATUS, DEST, KIND } from './engine.js';
 import { CELLS, SOURCES, SECTIONS, NORM_KINDS, CREW, SHIP, realPeople, QUESTIONS, DATA_GAPS, NEXT } from './config.js';
 import { INSPIRATION4 } from './inspiration4.js';
+import { logText } from './quicklog.js';
 import { openStore } from './store.js';
 import { RULES as CAM_RULES } from './camera-rules.js';
 import { exampleFlight, MISSION } from './demo-crew.js';
@@ -187,6 +188,8 @@ const shown = (v) => (v === null || v === undefined || v === '' ? 'empty' : fmtN
 
 function formatValue(indicator, value) {
   if (indicator === 'review') return `reports: ${value}`;
+  const logged = logText(indicator, value);
+  if (logged !== null && logged !== undefined) return logged;
   if (indicator === 'bp') return value && typeof value === 'object' ? `${shown(value.sys)}/${shown(value.dia)} mmHg` : shown(value);
   if (indicator === 'bone') return value && typeof value === 'object' ? `hip and spine ${shown(value.hipSpine)}%, femoral neck ${shown(value.neck)}%` : shown(value);
   if (indicator === 'blood') {

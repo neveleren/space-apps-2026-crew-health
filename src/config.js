@@ -339,6 +339,10 @@ export const CELLS = [
     normText: "the person marks the start and end of a period; it stays private unless the person chooses to share it. Doctors on Earth treat the cycle as a vital sign (ACOG); a check-up is advised if cycles are consistently longer than 45 days or there is no period for 3 months (Endocrine Society)",
   },
   {
+    id: null, section: 'psyche', indicator: 'weighing', effort: 'light', label: 'What is weighing on you', kind: KIND.SELF, reviewByAi: false, private: true,
+    normText: 'optional topics picked at the morning check-in; private; used only to choose which help to offer (the topics follow what NASA psychologists cover in private conferences)',
+  },
+  {
     id: null, section: 'env', indicator: 'co2', effort: 'light', label: 'Cabin CO2', kind: KIND.NUMBER, unit: 'mmHg',
     normType: 'range', norm: { min: null, max: 3 }, compareWith: 'spaceGeneral',
     // NASA sets no public emergency value for CO2: the standard leaves off-nominal CO2 to each program, and on the
@@ -568,6 +572,7 @@ export const SOURCES = [
   { id: 'attitude-report', section: 'psyche', label: 'Report: energy', indicator: 'attitude', presets: [{ label: 'energetic', value: 'energetic' }, { label: 'sluggish', value: 'sluggish' }] },
   { id: 'sleep-rating', section: 'psyche', label: 'Morning sleep rating', indicator: 'sleepQuality', presets: [6, 2].map((v) => ({ label: `${v} of 7`, value: v })) },
   { id: 'cycle-log', section: 'psyche', label: 'Cycle log', indicator: 'cycle', presets: [{ label: 'Period started', value: 'period_start' }, { label: 'Period ended', value: 'period_end' }] },
+  { id: 'weighing-report', section: 'psyche', label: 'Report: what is weighing on you', indicator: 'weighing', self: true, presets: [] },
   { id: 'cognition-test', section: 'psyche', label: 'Thinking test (once a month)', indicator: 'cognition', presets: [{ label: 'same as before flight', value: 'same as before flight' }, { label: 'worse than before flight', value: 'worse than before flight' }] },
   { id: 'co2-sensor', section: 'env', label: 'CO2 sensor', indicator: 'co2', input: 'number', presets: [2.1, 4.2].map((v) => ({ label: String(v), value: v })) },
   { id: 'mca', section: 'env', label: 'Major Constituent Analyzer: O2', indicator: 'cabinO2', input: 'number', presets: [150, 140].map((v) => ({ label: `${v}`, value: v })) },

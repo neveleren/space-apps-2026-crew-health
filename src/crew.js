@@ -15,9 +15,13 @@ import { RULES as CAM_RULES } from './camera-rules.js';
 import { icon } from './icons.js';
 import { initTips, tipButton, hideTip } from './explain.js';
 import { TIPS, PROVENANCE } from './tips.js';
+import { symptomLog, medicineLog, logText, PRIVATE_NOTE } from './quicklog.js';
+import { topicSignal, offerText, renderTopicChips, renderTips, renderJournal, renderPlan, renderSteps, renderCalendar, nextUp, supportTip, TALK_REQUEST_TEXT } from './support.js';
+import { runReactionTest, compareToOwn, exampleEarlierRuns } from './reaction-test.js';
+import { runEarthBreak } from './earth-break.js';
 
 // One icon per measure, so a list can be read at a glance.
-const ICON_FOR = { pulse: 'heart-pulse', bp: 'activity', glucose: 'droplet', temp: 'thermometer', spo2: 'droplets', sleep: 'moon', resp: 'wind', fluid: 'glass-water', bodyMass: 'scale', eyePressure: 'eye', hearing: 'ear', radiation: 'radiation', vo2max: 'heart', strength: 'dumbbell', bone: 'bone', camera: 'camera', mood: 'smile', attitude: 'battery', sleepQuality: 'bed', cognition: 'brain', cycle: 'calendar-heart', xray: 'scan-line', ecg: 'chart-line', ultrasound: 'waves', co2: 'cloud-fog', cabinTemp: 'thermometer', cabinO2: 'orbit', cabinPressure: 'gauge', noise: 'volume-2', blood: 'test-tube' };
+const ICON_FOR = { pulse: 'heart-pulse', bp: 'activity', glucose: 'droplet', temp: 'thermometer', spo2: 'droplets', sleep: 'moon', resp: 'wind', fluid: 'glass-water', bodyMass: 'scale', eyePressure: 'eye', hearing: 'ear', radiation: 'radiation', vo2max: 'heart', strength: 'dumbbell', bone: 'bone', camera: 'camera', mood: 'smile', attitude: 'battery', sleepQuality: 'bed', cognition: 'brain', cycle: 'calendar-heart', xray: 'scan-line', ecg: 'chart-line', ultrasound: 'waves', exercise: 'flame', visionCheck: 'eye', octChange: 'eye', octScan: 'scan-line', symptoms: 'stethoscope', medicines: 'pill', co2: 'cloud-fog', cabinTemp: 'thermometer', cabinO2: 'orbit', cabinPressure: 'gauge', noise: 'volume-2', blood: 'test-tube' };
 const NAV = [['home', 'Today', 'house'], ['measures', 'All measures', 'list'], ['alerts', 'Messages', 'bell'], ['setup', 'Settings', 'settings']];
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -59,10 +63,14 @@ const lower = (s) => s.charAt(0).toLowerCase() + s.slice(1);
 const msOf = (t) => (t instanceof Date ? t.getTime() : new Date(t).getTime());
 const LV_CLASS = ['lv0', 'lv1', 'lv2', 'lv3'];
 
+// One short notice at a time: a new one replaces the old, and a longer one stays longer.
+let lastToast = null;
 function toast(text) {
-  const node = h('div', { class: 'toast', role: 'status' }, text);
+  if (lastToast) lastToast.remove();
+  const node = h('div', { class: 'toast', id: 'toast', role: 'status' }, text);
   document.body.append(node);
-  setTimeout(() => node.remove(), 3600);
+  lastToast = node;
+  setTimeout(() => { node.remove(); if (lastToast === node) lastToast = null; }, Math.max(3600, 70 * String(text).length));
 }
 
 // Per-device conveniences only (the switches of the situation, the muted sound, seen alerts).
@@ -87,7 +95,7 @@ const ui = {
   muted: Boolean(prefs.muted),
   example: prefs.example !== false,
   seen: new Set(prefs.seen || []),
-  checkin: { mood: null, attitude: null, sleepQuality: null },
+  checkin: { mood: null, attitude: null, sleepQuality: null, weighing: [] },
   checkinOpen: false,
   find: '',
   backTo: 'measures',
@@ -128,9 +136,9 @@ async function keep(event) {
 }
 
 // Every new reading goes through the machine and is saved, exactly like on the technical page.
-async function addReading(indicator, value, { source = null, person = ui.person, context = null } = {}) {
+async function addReading(indicator, value, { source = null, person = ui.person, context = null, time = null, detail = null } = {}) {
   const src = source || sourceFor(indicator);
-  const event = { v: 1, kind: 'reading', time: new Date().toISOString(), person, state: { ...ui.ship }, reading: { source: src.id, indicator, value, ...(context ? { context } : {}) } };
+  const event = { v: 1, kind: 'reading', time: time || new Date().toISOString(), person, state: { ...ui.ship }, reading: { source: src.id, indicator, value, ...(context ? { context } : {}), ...(detail ? { detail } : {}) } };
   machine.setState(event.state);
   const entry = machine.receive({ ...event.reading, person, time: event.time });
   await keep(event);
@@ -204,6 +212,9 @@ function normShort(cell, owner) {
 const CAMERA_TEXT = { sleeping: 'asleep', chest_grab: 'hand on chest', chest_grab_ok: 'answered "okay"', chest_grab_help: 'answered "need help"', chest_grab_no_answer: 'no answer' };
 function valueText(indicator, value) {
   if (value === null || value === undefined) return '';
+  const logged = logText(indicator, value);
+  if (logged !== null && logged !== undefined) return logged;
+  if (indicator === 'cognition' && Number.isFinite(Number(value)) && typeof value !== 'string') return `${Math.round(Number(value))} ms`;
   if (indicator === 'bp' && typeof value === 'object') return `${value.sys}/${value.dia}`;
   if (indicator === 'camera') return CAMERA_TEXT[value] || String(value);
   if (indicator === 'bone' && typeof value === 'object') return `${value.hipSpine}% and ${value.neck}%`;
@@ -263,7 +274,7 @@ const PROFILES = {
 const profile = () => PROFILES[ui.profile] || PROFILES.iss;
 
 // ---------- "?" explanations ----------
-const SELF_SOURCES = ['mood-report', 'attitude-report', 'sleep-rating', 'cycle-log', 'cognition-test'];
+const SELF_SOURCES = ['mood-report', 'attitude-report', 'sleep-rating', 'cycle-log', 'cognition-test', 'reaction-test', ...SOURCES.filter((s) => s.self).map((s) => s.id)];
 function thisValue(owner, last) {
   if (!last) return 'No reading yet.';
   const r = last;
@@ -321,6 +332,7 @@ function systemsTip() {
 function tipContent(key) {
   if (key === 's:systems') return systemsTip();
   const [kind, a1, a2] = String(key).split(':');
+  if (kind === 'mind') return supportTip(a1);
   if (kind === 'm') return measureTip(a1, a2);
   if (kind === 'b') return bloodTip(a1, a2);
   const t = TIPS[a1];
@@ -513,11 +525,11 @@ function mindChoice(p, a, primaryFirst) {
   const choices = h('div', { class: 'actions' },
     aiButton('Start an anonymous session with AI', 'psyche', a, primaryFirst),
     btn('secondary', 'Tell the doctor on Earth', () => openDoctor(a, 'psyche'), 'stethoscope', { 'data-tip': 't:tellDoctor' }),
-    btn('secondary', 'Advice and articles', () => openAdvice(), 'list', { 'data-tip': 't:advice' }));
+    btn('secondary', 'Small things that help', () => openAdvice(), 'list', { 'data-tip': 't:advice' }));
   if (offerDismissed.has(p.id)) return h('div', { class: 'advice' }, choices);
   return h('div', { class: 'advice' },
     h('p', { class: 'who-says' }, 'AI support (not a psychologist) · not connected yet'),
-    h('blockquote', {}, `Hey ${p.name}, I noticed from your check-ins that the last days have been hard. How about talking anonymously about what is bothering you? Or, if you wish, I can send the results of these check-ins to the doctor.`),
+    h('blockquote', {}, offerText(p.name, topicSignal(machine.history(p.id, 'weighing'), nowTime()))),
     choices,
     h('div', { class: 'actions' }, btn('secondary small', 'Not now', () => { offerDismissed.add(p.id); renderHome(); })),
     h('p', { class: 'note' }, "The team's idea: this conversation is not recorded or read, and the AI is there day and night, unlike doctors. Which AI it is, the team decides."));
@@ -536,14 +548,14 @@ function renderComingUp(p, now) {
   const every = (n, offset = 0) => { const d = (n - ((day + offset) % n)) % n; return d === 0 ? n : d; };
   const eyeDays = [30, 90, landingDay - 30].filter((d) => d > day);
   const items = [
-    { ic: 'stethoscope', what: 'Private medical conference with your flight surgeon (weekly)', in: every(7, 3), act: () => openPmc(p) },
+    { ic: 'stethoscope', what: 'Private medical conference with your flight surgeon (weekly)', in: every(7, 3), act: () => openPmc(p), actLabel: 'Prepare' },
     { ic: 'message-square', what: 'Private talk with your psychologist (every 2 weeks)', in: every(14, 5) },
-    { ic: 'zap', what: 'Thinking test (monthly)', in: every(30, 11) },
+    { ic: 'zap', what: 'Thinking test (monthly)', in: every(30, 11), act: () => openReactionTest('full'), actLabel: 'Start' },
     eyeDays.length ? { ic: 'scan-line', what: 'Eye check: vision, retina scan (OCT)', in: eyeDays[0] - day } : { ic: 'scan-line', what: 'Eye check after landing', in: toLanding + 1 },
   ].sort((a, b) => a.in - b.in).slice(0, 3);
   const when = (n) => (n === 1 ? 'tomorrow' : `in ${n} days`);
-  byId('comingup-note').textContent = 'Example schedule';
-  byId('comingup-list').replaceChildren(...items.map((it) => h('li', {}, icon(it.ic, { size: 18 }), h('span', {}, it.what, it.act ? [' ', btn('secondary small', 'Prepare', it.act, null, { 'data-tip': 't:pmc' })] : null), h('span', { class: 'when' }, when(it.in)))));
+  byId('comingup-note').textContent = nextUp(day) || 'Example schedule';
+  byId('comingup-list').replaceChildren(...items.map((it) => h('li', {}, icon(it.ic, { size: 18 }), h('span', {}, it.what, it.act ? [' ', btn('secondary small', it.actLabel || 'Prepare', it.act, null, it.actLabel === 'Prepare' ? { 'data-tip': 't:pmc' } : {})] : null), h('span', { class: 'when' }, when(it.in)))));
   card.hidden = false;
 }
 
@@ -607,12 +619,17 @@ function renderCheckin(p, now, top = LEVEL.FINE) {
   byId('ci-start-slot').replaceChildren(...(open ? [] : [done.length
     ? btn('secondary small', 'Change', () => { ui.checkinOpen = true; renderCheckin(p, now, top); })
     : btn(top === LEVEL.FINE ? 'primary' : 'secondary', 'Start', () => { ui.checkinOpen = true; renderCheckin(p, now, top); })]));
+  byId('ci-extra').replaceChildren(
+    btn('secondary small', 'Log a symptom', () => openSymptomLog(), 'stethoscope', { 'data-tip': 't:symptomlog' }),
+    btn('secondary small', 'I took a medicine', () => openMedicineLog(), 'pill', { 'data-tip': 't:medicinelog' }),
+    btn('secondary small', 'Mind support', () => openMindSupport(), 'sparkles', { 'data-tip': 't:mindsupport' }));
   const seg = (id, key, options) => byId(id).replaceChildren(...options.map(([value, label]) => h('button', {
     type: 'button', 'aria-pressed': String(ui.checkin[key] === value), onclick: () => { ui.checkin[key] = ui.checkin[key] === value ? null : value; renderCheckin(p, now, top); },
   }, ui.checkin[key] === value ? icon('check', { size: 16 }) : null, label)));
   seg('ci-mood', 'mood', [['bad', 'Bad'], ['fair', 'Fair'], ['good', 'Good']]);
   seg('ci-attitude', 'attitude', [['sluggish', 'Sluggish'], ['energetic', 'Energetic']]);
   seg('ci-sleep', 'sleepQuality', [1, 2, 3, 4, 5, 6, 7].map((n) => [n, String(n)]));
+  if (open) renderTopicChips(byId('ci-topics'), { selected: ui.checkin.weighing || [], onChange: (ids) => { ui.checkin.weighing = ids; } });
   const any = Boolean(ui.checkin.mood || ui.checkin.attitude || ui.checkin.sleepQuality);
   byId('ci-send').setAttribute('aria-disabled', any ? 'false' : 'true');
 }
@@ -623,7 +640,8 @@ async function sendCheckin() {
   if (c.mood) await addReading('mood', c.mood);
   if (c.attitude) await addReading('attitude', c.attitude);
   if (c.sleepQuality) await addReading('sleepQuality', c.sleepQuality);
-  ui.checkin = { mood: null, attitude: null, sleepQuality: null };
+  if (c.weighing && c.weighing.length) await addReading('weighing', c.weighing);
+  ui.checkin = { mood: null, attitude: null, sleepQuality: null, weighing: [] };
   ui.checkinOpen = false;
   toast('Check-in saved. The planned review will look at it.');
   render();
@@ -740,7 +758,9 @@ function cycleCard(p, now) {
 const GROUPS = [
   ['Vital signs', null, ['pulse', 'bp', 'spo2', 'temp', 'resp']],
   ['Sleep, food and fluid', null, ['sleep', 'fluid', 'glucose', 'bodyMass']],
-  ['Slow changes over the flight', 'Checked every few weeks, or carried over the whole flight.', ['vo2max', 'strength', 'bone', 'eyePressure', 'hearing', 'radiation']],
+  ['Fitness, muscles and bones', 'Exercise every day keeps fitness and bones; the tests are every few weeks.', ['exercise', 'vo2max', 'strength', 'bone']],
+  ['Eyes and ears', 'Eyes change on long flights (SANS); checks on flight days 30 and 90 and 30 days before return.', ['visionCheck', 'octChange', 'octScan', 'eyePressure', 'hearing']],
+  ['Radiation', 'Carried over the whole career.', ['radiation']],
   ['Mind', 'Your daily check-ins.', ['mood', 'attitude', 'sleepQuality', 'cognition']],
   ['Images, tracings and camera', 'These go to the AI or a doctor.', ['xray', 'ecg', 'ultrasound', 'camera']],
 ];
@@ -750,8 +770,8 @@ const WORDS = {
   temp: 'temperature fever temp', resp: 'breathing respiration breaths', sleep: 'sleep hours rest', fluid: 'water drink fluid hydration',
   glucose: 'sugar glucose blood sugar', bodyMass: 'weight mass body', vo2max: 'fitness aerobic vo2 cardio exercise', strength: 'muscle strength',
   bone: 'bone density dexa', eyePressure: 'eye vision iop', hearing: 'ear hearing audiogram', radiation: 'radiation dose msv dosimeter',
-  mood: 'mood feeling', attitude: 'energy tired fatigue', sleepQuality: 'sleep quality rest', cognition: 'thinking cognition memory test',
-  xray: 'x-ray xray image', ecg: 'ecg ekg heart tracing', ultrasound: 'ultrasound echo scan image', camera: 'camera video chest sleep',
+  mood: 'mood feeling', attitude: 'energy tired fatigue', sleepQuality: 'sleep quality rest', cognition: 'thinking cognition memory test reaction reflex speed winscat',
+  xray: 'x-ray xray image', exercise: 'exercise workout training treadmill bike ared cevis', visionCheck: 'vision eye eyes amsler sans sight', octChange: 'oct retina eye eyes sans', octScan: 'oct scan eye image retina', ecg: 'ecg ekg heart tracing', ultrasound: 'ultrasound echo scan image', camera: 'camera video chest sleep',
   co2: 'co2 carbon dioxide air', cabinO2: 'oxygen o2 air', cabinPressure: 'pressure cabin air', noise: 'noise sound loud db', cabinTemp: 'temperature cabin air',
 };
 
@@ -779,7 +799,7 @@ function renderGroups(p, a, now) {
       foldable && hint ? h('p', { class: 'note' }, hint) : null,
       list);
   };
-  const blocks = GROUPS.flatMap(([title, hint, list]) => [group(title, hint, list.map(rowFor)), title === 'Mind' ? cycleCard(p, now) : null]).filter(Boolean);
+  const blocks = GROUPS.flatMap(([title, hint, list]) => [group(title, hint, list.map(rowFor)), title === 'Mind' ? cycleCard(p, now) : null, title === 'Sleep, food and fluid' ? privateLogCard(p, now) : null]).filter(Boolean);
   if (others.length) blocks.push(group('Other measures', null, others.map(rowFor)));
   blocks.push(group('Cabin air', 'Shared by the whole crew.', SHIP_CELLS.map((ind) => measureRow(SHIP, ind, shipItems, now))));
   byId('groups').replaceChildren(...blocks);
@@ -949,6 +969,7 @@ function renderDetail() {
   const lines = [];
   if (cell.normType === 'baseline-percent') { const b = bandOf(cell, owner); if (b) lines.push({ v: b.min, label: `Limit: ${cell.norm.minPercent}% of own pre-flight level` }); }
   if (indicator === 'radiation') lines.push({ v: cell.norm.max, label: 'NASA career limit' });
+  for (const t of cell.thresholds || []) lines.push({ v: t.min, label: `${cap(t.text)}: ${t.min} ${cell.unit} (draft)` });
   if (indicator === 'bp') lines.push({ v: cell.norm.sysBelow, label: `Systolic: below ${cell.norm.sysBelow}` }, { v: cell.norm.diaBelow, label: `Diastolic: below ${cell.norm.diaBelow}` });
 
   const facts = [];
@@ -965,6 +986,10 @@ function renderDetail() {
     about.push("The forecast is a straight line through the in-flight readings (Claude's technical choice), not a validated medical model.");
   } else if (cell.kind === KIND.NUMBER) {
     facts.push(cell.onlyOnEarth ? 'Not measured in flight: only on Earth, before and after flight.' : 'To see where a measure is going, in-flight readings on at least three different days are needed.');
+  } else if (indicator === 'cognition') {
+    facts.push('Once a month NASA crews take a thinking test (WinSCAT). The 3-minute reaction test here is modelled on NASA\'s Reaction Self Test; compare only with yourself, never with others. It is not a fitness-for-duty test.');
+  } else if (cell.answers) {
+    facts.push(cell.normText);
   } else {
     facts.push('Check-ins build up and are looked at in the planned review. By which rule the AI decides that spirits are falling is still the team\'s open question.');
   }
@@ -1010,12 +1035,19 @@ function renderDetail() {
     h('div', { class: 'detail-title' }, h('h1', {}, cell.label), owner === SHIP ? h('span', { class: 'chip neutral' }, 'Shared by the crew') : null),
     h('section', { class: `card now ${LV_CLASS[level]}` },
       cornerTip(`m:${indicator}:${owner.id}`, cell.label),
-      lastEntry ? h('div', { class: 'now-value' }, h('b', {}, shown), cell.unit && cell.kind === KIND.NUMBER ? h('span', { class: 'u' }, cell.unit) : null, arrow) : null,
+      lastEntry ? h('div', { class: `now-value${String(shown).length > 12 && !/^[\d.,\s/:+-]+$/.test(String(shown)) ? ' words' : ''}` }, h('b', {}, shown), cell.unit && cell.kind === KIND.NUMBER ? h('span', { class: 'u' }, cell.unit) : null, arrow) : null,
       h('div', { class: 'now-text' },
         h('p', { class: 'verdict' }, level ? h('span', { class: `lvc${level}` }, icon(LEVEL_ICON[level], { size: 18 }), ' ') : null, verdict, level ? h('span', { class: `lvc${level}` }, ` ${LEVEL_TITLE[level]}.`) : null),
         norm ? h('p', { class: 'meta' }, `Normal range: ${rangeText(cell, owner)}${cell.unit && cell.kind === KIND.NUMBER && cell.normType !== 'baseline-percent' ? ` ${cell.unit}` : ''}`) : null,
         lastEntry ? h('p', { class: 'meta' }, 'Last reading ', h('span', { class: 'mono' }, stamp(lastEntry.time, now))) : null)),
     alert ? h('div', { class: 'actions' }, btn('proc', 'What to do', () => openProcedure(alert), 'list-checks')) : null,
+    indicator === 'cognition' ? h('div', { class: 'actions' }, btn('primary', 'Start the 3-minute test', () => openReactionTest('full'), 'zap'), btn('secondary', 'Try a 30-second demo', () => openReactionTest('demo'), 'zap')) : null,
+    cell.answers ? h('section', { class: 'card' },
+      h('h2', {}, 'Answer now'),
+      cell.howTo ? h('ol', { class: 'links' }, ...cell.howTo.map((s) => h('li', {}, s))) : null,
+      cell.indicator === 'visionCheck' ? amslerGrid() : null,
+      h('div', { class: 'answers' }, ...cell.answers.map((ans) => btn('secondary', ans.label, async () => { await addReading(indicator, ans.value); toast(cell.tellDoctor && cell.tellDoctor.values.includes(ans.value) ? 'Saved. Worth telling your flight surgeon: use Message the doctor.' : 'Saved.'); redrawDetail(); }))),
+      cell.howToSrc ? h('p', { class: 'note' }, 'How to: ', h('a', { href: cell.howToSrc.url, target: '_blank', rel: 'noopener' }, cell.howToSrc.name)) : null) : null,
     periodBar(redrawDetail),
     h('section', { class: 'card chart-card' },
       cornerTip('t:chart', 'the chart'),
@@ -1059,6 +1091,28 @@ function renderDetail() {
   if (shownPts.some((pt) => pt.out)) legend.push(h('span', {}, h('span', { class: 'out-key' }), ord ? cap(LOW[indicator]) : 'Outside the normal range'));
   byId('d-legend').replaceChildren(...legend);
   byId('d-legend').hidden = !legend.length;
+}
+
+// An Amsler grid to look at for the eye self-check: a 20 by 20 grid with a dot in the centre (MedlinePlus).
+function amslerGrid() {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 200 200');
+  svg.setAttribute('class', 'amsler');
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', 'Amsler grid: look at the centre dot; all lines should look straight');
+  for (let i = 0; i <= 20; i += 1) {
+    for (const [x1, y1, x2, y2] of [[i * 10, 0, i * 10, 200], [0, i * 10, 200, i * 10]]) {
+      const l = document.createElementNS(NS, 'line');
+      l.setAttribute('x1', x1); l.setAttribute('y1', y1); l.setAttribute('x2', x2); l.setAttribute('y2', y2);
+      l.setAttribute('stroke', '#111111'); l.setAttribute('stroke-width', '1');
+      svg.append(l);
+    }
+  }
+  const dot = document.createElementNS(NS, 'circle');
+  dot.setAttribute('cx', '100'); dot.setAttribute('cy', '100'); dot.setAttribute('r', '3.5'); dot.setAttribute('fill', '#111111');
+  svg.append(dot);
+  return svg;
 }
 
 // Redraw the measure page and keep the sections the person opened.
@@ -1221,7 +1275,8 @@ function helpNowCard() {
       h('li', {}, 'Ask the ground for a private medical conference with your flight surgeon or psychologist.', ui.ship.linkToEarth ? '' : ' There is no link now: the request waits in the outbox, so also tell the crew medical officer on board.'),
       h('li', {}, 'Use your plan for hard days, written before flight with your psychologist.')),
     h('div', { class: 'actions' },
-      btn('primary small', 'Ask for a private conference', () => openDoctor({ body: { items: [] }, psyche: { items: [] } }, 'psyche'), 'stethoscope')),
+      btn('primary small', 'Ask for a private conference', () => openDoctor({ body: { items: [] }, psyche: { items: [] } }, 'psyche'), 'stethoscope'),
+      btn('secondary small', 'Open my plan', () => openPlan(), 'shield')),
     h('p', { class: 'note' }, 'Fixed steps, not AI; they work with the AI off. Nothing is sent by itself. Whether anything more should happen in immediate danger is the team\'s decision.'));
 }
 
@@ -1272,11 +1327,108 @@ function openAi(kind, a) {
   ]);
 }
 
+const backToMind = () => btn('secondary small back', 'All mind tools', () => openMindSupport(), 'chevron-left');
 function openAdvice() {
-  openPanel('Advice and articles', [
-    h('p', {}, 'Who gives advice, the automation or the AI, is still the team\'s open question. For now, checked reference material only.'),
-    articleLinks(null),
+  const host = h('div');
+  const p = personById[ui.person];
+  const a = assess({ machine, person: p, cells: CELLS, mission: MISSION, now: nowTime() });
+  const sig = topicSignal(machine.history(p.id, 'weighing'), nowTime());
+  renderTips(host, { signals: { topic: sig ? sig.id : null, lowMood: a.psyche.level > LEVEL.FINE, poorSleep: (a.info || []).some((x) => x.cell && x.cell.indicator === 'sleep') }, onOpenBreak: () => { closePanel(); openEarthBreak(); }, onOpenJournal: () => openJournal() });
+  openPanel('Mind support', [backToMind(), host, h('p', { class: 'note' }, 'Who gives advice, the automation or the AI, is still the team\'s open question. These are checked suggestions with their sources.'), h('p', {}, h('b', {}, 'Reading for people who prefer to read without the AI')), articleLinks(null)]);
+}
+
+// ---------- private mind tools: journal, plan, steps, Earth break; kept only in this browser for this person ----------
+const MIND_KEY = (id) => `jff-mind-private-v1:${id}`;
+function loadMind(id) { try { return { journal: [], plan: null, worksheets: [], breaks: [], ...JSON.parse(localStorage.getItem(MIND_KEY(id)) || '{}') }; } catch { return { journal: [], plan: null, worksheets: [], breaks: [] }; } }
+function saveMind(id, data) { try { localStorage.setItem(MIND_KEY(id), JSON.stringify(data)); return true; } catch { toast('Could not save here: this browser blocks storage.'); return false; } }
+const queueReport = async (to, text, topic) => keep({ v: 1, kind: 'report', time: new Date().toISOString(), person: ui.person, state: { ...ui.ship }, report: { to, text: String(text).slice(0, 6000), topic } });
+
+function openMindSupport() {
+  const p = personById[ui.person];
+  const day = Math.floor((msOf(nowTime()) - msOf(MISSION.launch)) / DAY) + 1;
+  const cal = h('div');
+  if (ui.example) renderCalendar(cal, { flightDay: day, onOpen: () => {} });
+  openPanel('Mind support', [
+    h('p', {}, 'Tools that work on board with no AI and no link to Earth, from NASA research and proven methods. What you write stays in this browser and is sent only if you choose.'),
+    h('div', { class: 'tool-list' },
+      btn('secondary', 'Small things that help', () => openAdvice(), 'list'),
+      btn('secondary', 'Private journal', () => openJournal(), 'message-square'),
+      btn('secondary', 'My plan for hard days', () => openPlan(), 'shield'),
+      btn('secondary', 'Work through it in 5 steps', () => openSteps(), 'list-checks'),
+      btn('secondary', 'Take a 3-minute Earth break', () => { closePanel(); openEarthBreak(); }, 'orbit'),
+      btn('secondary', 'Do the 3-minute reaction test', () => { closePanel(); openReactionTest('full'); }, 'zap'),
+      btn('secondary', 'Anonymous session with AI support', () => openSupport(assess({ machine, person: p, cells: CELLS, mission: MISSION, now: nowTime() })), 'sparkles')),
+    ui.example ? cal : null,
   ]);
+}
+function openJournal() {
+  const p = personById[ui.person];
+  const data = loadMind(p.id);
+  const host = h('div');
+  const ctl = renderJournal(host, {
+    entries: data.journal, link: ui.ship.linkToEarth,
+    onSave: (entry) => { const d = loadMind(p.id); d.journal = [entry, ...d.journal.filter((e) => e.id !== entry.id)]; if (!saveMind(p.id, d)) throw new Error('storage'); ctl && ctl.update(d.journal, { link: ui.ship.linkToEarth }); },
+    onToggleTalk: (id, on) => { const d = loadMind(p.id); d.journal = d.journal.map((e) => (e.id === id ? { ...e, talk: on } : e)); saveMind(p.id, d); ctl && ctl.update(d.journal, { link: ui.ship.linkToEarth }); },
+    onDelete: (id) => { const d = loadMind(p.id); d.journal = d.journal.filter((e) => e.id !== id); saveMind(p.id, d); ctl && ctl.update(d.journal, { link: ui.ship.linkToEarth }); },
+    onSendLetter: async (text) => { await queueReport(ui.ship.doctorOnBoard ? 'doctor-onboard' : 'doctor-earth', text, 'letter-to-psychologist'); toast(ui.ship.linkToEarth ? 'Your letter is in the outbox: it goes with the next downlink.' : 'Your letter waits in the outbox for the link.'); },
+  });
+  openPanel('Mind support', [backToMind(), host]);
+}
+function openPlan() {
+  const p = personById[ui.person];
+  const data = loadMind(p.id);
+  const host = h('div');
+  renderPlan(host, {
+    plan: data.plan, example: ui.example && !p.real, link: ui.ship.linkToEarth, doctorOnBoard: ui.ship.doctorOnBoard,
+    onSave: (plan) => { const d = loadMind(p.id); d.plan = plan; if (!saveMind(p.id, d)) throw new Error('storage'); toast('Your plan is saved in this browser only.'); },
+    onTalkNow: async (kind) => { if (kind === 'ground') { await queueReport(ui.ship.doctorOnBoard ? 'doctor-onboard' : 'doctor-earth', TALK_REQUEST_TEXT, 'talk-request'); toast('Your request for a private call is in the outbox.'); } },
+  });
+  openPanel('Mind support', [backToMind(), host]);
+}
+function openSteps() {
+  const p = personById[ui.person];
+  const data = loadMind(p.id);
+  const host = h('div');
+  renderSteps(host, { worksheet: data.worksheets[0] || null, onSave: (ws) => { const d = loadMind(p.id); d.worksheets = [ws, ...d.worksheets.filter((w) => w.id !== ws.id)].slice(0, 20); if (!saveMind(p.id, d)) throw new Error('storage'); toast('Saved in this browser only.'); } });
+  openPanel('Mind support', [backToMind(), host]);
+}
+function openEarthBreak() {
+  const p = personById[ui.person];
+  runEarthBreak({ onDone: (r) => { const d = loadMind(p.id); d.breaks = [r, ...d.breaks].slice(0, 50); saveMind(p.id, d); toast(r.feeling ? `Noted privately: ${r.feeling}.` : 'Break done.'); }, onCancel: () => {} });
+}
+function earlierRuns(p) {
+  const mine = stored.filter((e) => e.person === p.id && e.reading && e.reading.indicator === 'cognition' && e.reading.detail).map((e) => e.reading.detail);
+  return ui.example && !p.real ? [...exampleEarlierRuns(MISSION.launch), ...mine] : mine;
+}
+function openReactionTest(mode) {
+  const p = personById[ui.person];
+  runReactionTest({ mode, earlier: earlierRuns(p), onDone: async (result) => {
+    if (result.median === null || result.median === undefined) { toast('Not enough presses to give a result.'); return; }
+    await addReading('cognition', Math.round(result.median), { source: { id: 'reaction-test', indicator: 'cognition' }, detail: result });
+    const cmp = compareToOwn(result, earlierRuns(p));
+    toast(cmp && cmp.text ? cmp.text : 'Saved.');
+  }, onCancel: () => {} });
+}
+
+// ---------- quick logs: a symptom in about ten seconds, a medicine in two taps (private) ----------
+function openSymptomLog() {
+  const host = h('div');
+  symptomLog(host, { onSave: async (e) => { await addReading(e.indicator, e.value, { time: e.time }); closePanel(); toast('Logged privately.'); }, onCancel: () => closePanel() });
+  openPanel('Log a symptom', [host]);
+}
+function openMedicineLog() {
+  const host = h('div');
+  medicineLog(host, { onSave: async (e) => { await addReading(e.indicator, e.value, { time: e.time }); closePanel(); toast('Logged privately.'); }, onCancel: () => closePanel() });
+  openPanel('I took a medicine', [host]);
+}
+function privateLogCard(p, now) {
+  const since = msOf(now) - 14 * DAY;
+  const rows = [...machine.history(p.id, 'symptoms'), ...machine.history(p.id, 'medicines')].filter((x) => msOf(x.time) >= since).sort((x, y) => msOf(y.time) - msOf(x.time)).slice(0, 6);
+  return h('section', { class: 'group', 'data-terms': 'symptom symptoms headache medicine medicines pill log private' },
+    h('div', { class: 'group-head' }, h('h2', {}, 'Your private log'), h('p', {}, PRIVATE_NOTE)),
+    h('section', { class: 'card' },
+      rows.length ? h('ul', { class: 'links mind-log' }, ...rows.map((x) => h('li', {}, h('span', {}, logText(x.indicator || (x.value && x.value.symptom ? 'symptoms' : 'medicines'), x.value) || valueText('symptoms', x.value)), h('span', { class: 'mono muted' }, `GMT ${gmtDOY(x.time)}`)))) : h('p', { class: 'muted' }, 'Nothing logged in the last 14 days.'),
+      h('div', { class: 'actions' }, btn('secondary small', 'Log a symptom', () => openSymptomLog(), 'stethoscope'), btn('secondary small', 'I took a medicine', () => openMedicineLog(), 'pill'))));
 }
 
 function articleLinks(indicator) {
@@ -1758,7 +1910,7 @@ byId('comingup-tip').replaceWith(tipButton('t:comingup', 'what is coming up'));
 byId('who-btn').addEventListener('click', () => { if (camStop) { camStop(); camStop = null; } closePanel(); ui.person = null; render(); });
 byId('alerts-btn').addEventListener('click', () => setScreen('alerts'));
 byId('ci-send').addEventListener('click', sendCheckin);
-byId('ci-cancel').addEventListener('click', () => { ui.checkinOpen = false; ui.checkin = { mood: null, attitude: null, sleepQuality: null }; renderHome(); });
+byId('ci-cancel').addEventListener('click', () => { ui.checkinOpen = false; ui.checkin = { mood: null, attitude: null, sleepQuality: null, weighing: [] }; renderHome(); });
 byId('see-all').addEventListener('click', () => setScreen('measures'));
 byId('find-icon').replaceWith(icon('search', { size: 20 }));
 byId('find-clear').append(icon('x', { size: 18 }));
