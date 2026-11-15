@@ -31,12 +31,20 @@
 
 const DAY = 24 * 60 * 60 * 1000;
 
-export const MISSION = {
-  name: 'Example flight (made up)',
-  launch: '2026-06-01T06:00:00Z',
-  landing: '2026-12-10T06:00:00Z',
-  today: '2026-11-14T18:00:00Z',
-};
+// The example flight follows the calendar: "today" is the start of the current hour (GMT), launch was
+// 166.5 days earlier (flight day 167) and landing is 25.5 days ahead. So the example never goes stale while
+// judges look at it, from November to January. The shapes of every story stay the same on any day.
+const HOUR = 60 * 60 * 1000;
+export function missionAt(nowMs) {
+  const today = Math.floor(nowMs / HOUR) * HOUR;
+  return {
+    name: 'Example flight (made up)',
+    launch: new Date(today - 166 * DAY - 12 * HOUR).toISOString(),
+    landing: new Date(today + 25 * DAY + 12 * HOUR).toISOString(),
+    today: new Date(today).toISOString(),
+  };
+}
+export const MISSION = missionAt(Date.now());
 
 // A small repeatable random generator, so the example looks the same on every computer.
 function rng(seed) {

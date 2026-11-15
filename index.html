@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Crew Health Console</title>
 <meta name="claude:viewport-fit-sides" content="cover">
+<meta name="generator" content="Code generated with SI (Claude, Anthropic) from the design and decisions of team Just For Fun. Example data are made up.">
 <link rel="stylesheet" href="./fonts/fonts.css">
 <link rel="icon" href="data:,">
 <style>
@@ -278,6 +279,8 @@ h1 .tip-btn, h2 .tip-btn, p .tip-btn { width: 30px; height: 30px; margin-left: 2
 .chart .moment { stroke: var(--axis); stroke-width: 1; stroke-dasharray: 3 3; }
 .chart .limit { stroke: var(--axis); stroke-width: 1; stroke-dasharray: 5 4; }
 .chart .norm-band { fill: var(--norm-wash); }
+.chart .out-run { stroke: var(--out-marker); stroke-width: 3.5; stroke-linecap: round; }
+.chart .flight-span { fill: var(--norm-wash); stroke: var(--axis); stroke-dasharray: 3 3; }
 .chart .series-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .chart .series-name { fill: var(--ink); font-family: var(--font-body); font-size: 14px; font-weight: 600; }
 .chart .trend { stroke: var(--series-1); stroke-width: 2; stroke-dasharray: 2 4; stroke-linecap: round; }
@@ -472,6 +475,7 @@ dialog p { margin: 0; }
     <h2 class="people-title">Inspiration4: real blood tests before and after flight (NASA OSDR)</h2>
     <div class="people" id="people-real"></div>
     <p class="note">How the program recognises a person by itself is still the team's open question; for now you choose.</p>
+    <p class="note">The code was written with SI (Claude, Anthropic) from the team's design and decisions; every source file says so.</p>
   </section>
 
   <section id="view-app" hidden>

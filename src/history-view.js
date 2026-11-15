@@ -90,7 +90,12 @@ export function drawHistory(host, tip, opts) {
   const dayMonth = (t) => { const d = new Date(t); return `${d.getDate()} ${MONTHS[d.getMonth()]}`; };
   let lastTop = -Infinity;
   let lastBottom = -Infinity;
-  for (const [t, name, withYear] of [[launch, 'Launch', true], [today, 'Today', false], [landing, 'Landing', false]]) {
+  const shortFlight = landing - launch <= 7 * DAY;
+  if (shortFlight && launch >= t0 && landing <= t1) {
+    svg.append(el('rect', { x: x(launch), y: m.t, width: Math.max(2, x(landing) - x(launch)), height: H - m.t - m.b, class: 'flight-span' }));
+    svg.append(el('text', { x: (x(launch) + x(landing)) / 2, y: m.t - 10, class: 'moment-label halo', 'text-anchor': 'middle' }, 'Flight'));
+  }
+  for (const [t, name, withYear] of (shortFlight ? [] : [[launch, 'Launch', true], [today, 'Today', false], [landing, 'Landing', false]])) {
     if (t < t0 || t > t1) continue;
     const xt = x(t);
     svg.append(el('line', { x1: xt, x2: xt, y1: m.t - 4, y2: H - m.b, class: 'moment' }));
@@ -118,9 +123,16 @@ export function drawHistory(host, tip, opts) {
       svg.append(el('path', { d: pts.map((p, i) => `${i ? 'L' : 'M'}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join(''), class: 'series-line', stroke: s.color, 'stroke-dasharray': s.dash || null }));
     }
     const sparse = pts.length <= 40;
+    const ringAll = pts.length <= 60 || opts.ordinal;
+    // With many readings, rings would pile up; the parts of the line outside the range are drawn thicker instead.
+    if (!ringAll) {
+      for (let i = 1; i < pts.length; i += 1) {
+        if (pts[i].out && pts[i - 1].out) svg.append(el('line', { x1: x(pts[i - 1].t), y1: y(pts[i - 1].v), x2: x(pts[i].t), y2: y(pts[i].v), class: 'out-run' }));
+      }
+    }
     for (const p of pts) {
-      if (p.out) svg.append(el('circle', { cx: x(p.t), cy: y(p.v), r: 5, class: 'dot out' }));
-      else if (opts.ordinal || sparse) svg.append(el('circle', { cx: x(p.t), cy: y(p.v), r: 3.5, class: 'dot', fill: s.color }));
+      if (p.out && (ringAll || p === pts[pts.length - 1])) svg.append(el('circle', { cx: x(p.t), cy: y(p.v), r: 5, class: 'dot out' }));
+      else if (!p.out && (opts.ordinal || sparse)) svg.append(el('circle', { cx: x(p.t), cy: y(p.v), r: 3.5, class: 'dot', fill: s.color }));
     }
   }
   // With two lines (blood pressure), each is named on the chart, so colour is not needed to tell them apart.

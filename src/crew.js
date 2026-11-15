@@ -347,6 +347,7 @@ function renderBar() {
     const list = alertsFor(p.id);
     const unseen = list.filter((x) => !ui.seen.has(x.id)).length;
     const top = list.length ? Math.max(...list.map((x) => x.level)) : LEVEL.FINE;
+    soundAlerts(list);
     box.className = `annunciator ${list.length ? LV_CLASS[top] : ''}`;
     if (!list.length) box.replaceChildren(icon('bell', { size: 18 }), h('span', { class: 'ann-word' }, 'No messages'));
     else box.replaceChildren(icon(LEVEL_ICON[top], { size: 18 }), h('span', { class: 'ann-word' }, 'Messages'), h('b', {}, unseen ? `${unseen} new` : String(list.length)));
@@ -930,6 +931,16 @@ function renderBloodDetail(host, p, code) {
 }
 
 // ---------- alerts and messages ----------
+// When the current episode of a condition began: the first reading of the current run outside the range.
+// A condition that lasts for weeks is "new" once; it is new again only when its level rises or it clears and returns.
+function episodeStart(personId, it) {
+  if (!it.cell || !it.m || !it.m.last) return it.time ? new Date(it.time).toISOString().slice(0, 13) : 'now';
+  const list = machine.history(personId, it.cell.indicator);
+  const run = Math.max(1, it.m.streak || 1);
+  const first = list[Math.max(0, list.length - run)];
+  return it.kind === 'forecast' ? 'forecast' : new Date(first ? first.time : it.m.last.time).toISOString().slice(0, 10);
+}
+
 function alertsFor(personId) {
   const p = personById[personId];
   const now = nowTime();
@@ -939,7 +950,7 @@ function alertsFor(personId) {
   for (const it of [...a.body.items, ...a.psyche.items]) {
     const tx = itemText(it, p);
     const stamp = it.m && it.m.last ? msOf(it.m.last.time) : it.time ? msOf(it.time) : msOf(now);
-    out.push({ id: `${personId}|${it.kind}|${it.cell ? it.cell.indicator : ''}|${new Date(stamp).toISOString().slice(0, 13)}`, level: it.level, title: tx.title, text: tx.text, time: stamp, steps: procedureFor(it), indicator: it.cell ? it.cell.indicator : it.kind === 'mood' ? 'mood' : null, system: it.kind === 'camera' ? 'Camera' : it.kind === 'mood' ? 'Mind' : 'Body' });
+    out.push({ id: `${personId}|${it.kind}|${it.cell ? it.cell.indicator : ''}|${it.level}|${episodeStart(personId, it)}`, level: it.level, title: tx.title, text: tx.text, time: stamp, steps: procedureFor(it), indicator: it.cell ? it.cell.indicator : it.kind === 'mood' ? 'mood' : null, system: it.kind === 'camera' ? 'Camera' : it.kind === 'mood' ? 'Mind' : 'Body' });
   }
   for (const it of s.items) {
     const last = it.m.last;
@@ -961,7 +972,7 @@ function renderAlerts() {
     h('div', { class: 'count-strip' }, cell(LEVEL.URGENT, 'Urgent'), cell(LEVEL.ACTION, 'Needs action'), cell(LEVEL.ATTENTION, 'Attention')),
     h('div', { class: 'actions' },
       unseen.length ? btn('secondary small', 'Mark all as read', () => { for (const x of list) ui.seen.add(x.id); savePrefs(); render(); }, 'check') : null,
-      btn('secondary small', ui.muted ? 'Sounds are off' : 'Silence all sounds', () => { ui.muted = true; savePrefs(); try { speechSynthesis.cancel(); } catch { /* none */ } render(); toast('All sounds are off.'); }, 'bell-off')),
+      btn('secondary small', 'Silence all sounds', () => { silenceNow(list); toast('Silenced. A new alert will sound again; turn sound off altogether in Settings.'); }, 'bell-off')),
     list.length ? h('ul', { class: 'msgs' }, ...list.map((x) => {
       const read = ui.seen.has(x.id);
       return h('li', { class: `card msg ${read ? 'read' : LV_CLASS[x.level]}` },
@@ -976,7 +987,7 @@ function renderAlerts() {
     h('h2', { class: 'section-title' }, 'Sent to the doctor'),
     reports.length ? h('ul', { class: 'msgs' }, ...reports.map((r) => h('li', { class: 'card msg' },
       h('div', { class: 'msg-top' }, h('b', {}, r.report.to === 'doctor-onboard' ? 'To the doctor on board' : 'To the doctor on Earth'),
-        r.report.to === 'doctor-earth' && !ui.ship.linkToEarth ? staleChip('Waiting for the link') : h('span', { class: 'chip neutral' }, icon('check', { size: 16 }), 'Sent'),
+        r.report.to === 'doctor-earth' ? (ui.ship.linkToEarth ? h('span', { class: 'chip neutral' }, icon('send', { size: 16 }), 'In the outbox, goes with the next downlink') : staleChip('Waiting for the link')) : h('span', { class: 'chip neutral' }, icon('check', { size: 16 }), 'Saved for the doctor on board'),
         h('span', { class: 'when' }, `GMT ${gmtDOY(r.time)}`)),
       h('p', { style: 'white-space: pre-line' }, r.report.text)))) : h('p', { class: 'note' }, 'Nothing sent yet.'),
   );
@@ -1073,16 +1084,61 @@ function openDoctor(a, kind, indicator = null) {
   const toText = to === 'doctor-onboard' ? 'the doctor on board' : 'the doctor on Earth';
   const area = h('textarea', { id: 'doc-text', 'aria-label': 'Message text' });
   area.value = summaryFor(a, kind, indicator) || 'Please look at my data.';
-  const status = to === 'doctor-earth' && !ui.ship.linkToEarth ? 'There is no link to Earth: the message will be kept and sent when the link is back.' : `The message goes to ${toText}.`;
+  const status = to === 'doctor-earth' ? (ui.ship.linkToEarth ? 'The message is saved in the outbox and goes to the ground with the next downlink.' : 'There is no link to Earth: the message waits in the outbox and goes when the link is back.') : 'The message goes to the doctor on board.';
   openPanel(`Message ${toText}`, [h('p', {}, status), area, h('p', { class: 'note' }, 'The automation drafted this text from your data; you can change it.')], [
     btn('primary', 'Send', async () => {
       const event = { v: 1, kind: 'report', time: new Date().toISOString(), person: ui.person, state: { ...ui.ship }, report: { to, text: area.value.slice(0, 4000) } };
       await keep(event);
       closePanel();
-      toast(to === 'doctor-earth' && !ui.ship.linkToEarth ? 'Saved: it will be sent when the link is back.' : `Sent to ${toText}.`);
+      toast(to === 'doctor-earth' ? (ui.ship.linkToEarth ? 'Saved in the outbox: it goes with the next downlink.' : 'Saved in the outbox: it goes when the link is back.') : 'Saved for the doctor on board.');
       render();
     }, 'send'),
   ]);
+}
+
+// ---------- alert sounds ----------
+// NASA-STD-3001 Vol 2: alerts are heard as well as seen, each level with its own sound (10114, 10175); the first
+// sound is quieter, as a pre-alert (10176). Attention stays silent. "Silence all sounds" acknowledges the sounds
+// of the alerts active now; a new alert sounds again. Only the Settings switch turns sound off altogether.
+let audio = null;
+const sounded = new Set();
+function tone(freqs, seconds, gain) {
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    const t0 = audio.currentTime;
+    freqs.forEach((f, i) => {
+      const o = audio.createOscillator();
+      const g = audio.createGain();
+      o.type = 'sine';
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0, t0 + i * seconds);
+      g.gain.linearRampToValueAtTime(gain, t0 + i * seconds + 0.02);
+      g.gain.linearRampToValueAtTime(0, t0 + (i + 1) * seconds - 0.02);
+      o.connect(g).connect(audio.destination);
+      o.start(t0 + i * seconds);
+      o.stop(t0 + (i + 1) * seconds);
+    });
+  } catch { /* no sound device: the screen still shows the alert */ }
+}
+function soundAlerts(list) {
+  if (ui.muted) return;
+  const fresh = list.filter((x) => x.level >= LEVEL.ACTION && !sounded.has(x.id) && !ui.seen.has(x.id));
+  if (!fresh.length) return;
+  for (const x of fresh) sounded.add(x.id);
+  const top = Math.max(...fresh.map((x) => x.level));
+  if (top >= LEVEL.URGENT) {
+    tone([880, 660, 880, 660], 0.22, 0.10);
+    setTimeout(() => tone([880, 660, 880, 660], 0.22, 0.32), 1100);
+    try { const say = new SpeechSynthesisUtterance('Warning. ' + fresh.find((x) => x.level === top).title); say.lang = 'en-US'; speechSynthesis.speak(say); } catch { /* no voice */ }
+  } else {
+    tone([660], 0.35, 0.08);
+    setTimeout(() => tone([660], 0.35, 0.25), 900);
+  }
+}
+function silenceNow(list) {
+  for (const x of list) sounded.add(x.id);
+  try { speechSynthesis.cancel(); } catch { /* none */ }
+  try { if (audio) { audio.close(); audio = null; } } catch { /* none */ }
 }
 
 // ---------- camera: the team's question "Are you okay?" ----------
@@ -1264,7 +1320,7 @@ function renderSetup() {
     h('div', { class: 'screen-head' }, h('h1', {}, 'Settings')),
     h('div', { class: 'settings' },
       h('section', { class: 'card' }, cornerTip('t:display', 'the display'), h('h2', {}, 'Sound and display'),
-        switchRow('st-sound', 'Sound and voice', 'The question "Are you okay?" is also spoken.', !ui.muted, (on) => { ui.muted = !on; if (ui.muted) { try { speechSynthesis.cancel(); } catch { /* none */ } } savePrefs(); renderBar(); }),
+        switchRow('st-sound', 'Sound and voice', 'Alerts that need action sound a tone; urgent ones also speak. The question "Are you okay?" is spoken too.', !ui.muted, (on) => { ui.muted = !on; if (ui.muted) { try { speechSynthesis.cancel(); } catch { /* none */ } } savePrefs(); renderBar(); }),
         h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Display'), h('small', {}, 'Dark suits a dim cabin; light suits a bright one.')),
           h('div', { class: 'seg small', role: 'group', 'aria-label': 'Display' }, ...THEMES.map(([k, label]) => h('button', { type: 'button', 'aria-pressed': String(pick === k), onclick: () => { setTheme(k); renderSetup(); } }, pick === k ? icon('check', { size: 14 }) : null, label))))),
       h('section', { class: 'card' }, cornerTip('t:camera', 'the camera'), h('h2', {}, 'Camera'),

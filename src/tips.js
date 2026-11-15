@@ -2,7 +2,7 @@
 // Plain English, one idea per line. Written by Claude (Anthropic), an AI system, at the team's request.
 
 export const TIPS = {
-  flightday: { title: 'Flight day', lines: ['Days since launch; launch day is day 1.', 'Here it counts the made-up example flight: launch 1 Jun 2026, landing 10 Dec 2026.'] },
+  flightday: { title: 'Flight day', lines: ['Days since launch; launch day is day 1.', 'Here it counts the made-up example flight, which always runs up to today: flight day 167, landing in 26 days.'] },
   gmt: { title: 'GMT clock', lines: ['The ISS runs on GMT (Greenwich Mean Time).', '319/00:04 means day 319 of the year, 00:04. Every time in this app is GMT.'] },
   example: { title: 'Example data', lines: ['Made-up readings for four people, shaped like published flight studies.', 'For real NASA data choose an Inspiration4 person at sign-in. Switch the example off in Settings.'] },
   messages: { title: 'Messages', lines: ['Everything the program flagged, the most important first, each with what to do.', 'The colour is the highest level right now: blue attention, yellow needs action, red urgent.'] },
