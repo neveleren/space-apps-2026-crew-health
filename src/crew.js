@@ -13,6 +13,8 @@ import { drawHistory, drawTable, fmtDate, fmtGMT } from './history-view.js';
 import { assess, assessShip, measureState, headline, LEVEL, LEVEL_WORD, EXPECTED, RULES as LEVEL_RULES } from './state-levels.js';
 import { RULES as CAM_RULES } from './camera-rules.js';
 import { icon } from './icons.js';
+import { initTips, tipButton, hideTip } from './explain.js';
+import { TIPS, PROVENANCE } from './tips.js';
 
 // One icon per measure, so a list can be read at a glance.
 const ICON_FOR = { pulse: 'heart-pulse', bp: 'activity', glucose: 'droplet', temp: 'thermometer', spo2: 'droplets', sleep: 'moon', resp: 'wind', fluid: 'glass-water', bodyMass: 'scale', eyePressure: 'eye', hearing: 'ear', radiation: 'radiation', vo2max: 'heart', strength: 'dumbbell', bone: 'bone', camera: 'camera', mood: 'smile', attitude: 'battery', sleepQuality: 'bed', cognition: 'brain', cycle: 'calendar-heart', xray: 'scan-line', ecg: 'chart-line', ultrasound: 'waves', co2: 'cloud-fog', cabinTemp: 'thermometer', cabinO2: 'orbit', cabinPressure: 'gauge', noise: 'volume-2', blood: 'test-tube' };
@@ -43,6 +45,8 @@ function h(tag, props = {}, ...children) {
   }
   return node;
 }
+// replaceChildren would print null as text; fill() leaves out empty parts.
+const fill = (host, ...kids) => host.replaceChildren(...kids.flat().filter((k) => k !== null && k !== undefined && k !== false));
 const two = (n) => String(n).padStart(2, '0');
 const fmtVal = (v) => (Number.isFinite(Number(v)) ? String(Math.round(Number(v) * 10) / 10) : String(v));
 const fmtDT = (t) => fmtGMT(t);
@@ -106,7 +110,7 @@ function rebuild() {
   const all = [...flight, ...stored].filter((e) => e.kind === 'reading' || e.kind === 'review').sort((a, b) => msOf(a.time) - msOf(b.time));
   for (const ev of all) {
     if (ev.state) machine.setState(ev.state);
-    if (ev.kind === 'reading') machine.receive({ ...ev.reading, person: ev.person, time: ev.time });
+    if (ev.kind === 'reading') machine.receive({ ...ev.reading, person: ev.person, time: ev.time, example: Boolean(ev.example) });
     else machine.review(ev.person, ev.time);
   }
   machine.setState(ui.ship);
@@ -170,18 +174,24 @@ function bandOf(cell, owner) {
   return null;
 }
 
-function normShort(cell, owner) {
+// The normal range in words, without the word itself: "36.1 to 37.2", "below 120/80", "7 or more".
+function rangeText(cell, owner) {
   if (cell.normType === 'range') {
     const n = cell.norm;
     if (n.minBySex) {
       const v = n.minBySex[owner && owner.sex] ?? Math.min(...Object.values(n.minBySex));
-      return `norm ${v} or more`;
+      return `${v} or more`;
     }
-    if (n.min !== null && n.max !== null) return `norm ${n.min} to ${n.max}`;
-    if (n.min !== null) return `norm ${n.min} or more`;
-    return `norm ${n.maxExclusive ? 'below' : 'up to'} ${n.max}`;
+    if (n.min !== null && n.max !== null) return `${n.min} to ${n.max}`;
+    if (n.min !== null) return `${n.min} or more`;
+    return `${n.maxExclusive ? 'below' : 'up to'} ${n.max}`;
   }
-  if (cell.normType === 'below-both') return `norm below ${cell.norm.sysBelow}/${cell.norm.diaBelow}`;
+  if (cell.normType === 'below-both') return `below ${cell.norm.sysBelow}/${cell.norm.diaBelow}`;
+  return normShort(cell, owner);
+}
+
+function normShort(cell, owner) {
+  if (cell.normType === 'range' || cell.normType === 'below-both') return `normal range ${rangeText(cell, owner)}`;
   if (cell.normType === 'baseline-percent') {
     const b = bandOf(cell, owner);
     return b ? `at least ${fmtVal(b.min)} (${cell.norm.minPercent}% of own level)` : 'no pre-flight level';
@@ -209,12 +219,12 @@ function itemText(it, owner) {
   const v = `${valueText(cell.indicator, last.value)} ${cell.unit || ''}`.trim();
   if (it.kind === 'forecast') {
     const c = it.m.forecast.crossing;
-    return { title: cell.label, text: `The last reading, ${v}, is still within the norm, but the line through the readings goes ${c.side === 'below' ? 'below' : 'above'} the norm around ${fmtDate(c.date)}, before landing on ${fmtDate(MISSION.landing)}.`, time: last.time };
+    return { title: cell.label, text: `The last reading, ${v}, is still within the normal range, but the line through the readings leaves it ${c.side === 'below' ? 'downwards' : 'upwards'} around ${fmtDate(c.date)}, before landing on ${fmtDate(MISSION.landing)}.`, time: last.time };
   }
   const side = it.m.side === 'below' ? 'below' : 'above';
   if (it.kind === 'standard') return { title: cell.label, text: `${v}: ${side} the NASA standard (${normShort(cell, owner)}).`, time: last.time };
-  if (it.kind === 'expected') return { title: cell.label, text: `${v}: ${side} the general Earth norm (${normShort(cell, owner)}). ${it.expected.text}`, time: last.time };
-  return { title: cell.label, text: `${v}: ${side} the norm (${normShort(cell, owner)})${it.m.streak > 1 ? `, ${it.m.streak} readings in a row` : ''}. Reading of ${fmtDT(last.time)}.`, time: last.time };
+  if (it.kind === 'expected') return { title: cell.label, text: `${v}: ${side} the usual range on Earth (${rangeText(cell, owner)}). ${it.expected.text}`, time: last.time };
+  return { title: cell.label, text: `${v}: ${side} the normal range (${rangeText(cell, owner)})${it.m.streak > 1 ? `, ${it.m.streak} readings in a row` : ''}. Reading of ${fmtDT(last.time)}.`, time: last.time };
 }
 
 // What to do, by the program's rules (shown in magenta, like NASA's electronic procedures).
@@ -225,20 +235,82 @@ function procedureFor(it) {
     case 'forecast': return ['Take a new reading.', 'If the line is confirmed, tell the doctor.', 'The forecast here is a straight line through the readings, not a medical model.'];
     case 'expected': return ['This is a common change in flight; the source is named in the explanation.', 'If you feel unwell, tell the doctor.'];
     case 'mood': return ['The planned review will look at the check-ins.', 'You can start an anonymous session with the AI or write to the doctor on Earth.'];
-    default: return ['Repeat the reading.', 'If it is outside the norm again, press "Analyse with AI" or "Message the doctor".'];
+    default: return ['Repeat the reading.', 'If it is outside the normal range again, press "Analyse with AI" or "Message the doctor".'];
   }
+}
+
+// ---------- "?" explanations ----------
+const SELF_SOURCES = ['mood-report', 'attitude-report', 'sleep-rating', 'cycle-log', 'cognition-test'];
+function thisValue(owner, last) {
+  if (!last) return 'No reading yet.';
+  const r = last;
+  const when = stamp(last.time, nowTime());
+  if (owner && owner.real) return `A real lab result from NASA OSDR (Inspiration4), ${when}.`;
+  if (r.source === 'ble-heart-rate') return `Live from your Bluetooth heart rate monitor, ${when}.`;
+  if (r.example) return `Made-up example data, shaped like published flight studies (${when}).`;
+  if (SELF_SOURCES.includes(r.source)) return `Your own answer, ${when}.`;
+  if (r.source === 'camera') return `This computer's camera model, ${when}.`;
+  const src = SOURCES.find((s) => s.id === r.source);
+  return `Entered on the technical view from a simulated "${src ? src.label : r.source}", ${when}.`;
+}
+const linkList = (list) => list.flatMap((d, i) => [i ? '; ' : '', d.url ? h('a', { href: d.url, target: '_blank', rel: 'noopener' }, d.name) : d.name, d.maker ? ` (${d.maker})` : '']);
+const tipLine = (label, ...content) => h('p', {}, h('b', {}, `${label}: `), ...content);
+function measureTip(ind, ownerId) {
+  const cell = cellBy[ind];
+  if (!cell) return null;
+  const pv = PROVENANCE[ind] || {};
+  const owner = personById[ownerId] || SHIP;
+  const last = machine.history(owner.id, ind).slice(-1)[0] || null;
+  const src = sourceFor(ind);
+  return h('div', {},
+    h('p', { class: 'tp-title' }, cell.label),
+    pv.what ? h('p', {}, pv.what) : null,
+    pv.iss && pv.iss.length ? tipLine('On the ISS', ...linkList(pv.iss)) : null,
+    pv.could && pv.could.length ? tipLine('Could also come from', ...linkList(pv.could)) : null,
+    pv.how ? tipLine('How it is measured', pv.how) : null,
+    tipLine('Reaches this app', pv.path || (src ? `from a device such as the "${src.label}", simulated on the technical view.` : 'entered by hand.')),
+    tipLine('This value', thisValue(owner, last)));
+}
+function bloodTip(code, personId) {
+  const p = personById[personId];
+  const x = p && p.real ? realAnalytes(p.code).find((a) => a.code === code) : null;
+  const pv = PROVENANCE.blood || {};
+  return h('div', {},
+    h('p', { class: 'tp-title' }, x ? x.name : 'Blood test'),
+    pv.what ? h('p', {}, pv.what) : null,
+    pv.iss && pv.iss.length ? tipLine('On the ISS', ...linkList(pv.iss)) : null,
+    tipLine('This value', `A real, de-identified lab result of an Inspiration4 crew member from NASA OSDR (OSD-575)${x ? `, lab range ${x.min === null ? '' : x.min} to ${x.max === null ? '' : x.max} ${x.units}` : ''}.`));
+}
+function tipContent(key) {
+  const [kind, a1, a2] = String(key).split(':');
+  if (kind === 'm') return measureTip(a1, a2);
+  if (kind === 'b') return bloodTip(a1, a2);
+  const t = TIPS[a1];
+  if (kind !== 't' || !t) return null;
+  return h('div', {}, h('p', { class: 'tp-title' }, t.title), ...t.lines.map((l) => h('p', {}, l)));
 }
 
 // ---------- rendering: status line and keys ----------
 // Every state has its own icon shape and word, so colour is never the only cue (NASA-STD-3001 Rev F).
 const LEVEL_ICON = ['circle-check', 'info', 'triangle-alert', 'octagon-alert'];
 const LEVEL_TITLE = LEVEL_WORD.map(cap);
-const chip = (lv, text) => h('span', { class: `chip ${LV_CLASS[lv]}` }, icon(LEVEL_ICON[lv], { size: 16 }), text);
+const chip = (lv, text) => h('span', { class: `chip ${LV_CLASS[lv]}`, 'data-tip': 't:level' }, icon(LEVEL_ICON[lv], { size: 16 }), text);
 const staleChip = (text) => h('span', { class: 'chip stale' }, icon('clock', { size: 16 }), text);
 const btn = (kind, label, onclick, ic = null, extra = {}) => h('button', { type: 'button', class: `btn ${kind}`, onclick, ...extra }, ic ? icon(ic, { size: 18 }) : null, label);
+// Short names for the lists; the full name stays on the measure's own page.
+const SHORT = { vo2max: 'Aerobic capacity', cabinO2: 'Cabin oxygen', noise: 'Cabin noise', spo2: 'Blood oxygen', sleepQuality: 'Sleep quality', bodyMass: 'Body mass', radiation: 'Radiation dose', mood: 'Mood', attitude: 'Energy' };
+const shortLabel = (cell) => SHORT[cell.indicator] || cell.label;
+const unitShort = (cell) => (cell.unit || '').replace('of own pre-flight', 'pre-flight');
+// When a reading was taken, and how old it is when that matters.
+function stamp(t, now) {
+  const base = `GMT ${gmtDOY(t)}`;
+  if (msOf(t) < msOf(MISSION.launch) && ui.example) return `${base} · before flight`;
+  const days = Math.floor((msOf(now) - msOf(t)) / DAY);
+  return days >= 3 ? `${base} · ${days} days ago` : base;
+}
 
 function renderNav() {
-  byId('tabs').replaceChildren(...NAV.map(([view, label, ic]) => h('button', {
+  byId('tabs-in').replaceChildren(...NAV.map(([view, label, ic]) => h('button', {
     type: 'button', class: 'key', 'data-view': view,
     'aria-current': ui.screen === view || (ui.screen === 'detail' && view === (ui.backTo || 'measures')) ? 'page' : null,
     onclick: () => setScreen(view),
@@ -250,7 +322,6 @@ function renderBar() {
   byId('brand').replaceChildren(icon('orbit', { size: 20 }), h('span', {}, 'Crew Health'));
   byId('tabs').hidden = !p;
   byId('who-btn').hidden = !p;
-  byId('demo-band').hidden = !(p && !p.real && ui.example);
   if (p) {
     byId('who-avatar').textContent = p.name.slice(0, 1);
     byId('who-name').textContent = p.name;
@@ -261,11 +332,12 @@ function renderBar() {
   else byId('met').textContent = p && p.real ? 'Inspiration4, 2021' : '';
   // Quiet and dark: a tag appears only when something is off.
   const tags = [];
+  if (p && !p.real && ui.example) tags.push(h('span', { class: 'tag example', 'data-tip': 't:example', tabindex: '0' }, 'EXAMPLE DATA'));
   if (p) {
-    if (!ui.ship.linkToEarth) tags.push(h('span', { class: 'tag stale' }, icon('unlink', { size: 16 }), 'No link to Earth'));
-    if (!ui.ship.aiWorks) tags.push(h('span', { class: 'tag' }, icon('ban', { size: 16 }), 'AI off'));
-    if (ui.muted) tags.push(h('span', { class: 'tag' }, icon('bell-off', { size: 16 }), 'Sound off'));
-    if (camStop) tags.push(h('span', { class: 'tag plain' }, icon('camera', { size: 16 }), 'Camera on'));
+    if (!ui.ship.linkToEarth) tags.push(h('span', { class: 'tag stale', 'data-tip': 't:nolink' }, icon('unlink', { size: 16 }), 'No link to Earth'));
+    if (!ui.ship.aiWorks) tags.push(h('span', { class: 'tag', 'data-tip': 't:aioff' }, icon('ban', { size: 16 }), 'AI off'));
+    if (ui.muted) tags.push(h('span', { class: 'tag', 'data-tip': 't:soundoff' }, icon('bell-off', { size: 16 }), 'Sound off'));
+    if (camStop) tags.push(h('span', { class: 'tag plain', 'data-tip': 't:camon' }, icon('camera', { size: 16 }), 'Camera on'));
   }
   byId('sys-summary').replaceChildren(...tags);
   // The Messages key takes the colour of the highest active level, like the ISS "Home" key.
@@ -314,7 +386,7 @@ function renderHome() {
   const top = Math.max(a.body.level, a.psyche.level);
   byId('today').className = `card today ${LV_CLASS[top]}`;
   byId('today-label').textContent = 'Your health today';
-  byId('today-time').textContent = `GMT ${gmtDOY(now)}`;
+  byId('today-time').textContent = `Updated GMT ${gmtDOY(now)}`;
   byId('today-title').textContent = headline(fmtDate(now), a.body.level, a.psyche.level);
   const chips = [];
   if (a.body.level) chips.push(chip(a.body.level, `Body: ${LEVEL_WORD[a.body.level]}`));
@@ -322,21 +394,22 @@ function renderHome() {
   byId('today-chips').replaceChildren(...chips);
   byId('today-chips').hidden = !chips.length;
 
-  // The short explanation: at most three reasons, each opens its chart.
+  // The short explanation, in the same order as Messages: level first, then outside the range now, then forecasts.
   const all = [...a.body.items, ...a.psyche.items].sort((x, y) => y.level - x.level);
-  const items = all.slice(0, 3);
+  const items = all.length === 4 ? all : all.slice(0, 3);
   const short = (it) => {
     if (it.kind === 'camera') return 'The automation called the doctor';
     if (it.kind === 'mood') return `${it.days} low days in the last two weeks`;
-    if (it.kind === 'forecast') return `Within the norm now; may leave it around ${fmtDate(it.m.forecast.crossing.date)}`;
+    if (it.kind === 'forecast') return `Forecast: in the normal range now, may leave it around ${fmtDate(it.m.forecast.crossing.date)}`;
     const v = `${valueText(it.cell.indicator, it.m.last.value)} ${it.cell.unit || ''}`.trim();
-    return `${v}, ${it.m.side === 'below' ? 'below' : 'above'} ${it.kind === 'standard' ? 'the NASA standard' : 'the norm'}${it.m.streak > 1 && it.kind === 'out' ? `, ${it.m.streak} in a row` : ''}${it.kind === 'expected' ? ' (common in flight)' : ''}`;
+    const where = it.kind === 'standard' ? 'the NASA standard' : 'the normal range';
+    return `${v}, ${it.m.side === 'below' ? 'below' : 'above'} ${where}${it.m.streak > 1 && it.kind === 'out' ? ` in the last ${it.m.streak} readings` : ''}${it.kind === 'expected' ? ' (common in flight)' : ''}`;
   };
   const name = (it) => (it.cell ? it.cell.label : it.kind === 'mood' ? 'Mood and energy' : 'Camera');
   const open = (it) => (it.cell ? openDetail(it.cell.indicator) : it.kind === 'mood' ? openDetail('mood') : setScreen('alerts'));
   byId('today-reasons').hidden = !items.length;
   byId('today-reasons').replaceChildren(
-    ...items.map((it) => h('li', {}, h('button', { type: 'button', class: 'reason', onclick: () => open(it) },
+    ...items.map((it) => h('li', {}, h('button', { type: 'button', class: 'reason', 'data-tip': it.cell ? `m:${it.cell.indicator}:${p.id}` : it.kind === 'mood' ? `m:mood:${p.id}` : 'm:camera:' + p.id, onclick: () => open(it) },
       icon(LEVEL_ICON[it.level], { size: 20, cls: `lvc${it.level}`, label: LEVEL_WORD[it.level] }),
       h('span', { class: 'what' }, h('b', {}, name(it)), h('span', {}, short(it))),
       icon('chevron-right', { size: 18, cls: 'chev' })))),
@@ -346,9 +419,9 @@ function renderHome() {
   const acts = [];
   if (a.body.level > LEVEL.FINE) {
     const first = a.body.items.find((x) => x.cell);
-    acts.push(btn('primary', 'Details', () => (first ? openDetail(first.cell.indicator) : setScreen('alerts'))));
+    acts.push(btn('primary', 'Details', () => (first ? openDetail(first.cell.indicator) : setScreen('alerts')), null, { 'data-tip': 't:details' }));
     acts.push(aiButton('Analyse with AI', 'body', a));
-    acts.push(btn('secondary', 'Message the doctor', () => openDoctor(a, 'body'), 'stethoscope'));
+    acts.push(btn('secondary', 'Message the doctor', () => openDoctor(a, 'body'), 'stethoscope', { 'data-tip': 't:doctor' }));
   }
   byId('today-actions').replaceChildren(...acts);
   byId('today-actions').hidden = !acts.length;
@@ -356,8 +429,8 @@ function renderHome() {
   // Mind: the team's AI psychologist offers to talk; the choice stays with the person.
   byId('today-advice').replaceChildren(...(a.psyche.level > LEVEL.FINE ? [mindChoice(p, a, a.body.level === LEVEL.FINE)] : []));
   byId('today-advice').hidden = a.psyche.level === LEVEL.FINE;
-  byId('today-note').textContent = top > LEVEL.FINE ? 'Draft levels: the team decides the final thresholds.' : 'Nothing needs your attention.';
-  byId('today-note').className = top > LEVEL.FINE ? 'note' : 'note calm-line';
+  byId('today-note').textContent = '';
+  byId('today-note').hidden = true;
 
   renderCheckin(p, now, top);
   const keys = KEY_NUMBERS.filter((ind) => cellBy[ind] && machine.history(p.id, ind).length).slice(0, 4);
@@ -367,7 +440,7 @@ function renderHome() {
 
 function aiButton(label, kind, a, primary = false) {
   const off = !ui.ship.aiWorks;
-  const b = h('button', { type: 'button', class: `btn ${primary ? 'primary' : 'secondary'}`, 'aria-disabled': off ? 'true' : null, onclick: () => (off ? toast('The AI is off: only the automation is working.') : openAi(kind, a)) }, icon('sparkles', { size: 18 }), label);
+  const b = h('button', { type: 'button', class: `btn ${primary ? 'primary' : 'secondary'}`, 'data-tip': kind === 'psyche' ? 't:aisession' : 't:ai', 'aria-disabled': off ? 'true' : null, onclick: () => (off ? toast('The AI is off: only the automation is working.') : openAi(kind, a)) }, icon('sparkles', { size: 18 }), label);
   return off ? h('span', { class: 'btn-wrap' }, b, h('span', { class: 'why' }, 'AI unavailable now')) : b;
 }
 
@@ -376,14 +449,14 @@ function aiButton(label, kind, a, primary = false) {
 function mindChoice(p, a, primaryFirst) {
   const choices = h('div', { class: 'actions' },
     aiButton('Start an anonymous session with AI', 'psyche', a, primaryFirst),
-    btn('secondary', 'Tell the doctor on Earth', () => openDoctor(a, 'psyche'), 'stethoscope'),
-    h('button', { type: 'button', class: 'link', onclick: () => openAdvice() }, 'Advice and articles'));
+    btn('secondary', 'Tell the doctor on Earth', () => openDoctor(a, 'psyche'), 'stethoscope', { 'data-tip': 't:tellDoctor' }),
+    btn('secondary', 'Advice and articles', () => openAdvice(), 'list', { 'data-tip': 't:advice' }));
   if (offerDismissed.has(p.id)) return h('div', { class: 'advice' }, choices);
   return h('div', { class: 'advice' },
     h('p', { class: 'who-says' }, 'AI psychologist · not connected yet'),
     h('blockquote', {}, `Hey ${p.name}, I noticed from your check-ins that the last days have been hard. How about talking anonymously about what is bothering you? Or, if you wish, I can send the results of these check-ins to the doctor.`),
     choices,
-    h('div', { class: 'actions' }, h('button', { type: 'button', class: 'link', onclick: () => { offerDismissed.add(p.id); renderHome(); } }, 'Not now')),
+    h('div', { class: 'actions' }, btn('secondary small', 'Not now', () => { offerDismissed.add(p.id); renderHome(); })),
     h('p', { class: 'note' }, "The team's idea: this conversation is not recorded or read, and the AI is there day and night, unlike doctors. Which AI it is, the team decides."));
 }
 
@@ -394,12 +467,12 @@ function renderCheckin(p, now, top = LEVEL.FINE) {
   const m = todays('mood');
   const e = todays('attitude');
   const s = todays('sleepQuality');
-  const done = [m && `mood ${m.value}`, e && `energy ${e.value}`, s && `sleep ${s.value} of 7`].filter(Boolean);
+  const done = [m && `Mood: ${cap(m.value)}`, e && `Energy: ${cap(e.value)}`, s && `Sleep quality: ${s.value} of 7`].filter(Boolean);
   const open = ui.checkinOpen;
   byId('ci-form').hidden = !open;
-  byId('ci-sub').textContent = done.length ? `Done today: ${done.join(', ')}.` : 'Three quick questions: mood, energy, last night\'s sleep.';
+  byId('ci-sub').textContent = done.length ? `Checked in today. ${done.join(' · ')}` : 'Three quick questions: mood, energy, last night\'s sleep.';
   byId('ci-start-slot').replaceChildren(...(open ? [] : [done.length
-    ? h('button', { type: 'button', class: 'link', onclick: () => { ui.checkinOpen = true; renderCheckin(p, now, top); } }, 'Change')
+    ? btn('secondary small', 'Change', () => { ui.checkinOpen = true; renderCheckin(p, now, top); })
     : btn(top === LEVEL.FINE ? 'primary' : 'secondary', 'Start', () => { ui.checkinOpen = true; renderCheckin(p, now, top); })]));
   const seg = (id, key, options) => byId(id).replaceChildren(...options.map(([value, label]) => h('button', {
     type: 'button', 'aria-pressed': String(ui.checkin[key] === value), onclick: () => { ui.checkin[key] = ui.checkin[key] === value ? null : value; renderCheckin(p, now, top); },
@@ -436,52 +509,56 @@ function measureRow(owner, indicator, a, now) {
   const stale = Boolean(m && m.stale);
   const out = Boolean(last && last.status === STATUS.OUT);
   const forecast = Boolean(item && item.kind === 'forecast');
-  let val;
-  if (cell.onlyOnEarth && !last) val = h('span', { class: 'none' }, icon('ban', { size: 16 }), 'Not measured in flight');
-  else if (!last) val = h('span', { class: 'none' }, 'No readings yet');
+  const kids = [h('b', { class: 'r-name' }, shortLabel(cell))];
+  if (cell.onlyOnEarth && !last) kids.push(h('span', { class: 'r-none' }, icon('ban', { size: 16 }), 'Not measured in flight'));
+  else if (!last) kids.push(h('span', { class: 'r-none' }, 'No readings yet'));
   else {
     const raw = valueText(indicator, last.value);
     const word = indicator === 'sleepQuality' ? `${raw} of 7` : ORDINAL[indicator] ? cap(raw) : raw;
-    const unit = cell.kind === KIND.NUMBER && cell.unit ? h('span', { class: 'u' }, cell.unit) : null;
-    const arrow = out && m && m.side ? icon(m.side === 'below' ? 'arrow-down' : 'arrow-up', { size: 16, stroke: 2.4, label: m.side === 'below' ? 'below the norm' : 'above the norm' }) : null;
-    const tint = out && level ? LV_CLASS[level] : stale ? 'stale' : '';
     const isWord = !/^[0-9.,/% -]+$/.test(String(word));
-    val = h('span', { class: isWord ? 'num word' : 'num' }, tint ? h('span', { class: `field ${tint}` }, word, arrow) : word, unit);
+    const hasUnit = cell.kind === KIND.NUMBER && Boolean(cell.unit);
+    const arrow = out && m && m.side ? icon(m.side === 'below' ? 'arrow-down' : 'arrow-up', { size: 16, stroke: 2.4, label: m.side === 'below' ? 'below the normal range' : 'above the normal range' }) : null;
+    const tint = out && level ? `lvc${level}` : '';
+    kids.push(h('span', { class: `r-num ${isWord ? 'word' : ''} ${hasUnit ? '' : 'nounit'} ${tint}` }, word, arrow));
+    if (hasUnit) kids.push(h('span', { class: 'r-unit' }, unitShort(cell)));
   }
-  let state = null;
-  if (forecast) state = h('span', { class: 'state lvc1' }, icon('info', { size: 14 }), 'Forecast: may leave the norm');
-  else if (level) state = h('span', { class: `state lvc${level}` }, icon(LEVEL_ICON[level], { size: 14 }), LEVEL_TITLE[level]);
-  else if (stale && last) state = h('span', { class: 'state lvc-stale' }, icon('clock', { size: 14 }), `Old data, ${ageText(last.time, now)}`);
-  const sub = last ? `GMT ${gmtDOY(last.time)}` : cell.onlyOnEarth ? 'Before and after flight only' : '';
-  return h('button', { type: 'button', class: `row ${level ? LV_CLASS[level] : stale ? 'stale' : ''}`, 'data-ind': indicator, onclick: () => openDetail(indicator) },
-    h('span', { class: 'name' }, h('b', {}, cell.label), sub ? h('small', { class: last ? 'mono' : '' }, sub) : null),
-    h('span', { class: 'val' }, val, state),
-    icon('chevron-right', { size: 18, cls: 'chev' }));
+  kids.push(h('span', { class: 'r-time' }, last ? stamp(last.time, now) : cell.onlyOnEarth ? 'Before and after flight only' : ''));
+  if (forecast) kids.push(h('span', { class: 'r-state lvc1' }, icon('info', { size: 14 }), 'Forecast: may leave the range'));
+  else if (level) kids.push(h('span', { class: `r-state lvc${level}` }, icon(LEVEL_ICON[level], { size: 14 }), LEVEL_TITLE[level]));
+  else if (stale && last) kids.push(h('span', { class: 'r-state lvc-stale' }, icon('clock', { size: 14 }), `Old data, ${ageText(last.time, now)}`));
+  kids.push(icon('chevron-right', { size: 18, cls: 'chev' }));
+  return rowWrap(h('button', { type: 'button', class: `row ${level ? LV_CLASS[level] : stale ? 'stale' : ''}`, 'data-ind': indicator, 'data-tip': `m:${indicator}:${owner.id}`, onclick: () => openDetail(indicator) }, ...kids), `m:${indicator}:${owner.id}`, cell.label);
 }
+const rowWrap = (row, key, label) => h('div', { class: 'row-wrap' }, row, tipButton(key, label));
 
 function cameraRow(owner) {
+  const now = nowTime();
   const list = machine.history(owner.id, 'camera');
   const last = list[list.length - 1];
-  const level = last && last.status === STATUS.OUT && msOf(nowTime()) - msOf(last.time) < LEVEL_RULES.cameraHours * 60 * 60 * 1000 ? LEVEL.URGENT : LEVEL.FINE;
-  return h('button', { type: 'button', class: `row ${LV_CLASS[level]}`, 'data-ind': 'camera', onclick: () => setScreen('setup') },
-    h('span', { class: 'name' }, h('b', {}, 'Camera'), h('small', {}, last ? `GMT ${gmtDOY(last.time)} · video is never stored` : 'Video is never stored')),
-    h('span', { class: 'val' }, h('span', { class: 'num word' }, last ? cap(valueText('camera', last.value)) : 'No events'),
-      level ? h('span', { class: 'state lvc3' }, icon('octagon-alert', { size: 14 }), 'Urgent') : null),
-    icon('chevron-right', { size: 18, cls: 'chev' }));
+  const level = last && last.status === STATUS.OUT && msOf(now) - msOf(last.time) < LEVEL_RULES.cameraHours * 60 * 60 * 1000 ? LEVEL.URGENT : LEVEL.FINE;
+  return rowWrap(h('button', { type: 'button', class: `row ${LV_CLASS[level]}`, 'data-ind': 'camera', 'data-tip': 't:camera', onclick: () => setScreen('setup') },
+    h('b', { class: 'r-name' }, 'Camera'),
+    camStop ? h('span', { class: 'r-num word nounit' }, 'Watching') : h('span', { class: 'r-none' }, icon('camera-off', { size: 16 }), 'Camera off'),
+    h('span', { class: 'r-time text' }, last ? `Last event: ${CAMERA_TEXT[last.value] || last.value}, ${stamp(last.time, now)}` : 'No events yet. Video is never stored.'),
+    level ? h('span', { class: 'r-state lvc3' }, icon('octagon-alert', { size: 14 }), 'Urgent') : null,
+    icon('chevron-right', { size: 18, cls: 'chev' })), 't:camera', 'the camera');
 }
 
 // Complex data: an image or a tracing goes to the AI or a doctor; the row shows what came in last.
 function complexRow(owner, indicator) {
   const cell = cellBy[indicator];
+  const now = nowTime();
   const last = machine.history(owner.id, indicator).slice(-1)[0] || null;
-  return h('button', { type: 'button', class: 'row', 'data-ind': indicator, onclick: () => openPanel(cell.label, [
+  return rowWrap(h('button', { type: 'button', class: 'row', 'data-ind': indicator, 'data-tip': `m:${indicator}:${owner.id}`, onclick: () => openPanel(cell.label, [
     h('p', {}, `How the machine handles it: ${cell.normText}. With the AI working it goes to the AI; when the AI analyses it and when a doctor does is still the team's open question.`),
     cell.availability ? h('p', {}, cell.availability) : null,
     h('p', { class: 'note' }, 'Devices are simulated on the technical view, where an image or a tracing can be sent.'),
   ]) },
-    h('span', { class: 'name' }, h('b', {}, cell.label), h('small', {}, last ? `Received GMT ${gmtDOY(last.time)}` : 'Nothing came in yet')),
-    h('span', { class: 'val' }, last ? h('span', { class: 'state' }, 'Needs analysis') : h('span', { class: 'none' }, 'Nothing yet')),
-    icon('chevron-right', { size: 18, cls: 'chev' }));
+    h('b', { class: 'r-name' }, cell.label),
+    last ? h('span', { class: 'r-num word nounit' }, 'Received') : h('span', { class: 'r-none' }, 'Nothing yet'),
+    h('span', { class: 'r-time' }, last ? stamp(last.time, now) : ''),
+    last ? h('span', { class: 'r-state' }, 'Needs analysis') : null,
+    icon('chevron-right', { size: 18, cls: 'chev' })), `m:${indicator}:${owner.id}`, cell.label);
 }
 
 // The menstrual cycle card, private to the person ("like Flo, but for astronauts", the team's words).
@@ -509,15 +586,16 @@ function cycleCard(p, now) {
     h('div', {}, h('p', { class: 'note' }, 'Your own days, no conclusion drawn.'), h('div', { class: 'table-wrap' }, h('table', {},
       h('thead', {}, h('tr', {}, h('th', {}, 'Cycle days'), h('th', {}, 'Days with check-ins'), h('th', {}, 'Days with a low check-in'))),
       h('tbody', {}, ...phases.map((ph) => h('tr', {}, h('td', {}, ph.to > 30 ? `${ph.from} and later` : `${ph.from} to ${ph.to}`), h('td', {}, String(ph.days)), h('td', {}, String(ph.low))))))))) : null;
-  return h('section', { class: 'card', 'aria-labelledby': 'cycle-title', 'data-terms': 'menstrual cycle period private' },
+  return h('section', { class: 'group', 'data-terms': 'menstrual cycle period private' },
     h('div', { class: 'group-head' }, h('h2', { id: 'cycle-title' }, 'Menstrual cycle'), h('p', {}, 'Private: not sent to anyone unless you choose to.')),
+    h('section', { class: 'card', 'aria-labelledby': 'cycle-title', 'data-terms': 'menstrual cycle period private' },
     h('div', { class: 'prose' }, ...facts.map((x) => h('p', {}, x))),
     h('div', { class: 'actions' },
       btn('secondary', 'Period started today', () => addReading('cycle', 'period_start')),
       btn('secondary', 'Period ended today', () => addReading('cycle', 'period_end')),
-      h('button', { type: 'button', class: 'link', onclick: () => addReading('cycle', s.suppressed ? 'suppression_off' : 'suppression_on') }, s.suppressed ? 'I no longer suppress my periods' : 'I suppress my periods')),
+      btn('secondary', s.suppressed ? 'I no longer suppress my periods' : 'I suppress my periods', () => addReading('cycle', s.suppressed ? 'suppression_off' : 'suppression_on'))),
     table,
-    h('p', { class: 'note' }, `Doctors on Earth treat the cycle as a vital sign; a typical cycle is ${CYCLE_RULES.normalMin} to ${CYCLE_RULES.normalMax} days and a period lasts up to ${CYCLE_RULES.periodMax} days (ACOG). The next-period date is a plain average of your last cycles, not a medical model.`));
+    h('p', { class: 'note' }, `Doctors on Earth treat the cycle as a vital sign; a typical cycle is ${CYCLE_RULES.normalMin} to ${CYCLE_RULES.normalMax} days and a period lasts up to ${CYCLE_RULES.periodMax} days (ACOG). The next-period date is a plain average of your last cycles, not a medical model.`)));
 }
 
 // Fixed groups, always in the same order, so each measure keeps its place. A new measure in config.js
@@ -546,10 +624,10 @@ function renderGroups(p, a, now) {
   const listed = new Set(GROUPS.flatMap((g) => g[2]));
   const others = [...BODY, ...PSYCHE].filter((ind) => !listed.has(ind));
   const rowFor = (ind) => (ind === 'camera' ? cameraRow(p) : COMPLEX_CELLS.includes(ind) ? complexRow(p, ind) : cellBy[ind] ? measureRow(p, ind, a, now) : null);
-  const group = (title, hint, rows, extra = null) => h('section', { class: 'group' },
+  const group = (title, hint, rows) => h('section', { class: 'group' },
     h('div', { class: 'group-head' }, h('h2', {}, title), hint ? h('p', {}, hint) : null),
-    h('div', { class: 'rows' }, ...rows.filter(Boolean)), extra);
-  const blocks = GROUPS.map(([title, hint, list]) => group(title, hint, list.map(rowFor), title === 'Mind' ? cycleCard(p, now) : null));
+    h('div', { class: 'rows' }, ...rows.filter(Boolean)));
+  const blocks = GROUPS.flatMap(([title, hint, list]) => [group(title, hint, list.map(rowFor)), title === 'Mind' ? cycleCard(p, now) : null]).filter(Boolean);
   if (others.length) blocks.push(group('Other measures', null, others.map(rowFor)));
   blocks.push(group('Cabin air', 'Shared by the whole crew.', SHIP_CELLS.map((ind) => measureRow(SHIP, ind, shipItems, now))));
   byId('groups').replaceChildren(...blocks);
@@ -557,10 +635,10 @@ function renderGroups(p, a, now) {
   const flagged = [...a.body.items, ...a.psyche.items, ...shipA.items].filter((x) => x.cell);
   const needs = byId('needs');
   needs.hidden = !flagged.length;
-  needs.replaceChildren(...(flagged.length ? [h('span', {}, 'Needs a look:'), ...flagged.map((x) => h('button', { type: 'button', class: 'link', onclick: () => {
+  needs.replaceChildren(...(flagged.length ? [h('span', {}, 'To look at:'), ...flagged.map((x) => h('button', { type: 'button', class: 'link ink', onclick: () => {
     const row = document.querySelector(`#groups .row[data-ind="${x.cell.indicator}"]`);
     if (row) { row.scrollIntoView({ block: 'center' }); row.focus({ preventScroll: true }); }
-  } }, x.cell.section === 'env' ? `${x.cell.label} (ship)` : x.cell.label))] : []));
+  } }, icon(LEVEL_ICON[x.level], { size: 16, cls: `lvc${x.level}` }), x.cell.section === 'env' ? `${x.cell.label} (ship)` : x.cell.label))] : []));
   byId('measures-sub').textContent = 'Press a measure to see its history.';
   applyFind();
 }
@@ -572,16 +650,16 @@ function applyFind() {
   let shown = 0;
   for (const g of byId('groups').querySelectorAll('.group')) {
     let inGroup = 0;
-    for (const row of g.querySelectorAll('.row')) {
+    for (const wrap of g.querySelectorAll('.row-wrap')) {
+      const row = wrap.querySelector('.row');
       const ind = row.dataset.ind || '';
       const hay = `${row.querySelector('.name b') ? row.querySelector('.name b').textContent : ''} ${WORDS[ind] || ''}`.toLowerCase();
       const hit = !q || hay.includes(q);
-      row.hidden = !hit;
+      wrap.hidden = !hit;
       if (hit) inGroup += 1;
     }
-    const card = g.querySelector('section.card');
-    if (card) card.hidden = Boolean(q) && !(card.dataset.terms || '').includes(q);
-    g.hidden = Boolean(q) && !inGroup && !(card && !card.hidden);
+    const terms = g.dataset.terms || '';
+    g.hidden = Boolean(q) && !inGroup && !(terms && terms.includes(q));
     if (!g.hidden) shown += 1;
   }
   let empty = byId('find-empty');
@@ -634,14 +712,17 @@ function renderRealHome(p) {
   byId('today-actions').hidden = false;
   byId('today-actions').replaceChildren(btn('primary', 'See all blood values', () => setScreen('measures')));
   byId('today-note').className = 'note';
+  byId('today-note').hidden = false;
   byId('today-note').textContent = 'Seven blood draws: 92, 44 and 3 days before launch, and 1, 45, 82 and 194 days after return. Blood tests alone do not tell the condition of body and mind, so there is no status message here.';
   const rows = analytes.map((x) => {
     const last = x.points[x.points.length - 1];
-    return h('button', { type: 'button', class: `row ${last.out ? 'lv1' : ''}`, 'data-ind': `blood:${x.code}`, onclick: () => openDetail(`blood:${x.code}`) },
-      h('span', { class: 'name' }, h('b', {}, x.name), h('small', {}, `Last test ${tpText(last.tp)}`)),
-      h('span', { class: 'val' }, h('span', { class: 'num' }, last.out ? h('span', { class: 'field lv1' }, fmtVal(last.v)) : fmtVal(last.v), x.units ? h('span', { class: 'u' }, x.units) : null),
-        last.out ? h('span', { class: 'state lvc1' }, icon('info', { size: 14 }), 'Outside the lab range') : null),
-      icon('chevron-right', { size: 18, cls: 'chev' }));
+    return rowWrap(h('button', { type: 'button', class: `row ${last.out ? 'lv1' : ''}`, 'data-ind': `blood:${x.code}`, 'data-tip': `b:${x.code}:${p.id}`, onclick: () => openDetail(`blood:${x.code}`) },
+      h('b', { class: 'r-name' }, x.name),
+      h('span', { class: `r-num ${x.units ? '' : 'nounit'} ${last.out ? 'lvc1' : ''}` }, fmtVal(last.v)),
+      x.units ? h('span', { class: 'r-unit' }, x.units) : null,
+      h('span', { class: 'r-time text' }, `Last test ${tpText(last.tp)}`),
+      last.out ? h('span', { class: 'r-state lvc1' }, icon('info', { size: 14 }), 'Outside the lab range') : null,
+      icon('chevron-right', { size: 18, cls: 'chev' })), `b:${x.code}:${p.id}`, x.name);
   });
   byId('groups').replaceChildren(h('section', { class: 'group' },
     h('div', { class: 'group-head' }, h('h2', {}, 'Blood tests before and after flight'), h('p', {}, 'Reference ranges come from the same NASA tables (lab ranges).')),
@@ -673,6 +754,7 @@ function periodRange(points) {
 
 function openDetail(indicator) {
   if (ui.screen !== 'detail') ui.backTo = ui.screen;
+  if (!ui.periodChosen && window.innerWidth < 600) ui.period = '30';
   ui.detail = indicator;
   ui.screen = 'detail';
   render();
@@ -681,13 +763,14 @@ function openDetail(indicator) {
 
 const NORM_NAMES = { earthGeneral: 'General, Earth', spaceGeneral: 'General, space', personalEarth: 'Personal, Earth', personalSpace: 'Personal, space' };
 const BACK_LABEL = { home: 'Today', measures: 'All measures', alerts: 'Messages', setup: 'Settings' };
-const backButton = () => btn('key-btn small back', BACK_LABEL[ui.backTo] || 'All measures', () => setScreen(ui.backTo || 'measures'), 'chevron-left');
+const backButton = () => btn('secondary small back', BACK_LABEL[ui.backTo] || 'All measures', () => setScreen(ui.backTo || 'measures'), 'chevron-left');
+const cornerTip = (key, label) => { const b = tipButton(key, label); b.classList.add('corner'); return b; };
 const more = (title, ...children) => h('details', { class: 'more' }, h('summary', {}, icon('chevron-right', { size: 18 }), title), h('div', {}, ...children));
 
 function periodBar(onChange) {
   return h('div', { class: 'periods' },
     h('div', { class: 'seg small', role: 'group', 'aria-label': 'Period' }, ...PERIODS.map(([key, label]) => h('button', {
-      type: 'button', 'aria-pressed': String(ui.period === key), onclick: () => { ui.period = key; onChange(); },
+      type: 'button', 'aria-pressed': String(ui.period === key), onclick: () => { ui.period = key; ui.periodChosen = true; onChange(); },
     }, ui.period === key ? icon('check', { size: 14 }) : null, label))),
     ui.period === 'custom' ? h('span', { class: 'custom' },
       h('label', {}, 'From (GMT)', h('input', { type: 'date', value: ui.from, onchange: (e) => { ui.from = e.target.value; onChange(); } })),
@@ -714,16 +797,17 @@ function renderDetail() {
   if (indicator === 'bp') lines.push({ v: cell.norm.sysBelow, label: `Systolic: below ${cell.norm.sysBelow}` }, { v: cell.norm.diaBelow, label: `Diastolic: below ${cell.norm.diaBelow}` });
 
   const facts = [];
+  const about = [];
   if (fc) {
-    const dir = { up: 'is going up', down: 'is going down', flat: 'is holding steady', unknown: 'has no clear direction' }[fc.direction];
-    facts.push(`In flight, ${indicator === 'bp' ? 'systolic pressure' : 'this measure'} ${dir}.`);
+    const what = indicator === 'bp' ? 'Systolic pressure' : 'This measure';
+    const side = fc.crossing && fc.crossing.side === 'below' ? 'below' : 'above';
     const lastOut = m.last && m.last.status === STATUS.OUT;
-    if (lastOut) facts.push(`The last reading (${fmtDT(m.last.time)}) is outside the norm.`);
-    else if (fc.crossing && fc.crossing.already) facts.push(`By the line through the readings it is already ${fc.crossing.side === 'below' ? 'below' : 'above'} the norm.`);
-    else if (fc.crossing && fc.crossedBeforeNow) facts.push(`By the line, the norm's border was crossed around ${fmtDate(fc.crossing.date)}, after the last reading. A new reading is needed.`);
-    else if (fc.crossing) facts.push(`If it goes on like this, it will go ${fc.crossing.side === 'below' ? 'below' : 'above'} the norm around ${fmtDate(fc.crossing.date)}, before landing on ${fmtDate(MISSION.landing)}.`);
-    else facts.push(`By this line it stays within the norm until landing on ${fmtDate(MISSION.landing)}.`);
-    facts.push("The forecast line is a simple straight line through the in-flight readings (Claude's technical choice), not a validated medical model.");
+    if (lastOut) facts.push(`The last reading (${stamp(m.last.time, now)}) is outside the normal range.`);
+    else if (fc.crossing && fc.crossing.already) facts.push(`If the line through the flight readings holds, ${lower(what)} is already ${side} the normal range.`);
+    else if (fc.crossing && fc.crossedBeforeNow) facts.push(`If the line through the flight readings holds, ${lower(what)} left the normal range around ${fmtDate(fc.crossing.date)}, after the last reading. A new reading is needed.`);
+    else if (fc.crossing) facts.push(`${what} is going ${fc.crossing.side === 'below' ? 'down' : 'up'}: if this line holds, it goes ${side} the normal range around ${fmtDate(fc.crossing.date)}, before landing on ${fmtDate(MISSION.landing)}.`);
+    else facts.push(`Steady within the normal range until landing on ${fmtDate(MISSION.landing)}, if this line holds.`);
+    about.push("The forecast is a straight line through the in-flight readings (Claude's technical choice), not a validated medical model.");
   } else if (cell.kind === KIND.NUMBER) {
     facts.push(cell.onlyOnEarth ? 'Not measured in flight: only on Earth, before and after flight.' : 'To see where a measure is going, in-flight readings on at least three different days are needed.');
   } else {
@@ -731,7 +815,7 @@ function renderDetail() {
   }
   if (EXPECTED[indicator]) facts.push(EXPECTED[indicator].text);
   if (indicator === 'strength') facts.push("In NASA studies muscle strength is measured before and after flight; NASA's 2023 evidence report says how it changes during flight is not well characterized.");
-  if (ui.example && !owner.real) facts.push('The example data are made up; the shapes of the changes come from published flight studies.');
+  if (ui.example && !owner.real) about.push('The example data are made up; the shapes of the changes come from published flight studies.');
 
   const normsBox = cell.norms ? h('dl', { class: 'norms' }, ...Object.entries(NORM_NAMES).map(([k, title]) => {
     const n = cell.norms[k];
@@ -747,44 +831,49 @@ function renderDetail() {
   const norm = cell.kind === KIND.NUMBER ? normShort(cell, owner) : '';
   let verdict = 'No readings yet.';
   if (lastEntry) {
-    if (lastEntry.status === STATUS.OUT) verdict = `${m && m.side === 'below' ? 'Below' : 'Above'} the norm.`;
-    else if (lastEntry.status === STATUS.OK) verdict = item && item.kind === 'forecast' ? `Within the norm now; the line leaves it around ${fmtDate(item.m.forecast.crossing.date)}.` : 'Within the norm.';
+    if (lastEntry.status === STATUS.OUT) verdict = `${m && m.side === 'below' ? 'Below' : 'Above'} the normal range.`;
+    else if (lastEntry.status === STATUS.OK) verdict = item && item.kind === 'forecast' ? `In the normal range now; the line leaves it around ${fmtDate(item.m.forecast.crossing.date)}.` : 'Within the normal range.';
     else verdict = cell.normType === 'record' ? 'Recorded: there is no checked norm for this measure.' : 'Recorded for the planned review.';
   }
   const alert = owner === SHIP ? null : alertsFor(p.id).find((x) => x.indicator === indicator);
   const raw = lastEntry ? valueText(indicator, lastEntry.value) : '';
   const shown = indicator === 'sleepQuality' && raw ? `${raw} of 7` : ORDINAL[indicator] ? cap(raw) : raw;
-  const arrow = lastEntry && lastEntry.status === STATUS.OUT && m && m.side ? icon(m.side === 'below' ? 'arrow-down' : 'arrow-up', { size: 28, stroke: 2.4, cls: `lvc${level || 1}`, label: m.side === 'below' ? 'below the norm' : 'above the norm' }) : null;
+  const arrow = lastEntry && lastEntry.status === STATUS.OUT && m && m.side ? icon(m.side === 'below' ? 'arrow-down' : 'arrow-up', { size: 28, stroke: 2.4, cls: `lvc${level || 1}`, label: m.side === 'below' ? 'below the normal range' : 'above the normal range' }) : null;
   const periodName = (PERIODS.find(([k]) => k === ui.period) || PERIODS[2])[2];
   const chart = h('div', { class: 'chart', id: 'd-chart' });
   const tip = h('div', { class: 'tip', id: 'd-tip', hidden: true });
   const band = ORDINAL[indicator] ? null : bandOf(cell, owner);
-  const how = ['Each dot is one reading.', band ? 'The shaded band is the norm.' : null, allPoints.some((pt) => pt.out) ? 'Rings mark readings outside the norm.' : null].filter(Boolean).join(' ');
+  const shownPts = allPoints.filter((pt) => !range || (pt.t >= range.from && pt.t <= range.to));
+  const how = [shownPts.length <= 40 ? 'Each dot is one reading.' : 'The line joins your readings.', band ? 'The shaded band is the normal range.' : null, shownPts.some((pt) => pt.out) ? 'Rings mark readings outside it.' : null].filter(Boolean).join(' ');
 
-  host.replaceChildren(
+  fill(host, 
     backButton(),
     h('div', { class: 'detail-title' }, h('h1', {}, cell.label), owner === SHIP ? h('span', { class: 'chip neutral' }, 'Shared by the crew') : null),
     h('section', { class: `card now ${LV_CLASS[level]}` },
+      cornerTip(`m:${indicator}:${owner.id}`, cell.label),
       lastEntry ? h('div', { class: 'now-value' }, h('b', {}, shown), cell.unit && cell.kind === KIND.NUMBER ? h('span', { class: 'u' }, cell.unit) : null, arrow) : null,
       h('div', { class: 'now-text' },
         h('p', { class: 'verdict' }, level ? h('span', { class: `lvc${level}` }, icon(LEVEL_ICON[level], { size: 18 }), ' ') : null, verdict, level ? h('span', { class: `lvc${level}` }, ` ${LEVEL_TITLE[level]}.`) : null),
-        norm ? h('p', { class: 'meta' }, `Norm: ${norm.replace(/^norm /, '')}${cell.unit && cell.kind === KIND.NUMBER ? ` ${cell.unit}` : ''}`) : null,
-        lastEntry ? h('p', { class: 'meta mono' }, `Last reading ${fmtDT(lastEntry.time)}`) : null)),
-    owner === SHIP ? null : h('div', { class: 'actions' },
-      alert ? btn('proc', 'What to do', () => openProcedure(alert), 'list-checks') : null,
-      aiButton('Analyse with AI', 'body', a),
-      btn('secondary', 'Message the doctor', () => openDoctor(a, 'body', indicator), 'stethoscope')),
+        norm ? h('p', { class: 'meta' }, `Normal range: ${rangeText(cell, owner)}${cell.unit && cell.kind === KIND.NUMBER && cell.normType !== 'baseline-percent' ? ` ${cell.unit}` : ''}`) : null,
+        lastEntry ? h('p', { class: 'meta' }, 'Last reading ', h('span', { class: 'mono' }, stamp(lastEntry.time, now))) : null)),
+    alert ? h('div', { class: 'actions' }, btn('proc', 'What to do', () => openProcedure(alert), 'list-checks')) : null,
     periodBar(renderDetail),
     h('section', { class: 'card chart-card' },
+      cornerTip('t:chart', 'the chart'),
       h('h2', {}, `${cell.label}, ${periodName}`),
       h('p', { class: 'how' }, how),
       chart, tip,
-      h('div', { class: 'legend', id: 'd-legend' })),
+      h('div', { class: 'legend', id: 'd-legend' }),
+      showTrend ? h('p', { class: 'how' }, 'Forecast: a straight line through the flight readings, not a medical model.') : null),
     h('div', { class: 'prose' }, ...facts.map((x) => h('p', {}, x))),
+    owner === SHIP ? null : h('div', { class: 'actions' },
+      aiButton('Analyse with AI', 'body', a),
+      btn('secondary', 'Message the doctor', () => openDoctor(a, 'body', indicator), 'stethoscope')),
     h('div', {},
       more('About this measure',
         cell.effort ? h('p', {}, `Effort to measure: ${cell.effort}, on the team's scale of light, high and extreme.`) : null,
-        h('p', { class: 'muted' }, 'Which norm it is compared with, and the sources:'),
+        ...about.map((x) => h('p', {}, x)),
+        h('p', { class: 'muted' }, 'Which normal range it is compared with, and the sources:'),
         normsBox,
         owner === SHIP ? null : h('p', {}, h('button', { type: 'button', class: 'link', onclick: () => openArticles(indicator) }, 'Articles on this, to read without the AI'))),
       more('Show readings as a table', h('div', { class: 'table-wrap', id: 'd-table' }))),
@@ -797,10 +886,9 @@ function renderDetail() {
   });
   drawTable(byId('d-table'), { series, fmt: fmtVal, ordinal: ord, outText: ord ? null : undefined, range });
   const legend = [];
-  if (series.length > 1) for (const s of series) legend.push(h('span', {}, h('span', { class: s.dash ? 'lkey dashed' : s.color === 'var(--series-2)' ? 'lkey second' : 'lkey' }), cap(s.name)));
-  if (band) legend.push(h('span', {}, h('span', { class: 'band' }), 'Norm'));
-  if (showTrend) legend.push(h('span', {}, h('span', { class: 'trend-key' }), 'Straight line through in-flight readings, to landing (not a medical model)'));
-  if (allPoints.some((pt) => pt.out)) legend.push(h('span', {}, h('span', { class: 'out-key' }), ord ? cap(LOW[indicator]) : 'Outside the norm'));
+  if (band) legend.push(h('span', {}, h('span', { class: 'band' }), 'Normal range'));
+  if (showTrend) legend.push(h('span', {}, h('span', { class: 'trend-key' }), 'Forecast to landing'));
+  if (shownPts.some((pt) => pt.out)) legend.push(h('span', {}, h('span', { class: 'out-key' }), ord ? cap(LOW[indicator]) : 'Outside the normal range'));
   byId('d-legend').replaceChildren(...legend);
   byId('d-legend').hidden = !legend.length;
 }
@@ -810,7 +898,7 @@ function renderBloodDetail(host, p, code) {
   const chart = h('div', { class: 'chart', id: 'd-chart' });
   const tip = h('div', { class: 'tip', id: 'd-tip', hidden: true });
   const last = x.points[x.points.length - 1];
-  host.replaceChildren(
+  fill(host, 
     backButton(),
     h('div', { class: 'detail-title' }, h('h1', {}, x.name)),
     h('section', { class: `card now ${last.out ? 'lv1' : ''}` },
@@ -854,7 +942,7 @@ function alertsFor(personId) {
   }
   for (const it of s.items) {
     const last = it.m.last;
-    out.push({ id: `ship|${it.cell.indicator}|${new Date(msOf(last.time)).toISOString().slice(0, 13)}`, level: it.level, title: `Ship: ${lower(it.cell.label)}`, text: `${valueText(it.cell.indicator, last.value)} ${it.cell.unit}: outside the norm (${normShort(it.cell, SHIP)}).`, time: msOf(last.time), steps: ["Check the ship system's readings.", 'The crew and mission control decide.'], indicator: it.cell.indicator, system: 'Ship' });
+    out.push({ id: `ship|${it.cell.indicator}|${new Date(msOf(last.time)).toISOString().slice(0, 13)}`, level: it.level, title: `Ship: ${lower(it.cell.label)}`, text: `${valueText(it.cell.indicator, last.value)} ${it.cell.unit}: outside the normal range (${rangeText(it.cell, SHIP)}).`, time: msOf(last.time), steps: ["Check the ship system's readings.", 'The crew and mission control decide.'], indicator: it.cell.indicator, system: 'Ship' });
   }
   return out.sort((x, y) => y.level - x.level || y.time - x.time);
 }
@@ -867,13 +955,11 @@ function renderAlerts() {
   const unseen = list.filter((x) => !ui.seen.has(x.id));
   const cell = (lv, label) => { const n = count(lv); return h('div', { class: n ? 'on' : '' }, h('span', { class: n ? `lvc${lv}` : '' }, icon(LEVEL_ICON[lv], { size: 16 }), label), h('b', { class: n ? `lvc${lv}` : '' }, String(n))); };
   const markRead = (x) => { ui.seen.add(x.id); savePrefs(); render(); };
-  host.replaceChildren(
-    h('div', { class: 'screen-head' }, h('h1', {}, 'Messages'), h('p', {}, list.length ? 'Sorted by level, the most important first.' : 'You will see a message here only when something needs you.')),
-    h('div', { class: 'count-strip' },
-      cell(LEVEL.URGENT, 'Urgent'), cell(LEVEL.ACTION, 'Needs action'), cell(LEVEL.ATTENTION, 'Attention'),
-      h('div', { class: unseen.length ? 'on' : '' }, h('span', {}, icon('bell', { size: 16 }), 'New'), h('b', {}, String(unseen.length)))),
+  fill(host, 
+    h('div', { class: 'screen-head' }, h('h1', {}, 'Messages'), h('p', {}, list.length ? `${unseen.length ? `${unseen.length} new. ` : ''}The most important first. The levels and their thresholds are drafts; the team decides.` : 'You will see a message here only when something needs you.')),
+    h('div', { class: 'count-strip' }, cell(LEVEL.URGENT, 'Urgent'), cell(LEVEL.ACTION, 'Needs action'), cell(LEVEL.ATTENTION, 'Attention')),
     h('div', { class: 'actions' },
-      unseen.length ? btn('key-btn small', 'Mark all as read', () => { for (const x of list) ui.seen.add(x.id); savePrefs(); render(); }, 'check') : null,
+      unseen.length ? btn('secondary small', 'Mark all as read', () => { for (const x of list) ui.seen.add(x.id); savePrefs(); render(); }, 'check') : null,
       btn('secondary small', ui.muted ? 'Sounds are off' : 'Silence all sounds', () => { ui.muted = true; savePrefs(); try { speechSynthesis.cancel(); } catch { /* none */ } render(); toast('All sounds are off.'); }, 'bell-off')),
     list.length ? h('ul', { class: 'msgs' }, ...list.map((x) => {
       const read = ui.seen.has(x.id);
@@ -883,8 +969,8 @@ function renderAlerts() {
         h('p', {}, x.text, h('span', { class: 'muted' }, ` · ${x.system}`)),
         h('div', { class: 'actions' },
           btn('proc small', 'What to do', () => openProcedure(x), 'list-checks'),
-          x.indicator ? btn('key-btn small', 'Chart', () => openDetail(x.indicator), 'chart-line') : null,
-          read ? null : h('button', { type: 'button', class: 'link', onclick: () => markRead(x) }, 'Mark as read')));
+          x.indicator ? btn('secondary small', 'Chart', () => openDetail(x.indicator), 'chart-line') : null,
+          read ? null : btn('secondary small', 'Mark as read', () => markRead(x), 'check')));
     })) : h('div', { class: 'card' }, h('p', {}, h('b', {}, 'No messages.')), h('p', { class: 'muted' }, 'You will see a message here only when something needs you.')),
     h('h2', { class: 'section-title' }, 'Sent to the doctor'),
     reports.length ? h('ul', { class: 'msgs' }, ...reports.map((r) => h('li', { class: 'card msg' },
@@ -902,7 +988,7 @@ function openPanel(title, body, actions = []) {
   panelReturn = document.activeElement;
   byId('panel-title').textContent = title;
   byId('panel-body').replaceChildren(...body.filter(Boolean));
-  byId('panel-actions').replaceChildren(...actions.filter(Boolean), btn('key-btn', 'Close', () => closePanel()));
+  byId('panel-actions').replaceChildren(...actions.filter(Boolean), btn('secondary', 'Close', () => closePanel()));
   const dlg = byId('panel');
   if (dlg.open) dlg.close();
   dlg.show();
@@ -1040,6 +1126,8 @@ async function toggleCamera() {
   if (camStop) { camStop(); camStop = null; render(); return; }
   btn.disabled = true;
   btn.textContent = 'Turning the camera on…';
+  const wrap = byId('cam-wrap');
+  if (wrap) wrap.hidden = false;
   try {
     const { startCamera } = await import('./camera.js');
     camStop = await startCamera({
@@ -1057,11 +1145,7 @@ async function toggleCamera() {
     btn.disabled = false;
     btn.textContent = 'Turn the camera off';
     btn.className = 'btn secondary';
-    const tag = document.querySelector('#screen-setup .cam-on-tag');
-    if (tag) tag.hidden = false;
     renderBar();
-    const off = document.querySelector('#screen-setup .cam-off');
-    if (off) off.hidden = true;
   } catch (err) {
     camStop = null;
     toast(err && err.name === 'NotAllowedError' ? 'Camera access was not allowed.' : `The camera did not start: ${err && err.message ? err.message : err}`);
@@ -1174,44 +1258,47 @@ function renderSetup() {
   const p = personById[ui.person];
   const ship = (key) => (on) => { ui.ship[key] = on; machine.setState(ui.ship); savePrefs(); render(); };
   const pick = themePick();
-  host.replaceChildren(
+  const camOn = Boolean(camStop);
+  fill(host, 
     h('div', { class: 'screen-head' }, h('h1', {}, 'Settings')),
     h('div', { class: 'settings' },
-      h('section', { class: 'card' }, h('h2', {}, 'On board, for the demonstration'),
-        switchRow('st-ai', 'AI is working', 'With the AI off, only the automation works.', ui.ship.aiWorks, ship('aiWorks')),
-        switchRow('st-doc', 'Doctor on board', 'Messages go to the doctor on board instead of Earth.', ui.ship.doctorOnBoard, ship('doctorOnBoard')),
-        switchRow('st-link', 'Link to Earth', 'Without it, messages to Earth wait until the link is back.', ui.ship.linkToEarth, ship('linkToEarth')),
-        switchRow('st-example', 'Example flight', 'Made-up readings for four people, shaped like published flight studies.', ui.example, (on) => { ui.example = on; savePrefs(); rebuild(); render(); })),
-      h('section', { class: 'card' }, h('h2', {}, 'Sound and display'),
+      h('section', { class: 'card' }, cornerTip('t:display', 'the display'), h('h2', {}, 'Sound and display'),
         switchRow('st-sound', 'Sound and voice', 'The question "Are you okay?" is also spoken.', !ui.muted, (on) => { ui.muted = !on; if (ui.muted) { try { speechSynthesis.cancel(); } catch { /* none */ } } savePrefs(); renderBar(); }),
         h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Display'), h('small', {}, 'Dark suits a dim cabin; light suits a bright one.')),
           h('div', { class: 'seg small', role: 'group', 'aria-label': 'Display' }, ...THEMES.map(([k, label]) => h('button', { type: 'button', 'aria-pressed': String(pick === k), onclick: () => { setTheme(k); renderSetup(); } }, pick === k ? icon('check', { size: 14 }) : null, label))))),
-      h('section', { class: 'card' }, h('h2', {}, 'Camera'),
-        h('p', { class: 'muted' }, 'Watches for a hand held to the chest and asks "Are you okay?" first. A sleeping person is ignored.'),
-        h('div', { class: 'cam-view' }, h('video', { id: 'cam-video', playsinline: true, muted: true }), h('canvas', { id: 'cam-canvas', 'aria-hidden': 'true' }),
-          h('span', { class: 'cam-on-tag', hidden: camStop ? null : true }, 'Camera on'),
-          camStop ? null : h('p', { class: 'cam-off' }, icon('camera-off', { size: 32 }), h('b', {}, 'The camera is off.'), h('small', {}, 'Video never leaves this computer and is never stored.'))),
-        h('div', { class: 'actions' }, h('button', { type: 'button', class: camStop ? 'btn secondary' : 'btn primary', id: 'cam-toggle', onclick: toggleCamera }, camStop ? 'Turn the camera off' : 'Turn the camera on'), h('span', { class: 'muted', id: 'cam-person' }, '')),
-        h('div', { class: 'watch' },
-          h('div', { class: 'watch-row' }, h('p', {}, `Hand on the chest for ${CAM_RULES.chestSeconds} s: the question "Are you okay?", and an alarm only without confirmation.`), h('div', { class: 'meter', 'aria-hidden': 'true' }, h('span', { id: 'cam-chest-bar' }))),
-          h('div', { class: 'watch-row' }, h('p', {}, `Eyes closed and almost no movement for ${CAM_RULES.sleepSeconds} s: "asleep", no alarm.`), h('div', { class: 'meter', 'aria-hidden': 'true' }, h('span', { id: 'cam-sleep-bar' })))),
-        h('p', { class: 'note' }, "Google MediaPipe models (Apache 2.0) run on this computer. Google's model cards say they are not meant for decisions a human life depends on: this is a demonstration.")),
-      h('section', { class: 'card' }, h('h2', {}, 'Connections'),
-        h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Bluetooth heart rate monitor'), h('small', { id: 'hr-live' }, hr.device ? `${hr.bpm ?? '…'} bpm` : 'Standard Heart Rate profile. Chrome or Edge on a computer.')),
-          btn('secondary small', hr.device ? 'Connected' : 'Connect', connectHeartRate, 'bluetooth', { disabled: p.real ? true : null })),
-        h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Export for the doctor'), h('small', {}, 'HL7 FHIR with LOINC codes, the way medical record systems accept it.')),
-          btn('secondary small', 'Open', openFhir, 'file-json-2', { disabled: p.real ? true : null })),
-        h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'NASA data'), h('small', {}, 'Inspiration4 blood tests from NASA OSDR.')),
-          h('a', { href: INSPIRATION4.source.urls[0], target: '_blank', rel: 'noopener' }, 'OSD-575'))),
+      h('section', { class: 'card' }, cornerTip('t:camera', 'the camera'), h('h2', {}, 'Camera'),
+        h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, camOn ? 'The camera is on' : 'The camera is off'), h('small', {}, 'It watches for a hand held to the chest and asks "Are you okay?" first. A sleeping person is ignored. Video never leaves this computer and is never stored.')),
+          h('button', { type: 'button', class: camOn ? 'btn secondary' : 'btn primary', id: 'cam-toggle', onclick: toggleCamera }, camOn ? 'Turn the camera off' : 'Turn the camera on')),
+        h('div', { class: 'cam-wrap', id: 'cam-wrap', hidden: camOn ? null : true },
+          h('div', { class: 'cam-view' }, h('video', { id: 'cam-video', playsinline: true, muted: true }), h('canvas', { id: 'cam-canvas', 'aria-hidden': 'true' }), h('span', { class: 'cam-on-tag' }, 'Camera on')),
+          h('p', { class: 'muted', id: 'cam-person' }, ''),
+          h('div', { class: 'watch' },
+            h('div', { class: 'watch-row' }, h('p', {}, `Hand on the chest for ${CAM_RULES.chestSeconds} s: the question "Are you okay?", and an alarm only without confirmation.`), h('div', { class: 'meter', 'aria-hidden': 'true' }, h('span', { id: 'cam-chest-bar' }))),
+            h('div', { class: 'watch-row' }, h('p', {}, `Eyes closed and almost no movement for ${CAM_RULES.sleepSeconds} s: "asleep", no alarm.`), h('div', { class: 'meter', 'aria-hidden': 'true' }, h('span', { id: 'cam-sleep-bar' })))),
+          h('p', { class: 'note' }, "Google MediaPipe models (Apache 2.0) run on this computer. Google's model cards say they are not meant for decisions a human life depends on: this is a demonstration."))),
+      h('section', { class: 'card' }, cornerTip('t:connections', 'connections'), h('h2', {}, 'Connections'),
+        h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Bluetooth heart rate monitor'), h('small', { id: 'hr-live' }, hr.device ? `${hr.bpm ?? '…'} bpm` : 'Any chest strap or watch with the standard Bluetooth Heart Rate profile.')),
+          btn('secondary small', hr.device ? 'Connected' : 'Connect', connectHeartRate, 'bluetooth', { disabled: p.real ? true : null, 'data-tip': 't:bluetooth' })),
+        h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Export for the doctor'), h('small', {}, 'A file medical record systems can read (HL7 FHIR).')),
+          btn('secondary small', 'Open', openFhir, 'file-json-2', { disabled: p.real ? true : null, 'data-tip': 't:fhir' })),
+        h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'NASA data'), h('small', {}, 'Real Inspiration4 blood tests from NASA OSDR.')),
+          h('a', { href: INSPIRATION4.source.urls[0], target: '_blank', rel: 'noopener', 'data-tip': 't:osdr' }, 'OSD-575'))),
       h('section', { class: 'card' }, h('h2', {}, 'About'),
         h('p', {}, `${MISSION.name}: launch ${fmtDate(MISSION.launch)}, landing ${fmtDate(MISSION.landing)}.`),
+        h('p', {}, 'The levels (attention, needs action, urgent) and their thresholds are drafts: the team decides the final ones.'),
         h('p', { class: 'muted' }, 'Idea and decisions: team Just For Fun, NASA Space Apps Challenge 2026. Code written with Claude (Anthropic), an AI system.'),
-        h('p', {}, h('a', { href: './machine.html' }, 'Technical view, for engineers')))),
+        h('p', {}, h('a', { href: './machine.html' }, 'Technical view, for engineers'))),
+      h('section', { class: 'card' }, cornerTip('t:onboard', 'the demonstration switches'), h('h2', {}, 'On board, for the demonstration'),
+        switchRow('st-ai', 'AI is working', 'With the AI off, only the automation works.', ui.ship.aiWorks, ship('aiWorks')),
+        switchRow('st-doc', 'Doctor on board', 'Messages go to the doctor on board instead of Earth.', ui.ship.doctorOnBoard, ship('doctorOnBoard')),
+        switchRow('st-link', 'Link to Earth', 'Without it, messages to Earth wait until the link is back.', ui.ship.linkToEarth, ship('linkToEarth')),
+        switchRow('st-example', 'Example flight', 'Made-up readings for four people, shaped like published flight studies.', ui.example, (on) => { ui.example = on; savePrefs(); rebuild(); render(); }))),
   );
 }
 
 // ---------- screens ----------
 function setScreen(name) {
+  hideTip();
   ui.screen = name;
   if (name !== 'detail') ui.detail = null;
   if (byId('panel').open) closePanel();
@@ -1243,6 +1330,15 @@ function render() {
 }
 
 // ---------- start ----------
+initTips(tipContent);
+byId('met').dataset.tip = 't:flightday';
+byId('clock').parentElement.dataset.tip = 't:gmt';
+byId('alerts-btn').dataset.tip = 't:messages';
+byId('who-btn').dataset.tip = 't:who';
+byId('today-head-tip').replaceWith(tipButton('t:today', 'this message'));
+byId('keynums-tip').replaceWith(tipButton('t:keynums', 'key numbers'));
+byId('measures-tip').replaceWith(tipButton('t:measures', 'all measures'));
+byId('checkin-tip').replaceWith(tipButton('t:checkin', 'the daily check-in'));
 byId('who-btn').addEventListener('click', () => { if (camStop) { camStop(); camStop = null; } closePanel(); ui.person = null; render(); });
 byId('alerts-btn').addEventListener('click', () => setScreen('alerts'));
 byId('ci-send').addEventListener('click', sendCheckin);

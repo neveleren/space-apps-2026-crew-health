@@ -99,7 +99,7 @@ export function assess({ machine, person, cells, mission, now }) {
   if (badDays.size >= RULES.badDaysForAttention) {
     psyche.push({ kind: 'mood', level: badDays.size >= RULES.badDaysForAction ? LEVEL.ACTION : LEVEL.ATTENTION, days: badDays.size });
   }
-  const rank = { camera: 0, standard: 1, forecast: 2, out: 3, expected: 4, mood: 5 };
+  const rank = { camera: 0, standard: 1, out: 2, expected: 3, forecast: 4, mood: 5 };
   const order = (a, b) => b.level - a.level || rank[a.kind] - rank[b.kind];
   body.sort(order);
   psyche.sort(order);

@@ -339,7 +339,8 @@ export function createMachine({ cells, crew = [], state = {}, now = () => new Da
       if (!history.has(k)) history.set(k, []);
       const last = steps.find((x) => x.code === 'in-norm' || x.code === 'out-of-norm');
       const list = history.get(k);
-      list.push({ time, value: reading.value, status, side: last ? last.side || null : null, percent: last ? last.percent : undefined });
+      // The source is kept, so the screen can say where each value came from (a device, a person, made-up example data).
+      list.push({ time, value: reading.value, status, side: last ? last.side || null : null, percent: last ? last.percent : undefined, source: reading.source || null, example: Boolean(reading.example) });
       list.sort((a, b) => a.time - b.time);
     }
     return entry(reading, cell, status, dest, steps, person.id, time);

@@ -42,7 +42,7 @@ export function drawHistory(host, tip, opts) {
     host.append(Object.assign(document.createElement('p'), { className: 'empty', textContent: range ? 'No readings in this period.' : 'No readings of this measure for this person yet.' }));
     return;
   }
-  const outText = opts.outText === undefined ? 'outside the norm' : opts.outText;
+  const outText = opts.outText === undefined ? 'outside the normal range' : opts.outText;
   const W = Math.max(300, Math.round(host.getBoundingClientRect().width) || 640);
   const H = W < 600 ? 270 : 330;
   const m = { l: 56, r: 16, t: 40, b: 34 };
@@ -142,7 +142,7 @@ export function drawHistory(host, tip, opts) {
   }
 
   // Names of the border lines: at the left, where the flight readings are not yet, on a halo.
-  for (const l of opts.lines || []) svg.append(el('text', { x: W - m.r - 4, y: y(l.v) - 6, class: 'tick halo', 'text-anchor': 'end' }, l.label));
+  for (const l of opts.lines || []) svg.append(el('text', { x: m.l + 8, y: y(l.v) - 6, class: 'tick halo' }, l.label));
 
   // Hover: a crosshair that snaps to the nearest reading in time, and a tooltip with every series.
   const cross = el('line', { y1: m.t, y2: H - m.b, class: 'crosshair', visibility: 'hidden' });
@@ -171,7 +171,7 @@ export function drawHistory(host, tip, opts) {
       const val = document.createElement('strong');
       val.textContent = opts.ordinal ? opts.ordinal[p.v] : opts.fmt(p.v);
       const name = document.createElement('span');
-      name.textContent = ` ${s.name}${outText ? (p.out ? `, ${outText}` : ', inside the norm') : ''}`;
+      name.textContent = ` ${s.name}${outText ? (p.out ? `, ${outText}` : ', inside the normal range') : ''}`;
       row.append(key, val, name);
       tip.append(row);
     }
@@ -206,7 +206,7 @@ export function drawHistory(host, tip, opts) {
 // The same readings as a table, so nothing depends on hovering.
 export function drawTable(host, opts) {
   host.replaceChildren();
-  const outText = opts.outText === undefined ? 'outside the norm' : opts.outText;
+  const outText = opts.outText === undefined ? 'outside the normal range' : opts.outText;
   const table = document.createElement('table');
   const head = table.createTHead().insertRow();
   for (const name of ['Time', ...opts.series.map((s) => s.name)]) {
