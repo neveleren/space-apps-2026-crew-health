@@ -507,6 +507,9 @@ export const CELLS = [
     // medicines, and meclizine and promethazine under "Space Motion Sickness/Anti-Nausea", page 17). Loratadine
     // (page 2), pseudoephedrine (page 3) and bisacodyl (page 5) carry no comment there. Nothing is read from kitNote
     // when the program runs: kitNote is only shown and quoted. The checks are in quicklog.js (kitFindings).
+    // sedating marks each medicine whose comment begins "May cause sedation and impair performance." (meclizine and
+    // promethazine, page 17; checked again by Claude on 15 Nov 2026): the readiness card before a critical task lists
+    // it with the sleep medicines (src/readiness.js).
     kit: [
       { key: 'melatonin', name: 'Melatonin', strength: '3 mg', unit: 'tablet', use: 'sleep', kitNote: 'Do not use with other sleep meds.', sleepMed: true, notWithSleepMeds: true },
       { key: 'zolpidem', name: 'Zolpidem', brand: 'Ambien', strength: '10 mg', unit: 'tablet', use: 'sleep', kitNote: 'Do not use with other sleep meds.', sleepMed: true, notWithSleepMeds: true },
@@ -514,8 +517,8 @@ export const CELLS = [
       { key: 'ibuprofen', name: 'Ibuprofen', brand: 'Motrin', strength: '400 mg', unit: 'tablet', use: 'pain', kitNote: 'No more than 8 tablets every 24 hours. Take with food.', max24h: 8 },
       { key: 'pseudoephedrine', name: 'Pseudoephedrine', brand: 'Sudafed 12 Hour', strength: '120 mg', unit: 'tablet', use: 'nose' },
       { key: 'loratadine', name: 'Loratadine', brand: 'Claritin', strength: '10 mg', unit: 'tablet', use: 'allergy' },
-      { key: 'promethazine', name: 'Promethazine', brand: 'Phenergan', strength: '25 mg', unit: 'tablet', use: 'nausea', kitNote: 'May cause sedation and impair performance. Do not use with sleep meds.', notWithSleepMeds: true },
-      { key: 'meclizine', name: 'Meclizine', brand: 'Antivert', strength: '25 mg', unit: 'tablet', use: 'nausea', kitNote: 'May cause sedation and impair performance. Do not use with sleep meds.', notWithSleepMeds: true },
+      { key: 'promethazine', name: 'Promethazine', brand: 'Phenergan', strength: '25 mg', unit: 'tablet', use: 'nausea', kitNote: 'May cause sedation and impair performance. Do not use with sleep meds.', notWithSleepMeds: true, sedating: true },
+      { key: 'meclizine', name: 'Meclizine', brand: 'Antivert', strength: '25 mg', unit: 'tablet', use: 'nausea', kitNote: 'May cause sedation and impair performance. Do not use with sleep meds.', notWithSleepMeds: true, sedating: true },
       { key: 'bisacodyl', name: 'Bisacodyl', brand: 'Dulcolax', strength: '5 mg', unit: 'tablet', use: 'bowel' },
     ],
     amounts: [0.5, 1, 2],

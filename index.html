@@ -315,6 +315,16 @@ h1 .tip-btn, h2 .tip-btn, p .tip-btn { width: 30px; height: 30px; margin-left: 2
 .due li .btn { margin-left: 8px; min-height: 34px; padding: 0 12px; font-size: 15px; }
 .due li .icon { align-self: center; color: var(--muted); }
 .due .when { font-family: var(--font-mono); color: var(--muted); white-space: nowrap; }
+/* The mission's phase on Today (src/mission-cards.js): readiness before a critical task, landing, after landing. */
+.phase-card.lv1 { box-shadow: inset 6px 0 0 var(--lv1); }
+.phase-card.lv2 { box-shadow: inset 6px 0 0 var(--lv2-stripe); }
+.phase-card .sub { color: var(--muted); font-size: 15px; }
+.reason.static { cursor: default; }
+.reason.static:hover { background: transparent; }
+.phase-src { display: block; margin-top: 2px; font-size: 14px; color: var(--muted); }
+.phase-facts { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+.mission-tasks { display: grid; gap: 10px; border-top: 1px solid var(--line); padding-top: 12px; }
+.log-field select { min-height: 44px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--axis); background: var(--bg); color: var(--ink); font-size: 17px; }
 .log-form { display: flex; flex-wrap: wrap; align-items: end; gap: 12px 16px; }
 .log-field { display: grid; gap: 4px; font-weight: 600; }
 .log-field input { width: 11em; min-height: 44px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--axis); background: var(--bg); color: var(--ink); font-family: var(--font-mono); font-size: 18px; }

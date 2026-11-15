@@ -46,12 +46,17 @@ export function drawHistory(host, tip, opts) {
   const W = Math.max(300, Math.round(host.getBoundingClientRect().width) || 640);
   const H = W < 600 ? 270 : 330;
   const m = { l: 56, r: 16, t: 40, b: 34 };
-  const launch = new Date(opts.mission.launch).getTime();
-  const today = new Date(opts.mission.today).getTime();
-  const landing = new Date(opts.mission.landing).getTime();
-  const t0 = range ? range.from : Math.min(...all.map((p) => p.t), launch - 7 * DAY);
-  const t1 = range ? range.to : Math.max(...all.map((p) => p.t), landing + 10 * DAY);
-  const trendEnd = Math.min(landing, t1);
+  // With no mission set (no launch and no landing), the chart draws no flight moments and spans the readings only.
+  const when = (t) => (t ? new Date(t).getTime() : NaN);
+  const ms0 = opts.mission || {};
+  const launch = when(ms0.launch);
+  const today = when(ms0.today);
+  const landing = when(ms0.landing);
+  const known = (t) => (Number.isFinite(t) ? [t] : []);
+  let t0 = range ? range.from : Math.min(...all.map((p) => p.t), ...known(launch - 7 * DAY));
+  let t1 = range ? range.to : Math.max(...all.map((p) => p.t), ...known(landing + 10 * DAY));
+  if (!(t1 > t0)) { t0 -= DAY; t1 += DAY; }
+  const trendEnd = Number.isFinite(landing) ? Math.min(landing, t1) : t1;
   const values = all.map((p) => p.v);
   if (opts.band) { if (opts.band.min !== null && opts.band.min !== undefined) values.push(opts.band.min); if (opts.band.max !== null && opts.band.max !== undefined) values.push(opts.band.max); }
   for (const l of opts.lines || []) values.push(l.v);
@@ -96,7 +101,7 @@ export function drawHistory(host, tip, opts) {
     svg.append(el('text', { x: (x(launch) + x(landing)) / 2, y: m.t - 10, class: 'moment-label halo', 'text-anchor': 'middle' }, 'Flight'));
   }
   for (const [t, name, withYear] of (shortFlight ? [] : [[launch, 'Launch', true], [today, 'Today', false], [landing, 'Landing', false]])) {
-    if (t < t0 || t > t1) continue;
+    if (!Number.isFinite(t) || t < t0 || t > t1) continue;
     const xt = x(t);
     svg.append(el('line', { x1: xt, x2: xt, y1: m.t - 4, y2: H - m.b, class: 'moment' }));
     const close = xt - lastTop < 64;
@@ -107,7 +112,7 @@ export function drawHistory(host, tip, opts) {
       lastBottom = xt;
     }
   }
-  if (x(launch) - m.l > 110) svg.append(el('text', { x: m.l, y: H - 10, class: 'tick' }, fmtDate(t0)));
+  if (!Number.isFinite(launch) || x(launch) - m.l > 110) svg.append(el('text', { x: m.l, y: H - 10, class: 'tick' }, fmtDate(t0)));
 
   // Forecast: the straight line through the flight readings, carried on to the landing.
   if (opts.trend) {

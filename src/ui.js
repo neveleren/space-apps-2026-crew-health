@@ -11,6 +11,17 @@ import { exampleFlight, MISSION } from './demo-crew.js';
 import { forecast } from './trend.js';
 import { drawHistory, drawTable, fmtDate } from './history-view.js';
 import { hearingBand, hearingLines } from './nasa-rules.js';
+import { readMission, missionTimes } from './mission.js';
+
+// The dates the history and the forecast use: the example flight's while its switch is on, otherwise the crew's own
+// mission set on the crew screen of this browser (src/mission.js), otherwise none: then there is no forecast and no
+// flight on the chart, and the made-up example dates are never used for anyone's real readings (review finding PO-5).
+function missionNow() {
+  if (byId('sw-example').checked) return MISSION;
+  let own = null;
+  try { own = readMission(JSON.parse(localStorage.getItem('jff-crew-ui-v1') || '{}').mission); } catch { own = null; }
+  return own ? missionTimes(own) : null;
+}
 
 const PEOPLE = [...CREW, SHIP, ...realPeople(INSPIRATION4.subjects)];
 const personById = Object.fromEntries(PEOPLE.map((p) => [p.id, p]));
@@ -364,16 +375,17 @@ function renderHistory() {
   const setup = histSetup(owner, item.key);
   const who = item.ship ? 'Ship' : personName(owner);
   byId('hist-hint').textContent = who;
-  const fc = setup.trendOf
-    ? forecast(setup.trendOf, { norm: setup.norm, flatPerDay: item.flat || 0, now: MISSION.today, landing: MISSION.landing, window: { from: MISSION.launch, to: MISSION.landing } })
+  const M = missionNow();
+  const fc = setup.trendOf && M
+    ? forecast(setup.trendOf, { norm: setup.norm, flatPerDay: item.flat || 0, now: M.today, landing: M.landing, window: { from: M.launch, to: M.landing } })
     : null;
   const common = { series: setup.series, fmt: fmtValue, ordinal: setup.ordinal || null, outText: setup.outText };
   drawHistory(byId('hist-chart'), byId('hist-tip'), {
     ...common,
     band: setup.band || null,
     lines: setup.lines || [],
-    mission: MISSION,
-    trend: fc && fc.line ? { from: Math.max(fc.line.from, new Date(MISSION.launch).getTime()), at: fc.line.at } : null,
+    mission: M || { today: new Date().toISOString() },
+    trend: fc && fc.line ? { from: Math.max(fc.line.from, new Date(M.launch).getTime()), at: fc.line.at } : null,
     label: `${who}: ${lower(cell.label)}${cell.unit ? `, ${cell.unit}` : ''}`,
   });
   drawTable(byId('hist-table'), common);
@@ -387,11 +399,11 @@ function renderHistory() {
   if (setup.series.some((s) => s.points.some((pt) => pt.out))) legend.push(h('span', {}, h('span', { class: 'out-key' }), setup.lowName || 'outside the norm'));
   byId('hist-legend').replaceChildren(...legend);
 
-  const lines = forecastLines(owner, item, setup, fc);
+  const lines = forecastLines(owner, item, setup, fc, M);
   byId('hist-forecast').replaceChildren(...lines.flatMap((x, i) => (i ? [h('br'), x] : [x])));
 }
 
-function forecastLines(owner, item, setup, fc) {
+function forecastLines(owner, item, setup, fc, M = MISSION) {
   const out = [];
   const p = personById[owner];
   const has = setup.series.some((s) => s.points.length > 0);
@@ -411,6 +423,10 @@ function forecastLines(owner, item, setup, fc) {
     out.push('This person has no pre-flight level, so there is nothing to compare with.');
     return out;
   }
+  if (!M) {
+    out.push('No mission dates: the example flight is off and no mission is set on the crew screen of this browser, so there is no forecast to landing.');
+    return out;
+  }
   if (!fc || !fc.line) {
     out.push('To see where the value is heading, readings in flight from at least three different days are needed.');
     return out;
@@ -419,7 +435,7 @@ function forecastLines(owner, item, setup, fc) {
   if (setup.normName) out.push(`Compared with the norm: ${setup.normName.replace(/\.$/, '')}.`);
   if (setup.trendNote) out.push(setup.trendNote);
   const side = (c) => (c.side === 'below' ? 'below' : 'above');
-  const landing = fmtDate(MISSION.landing);
+  const landing = fmtDate(M.landing);
   // The last real reading comes first: if it is already outside the norm, the line does not matter.
   const lastTime = Math.max(...setup.series.flatMap((s) => s.points.map((pt) => pt.t)));
   const lastOut = setup.series.some((s) => s.points.some((pt) => pt.t === lastTime && pt.out));

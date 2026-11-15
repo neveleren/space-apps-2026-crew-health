@@ -18,7 +18,7 @@ import { icon } from './icons.js';
 import { initTips, tipButton, hideTip } from './explain.js';
 import { TIPS, PROVENANCE } from './tips.js';
 import { symptomLog, medicineLog, logText, PRIVATE_NOTE } from './quicklog.js';
-import { topicSignal, offerText, renderTopicChips, renderTips, renderJournal, renderPlan, renderSteps, renderCalendar, nextUp, supportTip, TALK_REQUEST_TEXT, TALK_REQUEST_TOPIC, LETTER_TOPIC, isTalkRequest, isLetter, matchesRisk, RISK_RULE } from './support.js';
+import { topicSignal, offerText, renderTopicChips, renderTips, renderJournal, renderPlan, renderSteps, renderCalendar, nextUp, supportTip, TALK_REQUEST_TEXT, TALK_REQUEST_TOPIC, LETTER_TOPIC, isTalkRequest, isLetter, matchesRisk, RISK_RULE, MISSION_CALENDAR } from './support.js';
 import { runReactionTest, compareToOwn, exampleEarlierRuns } from './reaction-test.js';
 import { runEarthBreak } from './earth-break.js';
 import { renderConnections, connectionTip, sourceInfo, toEvents, onlyNew, columnPicker } from './integrations.js';
@@ -40,6 +40,9 @@ import { buildRecord } from './medrecord.js';
 import { drawRecord, printRecord, resetRecordView, recordReturnKey } from './record-view.js';
 import { pmcDraft, doctorSections } from './doctor-summary.js';
 import { co2Around, co2Short, co2Words, co2Link, headacheToday, headacheList, massLines, massWords, hearingLines, hearingWords, hearingRangeText, hearingBand } from './nasa-rules.js';
+import { exampleTasks, calendarItems, tasksFor, upcomingTasks, nextTask, readinessDue, readiness, readinessMessage, startsIn } from './readiness.js';
+import { missionPhase, landingPrep, recovery, recoveryLine } from './landing.js';
+import { cardHost, hideCard, renderReadinessCard, renderLandingCard, renderRecoveryCard, renderNoMission, taskFields, phaseTip, comingUpItem } from './mission-cards.js';
 
 // One icon per measure, so a list can be read at a glance.
 const ICON_FOR = { pulse: 'heart-pulse', bp: 'activity', glucose: 'droplet', temp: 'thermometer', spo2: 'droplets', sleep: 'moon', resp: 'wind', fluid: 'glass-water', bodyMass: 'scale', eyePressure: 'eye', hearing: 'ear', radiation: 'radiation', vo2max: 'heart', strength: 'dumbbell', bone: 'bone', camera: 'camera', mood: 'smile', attitude: 'battery', sleepQuality: 'bed', cognition: 'brain', reaction: 'zap', cycle: 'calendar-heart', xray: 'scan-line', ecg: 'chart-line', ultrasound: 'waves', exercise: 'flame', visionCheck: 'eye', octChange: 'eye', octScan: 'scan-line', symptoms: 'stethoscope', medicines: 'pill', co2: 'cloud-fog', cabinTemp: 'thermometer', cabinO2: 'orbit', cabinPressure: 'gauge', noise: 'volume-2', blood: 'test-tube' };
@@ -180,10 +183,12 @@ function nowTime() {
 }
 
 // The mission the screen lives in: the example flight while its switch is on, otherwise the crew's own mission
-// from Settings (src/mission.js). With neither, the example's dates still feed the charts and forecasts as before,
-// but no flight day is shown and About says that no mission is set.
+// from Settings (src/mission.js). With neither, no example date drives a chart or a forecast (review finding PO-5):
+// the mission has no launch and no landing, no flight day is shown, and Today and the measure pages say what is missing.
 const ownMission = () => (!ui.example && ui.mission ? missionTimes(ui.mission, nowTime()) : null);
-const mission = () => ownMission() || MISSION;
+const mission = () => ownMission() || (ui.example ? MISSION : { name: null, launch: null, landing: null, today: nowTime().toISOString(), none: true });
+// The mission's critical tasks: the made-up ones of the example flight, or the crew's own (src/readiness.js).
+const missionTasks = () => (ui.example ? exampleTasks(MISSION.launch) : ((ownMission() || {}).tasks || []));
 // The day count of the status line: FD n in flight, L-n before launch, R+n after landing, or null without a mission.
 function flightDayNow(now = nowTime()) {
   if (ui.example) { const n = Math.floor((msOf(now) - msOf(MISSION.launch)) / DAY) + 1; return { kind: 'flight', n, short: `FD ${n}`, words: `Flight day ${n}` }; }
@@ -743,6 +748,7 @@ function tipContent(key) {
   if (key === 't:pin') return h('div', {}, h('p', { class: 'tp-title' }, 'PIN for my screen'), ...PIN_RULES.rules.map((r) => h('p', {}, `${r.text} `, r.src ? h('a', { href: r.src.url, target: '_blank', rel: 'noopener' }, r.src.name) : null)));
   const [kind, a1, a2] = String(key).split(':');
   if (kind === 'mind') return supportTip(a1);
+  if (kind === 'phase') return phaseTip(a1);
   if (kind === 'c') return connectionTip(a1);
   if (kind === 'm') return measureTip(a1, a2);
   if (kind === 'b') return bloodTip(a1, a2);
@@ -1123,6 +1129,7 @@ function renderHome() {
 
   renderCheckin(p, now, top);
   renderComingUp(p, now);
+  renderPhaseCards(p, now, a);
   const keys = KEY_NUMBERS.filter((ind) => cellBy[ind] && machine.history(p.id, ind).length).slice(0, 4);
   byId('keynum-rows').replaceChildren(...keys.map((ind) => measureRow(p, ind, a, now)));
   renderGroups(p, a, now);
@@ -1160,24 +1167,31 @@ function mindChoice(p, a, primaryFirst) {
 // Cadences: private medical conference weekly and private psychological conference every two weeks (NASA BHP and
 // CHP-IDSP, 2024 and 2025); thinking test monthly (NASA OCHMO-TB-016, WinSCAT); eye checks on flight days 30 and 90
 // and 30 days before return (NASA JSC 2018). The dates below are an example schedule, marked as such.
+// The mission's critical tasks of the next days come first (src/readiness.js): the example's made-up ones, or those of
+// the crew's own mission, which shows the card even with the example off.
 function renderComingUp(p, now) {
   const card = byId('comingup');
-  if (!p || p.real || !ui.example) { card.hidden = true; return; }
-  const day = Math.floor((msOf(now) - msOf(MISSION.launch)) / DAY) + 1;
-  const toLanding = Math.max(0, Math.ceil((msOf(MISSION.landing) - msOf(now)) / DAY));
-  const landingDay = day + toLanding;
-  const every = (n, offset = 0) => { const d = (n - ((day + offset) % n)) % n; return d === 0 ? n : d; };
-  const eyeDays = [30, 90, landingDay - 30].filter((d) => d > day);
-  const items = [
-    { ic: 'stethoscope', what: 'Private medical conference with your flight surgeon (weekly)', in: every(7, 3), act: () => openPmc(p), actLabel: 'Prepare' },
-    { ic: 'message-square', what: 'Private talk with your psychologist (every 2 weeks)', in: every(14, 5) },
-    { ic: 'zap', what: 'Thinking test (monthly)', in: every(30, 11) },
-    eyeDays.length ? { ic: 'scan-line', what: 'Eye check: vision, retina scan (OCT)', in: eyeDays[0] - day } : { ic: 'scan-line', what: 'Eye check after landing', in: toLanding + 1 },
-  ].sort((a, b) => a.in - b.in).slice(0, 3);
+  const tasks = p && !p.real ? upcomingTasks(tasksFor(missionTasks(), p.id), now).slice(0, 3) : [];
+  if (!p || p.real || (!ui.example && !tasks.length)) { card.hidden = true; return; }
+  let items = [];
+  let day = null;
+  if (ui.example) {
+    day = Math.floor((msOf(now) - msOf(MISSION.launch)) / DAY) + 1;
+    const toLanding = Math.max(0, Math.ceil((msOf(MISSION.landing) - msOf(now)) / DAY));
+    const landingDay = day + toLanding;
+    const every = (n, offset = 0) => { const d = (n - ((day + offset) % n)) % n; return d === 0 ? n : d; };
+    const eyeDays = [30, 90, landingDay - 30].filter((d) => d > day);
+    items = [
+      { ic: 'stethoscope', what: 'Private medical conference with your flight surgeon (weekly)', in: every(7, 3), act: () => openPmc(p), actLabel: 'Prepare' },
+      { ic: 'message-square', what: 'Private talk with your psychologist (every 2 weeks)', in: every(14, 5) },
+      { ic: 'zap', what: 'Thinking test (monthly)', in: every(30, 11) },
+      eyeDays.length ? { ic: 'scan-line', what: 'Eye check: vision, retina scan (OCT)', in: eyeDays[0] - day } : { ic: 'scan-line', what: 'Eye check after landing', in: toLanding + 1 },
+    ].sort((a, b) => a.in - b.in).slice(0, 3);
+  }
   const when = (n) => (n === 1 ? 'tomorrow' : `in ${n} days`);
   // The card is already called "Coming up", so its note names where the line comes from instead.
-  byId('comingup-note').textContent = (nextUp(day) || 'Example schedule').replace(/^Coming up: /, 'Mission calendar: ');
-  byId('comingup-list').replaceChildren(...items.map((it) => h('li', {}, icon(it.ic, { size: 18 }), h('span', {}, it.what, it.act ? [' ', btn('secondary small', it.actLabel || 'Prepare', it.act, null, it.actLabel === 'Prepare' ? { 'data-tip': 't:pmc' } : {})] : null), h('span', { class: 'when' }, when(it.in)))));
+  byId('comingup-note').textContent = ui.example ? (nextUp(day) || 'Example schedule').replace(/^Coming up: /, 'Mission calendar: ') : `${ui.mission.name || MISSION_RULES.defaultName}: critical tasks`;
+  byId('comingup-list').replaceChildren(...tasks.map((t) => comingUpItem(t, now)), ...items.map((it) => h('li', {}, icon(it.ic, { size: 18 }), h('span', {}, it.what, it.act ? [' ', btn('secondary small', it.actLabel || 'Prepare', it.act, null, it.actLabel === 'Prepare' ? { 'data-tip': 't:pmc' } : {})] : null), h('span', { class: 'when' }, when(it.in)))));
   card.hidden = false;
 }
 
@@ -1204,6 +1218,53 @@ function tooLong(area, max) {
   toast(`This text has ${area.value.length} characters; at most ${max.toLocaleString('en-US')} can be sent. Please shorten it first.`);
   area.focus();
   return true;
+}
+
+// ---------- the mission's phase on Today (src/readiness.js, src/landing.js, src/mission-cards.js) ----------
+// The readiness card in the hours before a critical task, "Getting ready for landing" in the last weeks of flight,
+// "Back on Earth" after landing, or what is missing when no mission is set. Drafts, marked on the cards.
+const PHASE_CARDS = ['phase-readiness', 'phase-landing', 'phase-nomission'];
+const hidePhaseCards = () => PHASE_CARDS.forEach(hideCard);
+function renderPhaseCards(p, now, a) {
+  if (!p || p.real) { hidePhaseCards(); return; }
+  const ready = cardHost('phase-readiness', byId('comingup'));
+  const land = cardHost('phase-landing', ready);
+  const none = cardHost('phase-nomission', land);
+  const m = ownMission() || (ui.example ? MISSION : null);
+  const hist = (ind) => machine.history(p.id, ind);
+  const task = m ? nextTask(tasksFor(missionTasks(), p.id), now) : null;
+  if (readinessDue(task, now)) {
+    const r = readiness({ task, now, sleep: hist('sleep'), quality: hist('sleepQuality'), medicines: hist('medicines'), runs: earlierRuns(p) });
+    renderReadinessCard(ready, { r, on: {
+      test: () => openReactionTest('full'), demo: () => openReactionTest('demo'), sleep: () => openSleepLog(),
+      tell: () => openDoctor(a, 'body', null, { text: readinessMessage(r, { name: p.name, when: startsIn(r.hoursTo) }), topic: 'readiness', key: `readiness:${task.id}`, note: 'Your medicine and symptom logs are private: what is in this text goes only if you press Send.' }),
+    } });
+  } else hideCard('phase-readiness');
+  const phase = missionPhase(m, now);
+  if (phase.kind === 'flight' && phase.near) renderLandingCard(land, { prep: landingPrep({ machine, person: p, cells: CELLS, mission: m, now }), example: ui.example, onOpen: (ind) => openDetail(ind) });
+  else if (phase.kind === 'after') {
+    const day = new Date(now).toDateString();
+    const checkedIn = ['mood', 'attitude', 'sleepQuality'].some((ind) => hist(ind).some((x) => new Date(x.time).toDateString() === day));
+    renderRecoveryCard(land, { rec: recovery({ machine, person: p, cells: CELLS, mission: m, now }), checkedIn, on: { checkin: () => openCheckin(), sleep: () => openSleepLog(), open: (ind) => openDetail(ind) } });
+  } else hideCard('phase-landing');
+  if (!m) renderNoMission(none, { onSet: () => goToMission() }); else hideCard('phase-nomission');
+}
+// The hand entry of "Sleep per night", open and ready to type in.
+function openSleepLog() {
+  openDetail('sleep');
+  const box = [...byId('screen-detail').querySelectorAll('details.more')].find((d) => /Log a reading by hand/.test(d.textContent));
+  if (box) { box.open = true; const f = byId('log-val'); if (f) f.focus(); }
+}
+function openCheckin() {
+  ui.checkinOpen = true;
+  renderCheckin(personById[ui.person], nowTime());
+  const first = byId('ci-mood').querySelector('button');
+  if (first) { first.scrollIntoView({ block: 'center' }); first.focus({ preventScroll: true }); }
+}
+function goToMission() {
+  setScreen('setup');
+  const f = byId('mi-name');
+  if (f) { f.scrollIntoView({ block: 'center' }); f.focus({ preventScroll: true }); }
 }
 
 // A one-page summary of the last 7 days for the private medical conference; the person edits it and decides.
@@ -1573,7 +1634,10 @@ function periodRange(points) {
   const now = msOf(nowTime());
   if (ui.period === '7') return { from: now - 7 * DAY, to: now + DAY };
   if (ui.period === '30') return { from: now - 30 * DAY, to: now + DAY };
-  if (ui.period === 'flight') return { from: msOf(mission().launch) - 2 * DAY, to: msOf(mission().landing) + 4 * DAY };
+  // With no mission set there is no flight to show: all readings instead (PO-5). After landing the whole flight runs
+  // on to today, so the recovery since landing is in view.
+  if ((ui.period === 'flight' || ui.period === 'before') && !mission().launch) return null;
+  if (ui.period === 'flight') return { from: msOf(mission().launch) - 2 * DAY, to: Math.max(msOf(mission().landing) + 4 * DAY, now + DAY) };
   if (ui.period === 'before') {
     const first = points.length ? Math.min(...points.map((p) => p.t)) : msOf(mission().launch) - 30 * DAY;
     return { from: Math.min(first, msOf(mission().launch) - 7 * DAY) - 3 * DAY, to: msOf(mission().launch) + 2 * DAY };
@@ -1607,7 +1671,7 @@ const backButton = () => btn('secondary small back', BACK_LABEL[ui.backTo] || 'A
   // On the medical record several items open the same page: the one that was pressed (src/record-view.js).
   const key = to === 'record' ? recordReturnKey() : null;
   const pressed = key && screen ? [...screen.querySelectorAll(`[data-fk="${CSS.escape(key)}"]`)].find((r) => r.dataset.ind === String(from) && r.getClientRects().length) : null;
-  const row = pressed || (screen && [...screen.querySelectorAll('.row[data-ind], .rec-item[data-ind]')].find((r) => r.dataset.ind === String(from) && r.getClientRects().length));
+  const row = pressed || (screen && [...screen.querySelectorAll('.row[data-ind], .rec-item[data-ind], .reason[data-back]')].find((r) => (r.dataset.ind || r.dataset.back) === String(from) && r.getClientRects().length));
   if (row) { row.focus(); return; }
   const head = screen && screen.querySelector('h1');
   if (head) { head.setAttribute('tabindex', '-1'); head.focus(); }
@@ -1681,7 +1745,11 @@ function renderDetail() {
   const fc = m && m.forecast && m.forecast.line && (SLOW_MEASURES.includes(indicator) || m.clearTrend) ? m.forecast : null;
   const showTrend = Boolean(fc) && (ui.period === 'flight' || ui.period === 'all');
   const lines = [];
+  // After landing: recovery against the pre-flight level instead of a forecast to a landing that is past (src/landing.js).
+  const rec = owner !== SHIP && missionPhase(mission(), now).kind === 'after' ? recovery({ machine, person: owner, cells: CELLS, mission: mission(), now }) : null;
+  const base = cell.baselineKey && owner.baselines ? Number(owner.baselines[cell.baselineKey]) : NaN;
   if (cell.normType === 'baseline-percent') { const b = bandOf(cell, owner); if (b) lines.push({ v: b.min, label: `Limit: ${cell.norm.minPercent}% of own pre-flight level` }); }
+  if (rec && cell.normType === 'baseline-percent' && base > 0) lines.push({ v: base, label: 'Pre-flight level: the goal after landing' });
   if (indicator === 'radiation') lines.push({ v: cell.norm.max, label: 'NASA career limit' });
   for (const t of cell.thresholds || []) if (!(cell.red || []).some((r) => r.value === t.min)) lines.push({ v: t.min, label: `${cap(t.text)}: ${t.min} ${cell.unit} (draft)` });
   if (indicator === 'bp') lines.push({ v: cell.norm.sysBelow, label: `Systolic: below ${cell.norm.sysBelow}` }, { v: cell.norm.diaBelow, label: `Diastolic: below ${cell.norm.diaBelow}` });
@@ -1700,6 +1768,10 @@ function renderDetail() {
     else if (fc.crossing) facts.push(`${what} is going ${fc.crossing.side === 'below' ? 'down' : 'up'}: if this line holds, it goes ${side} the normal range around ${fmtDate(fc.crossing.date)}, before landing on ${fmtDate(mission().landing)}.`);
     else facts.push(`Steady within the normal range until landing on ${fmtDate(mission().landing)}, if this line holds.`);
     about.push("The forecast is a straight line through the in-flight readings (Claude's technical choice), not a validated medical model.");
+  } else if (cell.kind === KIND.NUMBER && rec && (rec.rows.some((x) => x.key === indicator) || (cell.normType !== 'record' && !cell.onlyOnEarth))) {
+    facts.push(recoveryLine(indicator, rec));
+  } else if (cell.kind === KIND.NUMBER && !mission().launch && cell.normType !== 'record' && !cell.onlyOnEarth) {
+    facts.push('No mission is set, so there is no forecast to landing and the chart shows no launch or landing: the example flight is off and this device has no launch and landing dates (Settings, Mission).');
   } else if (cell.kind === KIND.NUMBER) {
     const flightDays = new Set(((m && m.list) || []).filter((x) => msOf(x.time) >= msOf(mission().launch)).map((x) => new Date(x.time).toISOString().slice(0, 10))).size;
     facts.push(cell.onlyOnEarth ? 'Not measured in flight: only on Earth, before and after flight.'
@@ -1746,7 +1818,7 @@ function renderDetail() {
   // Every word answer starts with a capital letter, as it does in the list of answers.
   const shown = indicator === 'sleepQuality' && raw ? `${raw} of 7` : ORDINAL[indicator] || /[a-z]/i.test(String(raw)) ? cap(String(raw)) : raw;
   const arrow = lastEntry && lastEntry.status === STATUS.OUT && m && m.side ? icon(m.side === 'below' ? 'arrow-down' : 'arrow-up', { size: 28, stroke: 2.4, cls: `lvc${level || 1}`, label: m.side === 'below' ? 'below the normal range' : 'above the normal range' }) : null;
-  const periodName = (PERIODS.find(([k]) => k === ui.period) || PERIODS[2])[2];
+  const periodName = !mission().launch && (ui.period === 'flight' || ui.period === 'before') ? 'all readings' : (PERIODS.find(([k]) => k === ui.period) || PERIODS[2])[2];
   const chart = h('div', { class: 'chart', id: 'd-chart' });
   const tip = h('div', { class: 'tip', id: 'd-tip', hidden: true });
   const band = ORDINAL[indicator] ? null : bandOf(cell, owner);
@@ -1754,7 +1826,8 @@ function renderDetail() {
   const ringWords = { attitude: `Rings mark answers at ${FATIGUE_RULE.lowFrom} or more (tired, a draft).`, mood: 'Rings mark bad days.' };
   const how = (ORDINAL[indicator]
     ? [indicator === 'attitude' ? 'Higher is more tired: 1 fully alert, 7 completely exhausted.' : null, 'Each dot is one answer.', shownPts.some((pt) => pt.out) ? ringWords[indicator] : null]
-    : [shownPts.length <= 40 ? 'Each dot is one reading.' : 'The line joins your readings.', band ? 'The shaded band is the normal range.' : null, shownPts.some((pt) => pt.out) ? 'Rings mark readings outside it.' : null]).filter(Boolean).join(' ');
+    : [shownPts.length <= 40 ? 'Each dot is one reading.' : 'The line joins your readings.', band ? 'The shaded band is the normal range.' : null, shownPts.some((pt) => pt.out) ? 'Rings mark readings outside it.' : null])
+    .concat([!mission().launch && (ui.period === 'flight' || ui.period === 'before') ? 'No mission is set, so this shows all readings.' : null]).filter(Boolean).join(' ');
 
   fill(host, 
     backButton(),
@@ -1927,6 +2000,7 @@ function sentTitle(r) {
   if (t === 'alarm') return `Automatic alarm message, to ${where}`;
   if (t === 'alarm-clear') return `Automatic all clear, to ${where}`;
   if (t === 'pmc') return `Summary for the private medical conference, to ${where}`;
+  if (t === 'readiness') return `Before a critical task, to ${where}`;
   return `To ${where}`;
 }
 const CHIP_TONE = { neutral: 'chip neutral', off: 'chip off', stale: 'chip stale', bad: 'chip lv2' };
@@ -2297,7 +2371,7 @@ function openMindSupport() {
   const p = personById[ui.person];
   const day = Math.floor((msOf(nowTime()) - msOf(MISSION.launch)) / DAY) + 1;
   const cal = h('div');
-  if (ui.example) renderCalendar(cal, { flightDay: day, onOpen: () => {} });
+  if (ui.example) renderCalendar(cal, { flightDay: day, calendar: [...MISSION_CALENDAR, ...calendarItems()], onOpen: () => {} });
   openPanel('Mind support', [
     h('p', {}, 'Tools that work on board with no AI and no link to Earth, from NASA research and proven methods. What you write stays in this browser and is sent only if you choose.'),
     pinNote(p),
@@ -2350,7 +2424,7 @@ function openEarthBreak() {
   runEarthBreak({ onDone: (r) => { const d = loadMind(p.id); d.breaks = [r, ...d.breaks].slice(0, 50); saveMind(p.id, d); toast(r.feeling ? `Noted privately: ${r.feeling}.` : 'Break done.'); }, onCancel: () => {} });
 }
 function earlierRuns(p) {
-  const mine = stored.filter((e) => e.person === p.id && e.reading && e.reading.indicator === 'reaction' && e.reading.detail).map((e) => e.reading.detail);
+  const mine = stored.filter((e) => e.person === p.id && e.reading && e.reading.indicator === 'reaction' && e.reading.detail).map((e) => ({ ...e.reading.detail, time: e.time }));
   return ui.example && !p.real ? [...exampleEarlierRuns(MISSION.launch), ...mine] : mine;
 }
 function openReactionTest(mode) {
@@ -2444,14 +2518,16 @@ function psycheSummary(p, now) {
   return lines.join('\n');
 }
 
-function openDoctor(a, kind, indicator = null) {
+// opts: { text, topic, key, note }: a text drafted elsewhere (the readiness card), its topic, its own draft key and a
+// note shown under it.
+function openDoctor(a, kind, indicator = null, opts = {}) {
   // The owner's mind button says "Tell the doctor on Earth", so a mind message always goes to Earth, also with a
   // doctor on board (a crewmate). Body messages go to the doctor on board when there is one.
   const to = kind === 'psyche' ? 'doctor-earth' : ui.ship.doctorOnBoard ? 'doctor-onboard' : 'doctor-earth';
   const toText = to === 'doctor-onboard' ? 'the doctor on board' : 'the doctor on Earth';
   const p = personById[ui.person];
   const area = h('textarea', { id: 'doc-text', 'aria-label': 'Message text' });
-  area.value = kind === 'psyche' ? psycheSummary(p, nowTime()) : summaryFor(a, kind, indicator, { full: true }) || 'Please look at my data.';
+  area.value = opts.text || (kind === 'psyche' ? psycheSummary(p, nowTime()) : summaryFor(a, kind, indicator, { full: true }) || 'Please look at my data.');
   // What will really happen to it, said before Send: the same cases as sentText() after it (FS-02).
   const status = serverDown ? 'The station server is not answering: the message is kept in this browser and goes to the station computer, and from there to the doctor, when it answers again.'
     : store && store.kind !== 'server' ? 'This copy runs without the station server: the message is saved on this computer only, and nothing is sent.'
@@ -2462,10 +2538,11 @@ function openDoctor(a, kind, indicator = null) {
     privateDraftNote(area.value),
     area,
     h('p', { class: 'note' }, 'The automation drafted this text from your data; you can change it.'),
+    opts.note ? h('p', { class: 'note' }, opts.note) : null,
   ], [
     btn('primary', 'Send', async () => {
       if (tooLong(area, 4000)) return;
-      const event = { v: 1, kind: 'report', time: new Date().toISOString(), person: ui.person, state: { ...ui.ship }, report: { to, text: area.value.slice(0, 4000), ...(kind === 'psyche' ? { topic: 'mind-checkins' } : {}) } };
+      const event = { v: 1, kind: 'report', time: new Date().toISOString(), person: ui.person, state: { ...ui.ship }, report: { to, text: area.value.slice(0, 4000), ...(opts.topic ? { topic: opts.topic } : kind === 'psyche' ? { topic: 'mind-checkins' } : {}) } };
       const res = await keep(event);
       if (!res.ok) return;
       markSaved();
@@ -2473,7 +2550,7 @@ function openDoctor(a, kind, indicator = null) {
       toast(sentText(to, res));
       render();
     }, 'send'),
-  ], { key: `doctor:${kind}:${to}:${indicator || ''}` });
+  ], { key: opts.key ? `doctor:${opts.key}:${to}` : `doctor:${kind}:${to}:${indicator || ''}` });
 }
 
 // ---------- alert sounds ----------
@@ -3099,11 +3176,15 @@ function missionFields() {
     const next = { name: name.value.trim(), launch: launch.value, landing: landing.value };
     const why = missionProblem(next);
     if (why) { status.textContent = why; return; }
-    ui.mission = readMission(next);
+    // The critical tasks stay with the mission; those outside new dates are dropped (src/mission.js readMission), and
+    // the notice says so.
+    const had = (ui.mission && ui.mission.tasks) || [];
+    ui.mission = readMission({ ...next, tasks: had });
+    const dropped = had.length - (ui.mission.tasks || []).length;
     savePrefs();
     rebuild();
     render();
-    toast(`Mission saved on this device: ${flightDayNow() ? flightDayNow().words.toLowerCase() : 'its days are counted on the status line'}.`);
+    toast(`Mission saved on this device: ${flightDayNow() ? flightDayNow().words.toLowerCase() : 'its days are counted on the status line'}.${dropped ? ` ${dropped} critical ${dropped === 1 ? 'task' : 'tasks'} outside the new dates ${dropped === 1 ? 'was' : 'were'} removed.` : ''}`);
   };
   const clear = () => { ui.mission = null; savePrefs(); rebuild(); render(); toast('Mission cleared: no flight day is shown.'); };
   return h('div', { class: 'mission-own' },
@@ -3113,7 +3194,10 @@ function missionFields() {
       h('label', { class: 'log-field' }, h('span', {}, 'Launch'), launch),
       h('label', { class: 'log-field' }, h('span', {}, 'Landing'), landing)),
     h('div', { class: 'actions' }, btn('primary small', 'Save the mission', save, 'check', { 'data-fk': 'mission:save' }), ui.mission ? btn('secondary small', 'Clear the mission', clear, 'x') : null),
-    status);
+    status,
+    // The mission's critical tasks (src/mission-cards.js), once the mission is saved. A removed task's button is gone,
+    // so the keyboard goes back to the first field of the form.
+    ui.mission ? taskFields({ mission: ui.mission, onSave: (tasks, said) => { ui.mission = readMission({ ...ui.mission, tasks }); savePrefs(); render(); toast(said); if (!document.activeElement || document.activeElement === document.body) { const k = byId('mt-kind'); if (k) k.focus(); } } }) : null);
 }
 
 function renderSetup() {
@@ -3149,7 +3233,7 @@ function renderSetup() {
       h('section', { class: 'card' }, h('h2', {}, 'About'),
         h('p', {}, ui.example ? `${MISSION.name}: launch ${fmtDate(MISSION.launch)}, landing ${fmtDate(MISSION.landing)}.`
           : ui.mission ? `${ui.mission.name || MISSION_RULES.defaultName}: launch ${missionDay(ui.mission.launch)}, landing ${missionDay(ui.mission.landing)} (GMT), set on this device.`
-            : 'No mission is set on this device, so no flight day is shown. Set it under Mission.'),
+            : 'No mission is set on this device, so there is no flight day, no forecast to landing and no flight on the charts. Set it under Mission.'),
         h('p', {}, 'The levels (attention, needs action, urgent) and their thresholds are drafts: the team decides the final ones.'),
         h('p', { class: 'muted' }, 'Idea and decisions: team Just For Fun, NASA Space Apps Challenge 2026. Code written with Claude (Anthropic), an AI system.'),
         h('p', {}, h('a', { href: './machine.html' }, 'Technical view, for engineers'))),
@@ -3190,7 +3274,7 @@ function drawAll() {
   const p = personById[ui.person];
   byId('checkin').hidden = Boolean(p.real);
   byId('keynums').hidden = Boolean(p.real);
-  if (p.real) byId('comingup').hidden = true;
+  if (p.real) { byId('comingup').hidden = true; hidePhaseCards(); }
   const names = { home: 'Today', measures: 'All measures', record: 'Medical record', alerts: 'Messages', setup: 'Settings' };
   const detailName = ui.detail ? (String(ui.detail).startsWith('blood:') ? 'Blood test' : (cellBy[ui.detail] || {}).label) : '';
   byId('screen-name').textContent = ui.screen === 'detail' ? detailName : names[ui.screen];

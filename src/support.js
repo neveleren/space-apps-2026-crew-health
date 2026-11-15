@@ -51,6 +51,9 @@ export const SRC = {
   vr2017: { title: 'Relaxation with Immersive Natural Scenes Presented Using Virtual Reality', by: 'Aerospace Medicine and Human Performance (Anderson et al.)', year: 2017, url: 'https://pubmed.ncbi.nlm.nih.gov/28539139/' },
   vr2026: { title: 'Effects of Multisensory Virtual Reality Nature on Affect, Presence, and Restorativeness', by: 'NASA-co-authored study (Abbott et al.)', year: 2026, url: 'https://ntrs.nasa.gov/citations/20260005350' },
   media2026: { title: 'Guidelines for using NASA Images and Media', by: 'NASA', year: 2026, url: 'https://www.nasa.gov/nasa-brand-center/images-and-media/' },
+  // Opened on 15 Nov 2026 for the critical tasks of the mission calendar: [V1 4006] names "mission-associated critical
+  // operations (such as, but not limited to, vehicle control, robotic operations, and EVAs)".
+  std1c2023: { title: 'NASA Space Flight Human-System Standard, Volume 1, Revision C: Crew Health (NASA-STD-3001), [V1 4006]', by: 'NASA', year: 2023, url: 'https://www.nasa.gov/wp-content/uploads/2023/11/nasa-std-3001-vol-1-rev-c-with-signature.pdf' },
 };
 
 // How close the evidence is to an astronaut's life. The three words are the team's badges.
@@ -419,8 +422,8 @@ export const SUPPORT_TIPS = {
   },
   calendar: {
     title: 'Mission calendar',
-    lines: ['NASA: "Milestone events, such as a 100-day party or the arrival of crew care packages help mark the passage of time and boost team and individual morale."', 'On Mars there is no resupply, so messages from home are packed before launch and open on their day. More of them sit in the second half: in Mars-like analog missions, "adverse conditions are most likely to develop after the halfway point".'],
-    badge: BADGE.iss, sources: [SRC.hrp2025, SRC.jscBhp, SRC.hiseas2022],
+    lines: ['NASA: "Milestone events, such as a 100-day party or the arrival of crew care packages help mark the passage of time and boost team and individual morale."', 'On Mars there is no resupply, so messages from home are packed before launch and open on their day. More of them sit in the second half: in Mars-like analog missions, "adverse conditions are most likely to develop after the halfway point".', 'The critical tasks (a spacewalk, robotic arm work, a docking) are made up for the example. NASA\'s crew health standard names "vehicle control, robotic operations, and EVAs" as critical operations; before each one, Today shows a readiness card (a draft).'],
+    badge: BADGE.iss, sources: [SRC.hrp2025, SRC.jscBhp, SRC.hiseas2022, SRC.std1c2023],
   },
   reaction: {
     title: '3-minute reaction test',
@@ -987,8 +990,9 @@ export function renderSteps(host, { onSave, worksheet = null, now, helpNow } = {
 }
 
 // F8. The mission calendar as a list. flightDay: today's flight day. onOpen(item) when the person opens
-// today's message or package (the screen shows its content; in the example there is none).
-const KIND_ICON = { milestone: 'flag', message: 'mail', package: 'gift' };
+// today's message or package (the screen shows its content; in the example there is none). A critical task of the
+// mission (kind 'task', from src/readiness.js calendarItems) is listed like a milestone, with its own icon.
+const KIND_ICON = { milestone: 'flag', message: 'mail', package: 'gift', task: 'rocket' };
 export function renderCalendar(host, { flightDay, calendar = MISSION_CALENDAR, onOpen } = {}) {
   prep(host, 'sup-calendar');
   const day = Math.floor(Number(flightDay));
@@ -997,14 +1001,15 @@ export function renderCalendar(host, { flightDay, calendar = MISSION_CALENDAR, o
   const row = (x) => {
     const past = x.day < day;
     const today = x.day === day;
-    const state = past ? (x.kind === 'milestone' ? 'Passed' : 'Opened') : today ? (x.kind === 'milestone' ? 'Today' : 'Opens today') : (x.kind === 'milestone' ? 'Ahead' : `Opens on flight day ${x.day}`);
+    const event = x.kind === 'milestone' || x.kind === 'task';
+    const state = past ? (event ? 'Passed' : 'Opened') : today ? (event ? 'Today' : 'Opens today') : (event ? 'Ahead' : `Opens on flight day ${x.day}`);
     return h('li', { class: `sup-cal-item ${past ? 'past' : today ? 'today' : 'ahead'}` },
-      h('span', { class: 'sup-cal-icon', 'aria-hidden': 'true' }, supIcon(KIND_ICON[x.kind] || 'calendar', { size: 20 })),
+      h('span', { class: 'sup-cal-icon', 'aria-hidden': 'true' }, supIcon(x.icon || KIND_ICON[x.kind] || 'calendar', { size: 20 })),
       h('span', { class: 'sup-cal-day mono' }, `Day ${x.day}`),
       h('span', { class: 'sup-cal-title' }, x.title),
-      today && x.kind !== 'milestone' && typeof onOpen === 'function'
+      today && !event && typeof onOpen === 'function'
         ? btn('secondary small', 'Open', () => onOpen(x), 'gift')
-        : h('span', { class: 'sup-cal-state' }, !past && !today && x.kind !== 'milestone' ? supIcon('lock', { size: 14 }) : null, state));
+        : h('span', { class: 'sup-cal-state' }, !past && !today && !event ? supIcon('lock', { size: 14 }) : null, state));
   };
   fill(host,
     h('div', { class: 'sup-head' }, h('h2', {}, 'Mission calendar'), items.some((x) => x.example) ? exampleTag() : null, tipBtn('calendar', 'the mission calendar')),
