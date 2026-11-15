@@ -2825,7 +2825,7 @@ function renderRecord() {
   const model = buildRecord({
     person: p, history: (id, ind) => machine.history(id, ind), events: stored, unsent, statusOf, now, today, flagged, notes, ship: ui.ship, valueText,
     mission: ui.example ? { name: MISSION.name, launch: MISSION.launch, landing: MISSION.landing, example: true } : own,
-    flightDay: p.real ? null : flightDayNow(now), storeKind: serverDown ? 'waiting' : store ? store.kind : 'memory',
+    flightDay: p.real ? null : flightDayNow(now), storeKind: serverDown ? 'waiting' : store ? store.kind : 'none',
   });
   drawRecord(byId('screen-record'), model, {
     personId: p.id, initials: initialsOf(p), tip: tipButton, pinNote: pinNote(p, 'open your medical record and read it'),

@@ -197,7 +197,8 @@ export function drawRecord(host, model, on = {}) {
     h('p', {}, h('b', {}, d.title)),
     h('p', { class: d.unavailable ? 'muted' : '' }, d.detail),
     d.links ? h('p', {}, ...d.links.flatMap((l, i) => [i ? ' · ' : '', h('a', { href: l.url, target: '_blank', rel: 'noopener' }, l.name)])) : null,
-    d.action ? h('div', { class: 'actions' }, btn('secondary small', d.action, () => (d.id === 'fhir' ? on.fhir && on.fhir() : on.copy && on.copy()), d.id === 'fhir' ? 'file-json-2' : 'send', { 'data-fk': `rec:${d.key}` })) : null);
+    // Both make a file on this computer and send nothing: the file icon, as "Save a copy" has in Settings.
+    d.action ? h('div', { class: 'actions' }, btn('secondary small', d.action, () => (d.id === 'fhir' ? on.fhir && on.fhir() : on.copy && on.copy()), 'file-json-2', { 'data-fk': `rec:${d.key}` })) : null);
 
   // ---------- one section ----------
   const section = (s) => {
@@ -223,7 +224,13 @@ export function drawRecord(host, model, on = {}) {
         h('p', { class: 'note' }, 'Energy: 1 fully alert, 7 completely exhausted (Samn-Perelli). A low day is a bad mood or energy at 5 or more, the mind rule\'s own drafts.'))));
     }
     if (s.note) parts.push(h('p', { class: 'note' }, s.note));
-    if (s.id === 'documents' && on.print) parts.push(h('div', { class: 'actions rec-print' }, btn('secondary small', 'Print or save as PDF', () => on.print(), 'file-json-2', { 'data-fk': 'rec:print' })));
+    // A printout or a PDF holds every section, the private ones too: said before the press, as for the copy above.
+    if (s.id === 'documents' && on.print) {
+      const priv = sections.filter((x) => x.private).map((x) => x.title.toLowerCase());
+      parts.push(h('div', { class: 'rec-print' },
+        priv.length ? h('p', { class: 'note' }, `A printout or a PDF holds the private parts too (${priv.join(', ')}), so keep it safe.`) : null,
+        h('div', { class: 'actions' }, btn('secondary small', 'Print or save as PDF', () => on.print(), 'file-json-2', { 'data-fk': 'rec:print' }))));
+    }
     return h('section', { class: `group rec-sec ${s.private ? 'rec-is-private' : ''}`, id: `rec-${s.id}`, 'aria-labelledby': `rec-${s.id}-h` }, ...parts);
   };
 

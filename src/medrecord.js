@@ -32,7 +32,8 @@ import { fatigueWords, fatigueStep, isLowEnergy } from './fatigue.js';
 import { cycleSummary, CYCLE_RULES } from './cycle.js';
 import { CHECKIN_TOPICS, topicCounts, isTalkRequest, isLetter, fmtDay } from './support.js';
 import { LEVEL, RED_LEVEL, RULES as LEVEL_RULES, VITAL_SIGNS } from './state-levels.js';
-import { sentChip } from './crew-alarm.js';
+import { sentChip, ALARM_RULES } from './crew-alarm.js';
+import { MEASURES as FHIR_MEASURES } from './fhir.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 const ms = (t) => (t instanceof Date ? t.getTime() : typeof t === 'number' ? t : new Date(t).getTime());
@@ -149,7 +150,8 @@ export function readingVerdict(cell, entry) {
     const steps = [...cell.thresholds].sort((a, b) => b.min - a.min);
     const hit = steps.find((t) => v >= t.min);
     const low = steps[steps.length - 1];
-    return { level: LEVEL.FINE, out: hit ? 'above' : null, text: hit ? `At or above ${hit.min} ${cell.unit}: NASA's ${hit.text} (a draft)` : `Below ${low.min} ${cell.unit}, NASA's ${low.text} (a draft)` };
+    // Below the lowest level says so plainly: "Below 20 µm, NASA's level for the earliest indication of SANS".
+    return { level: LEVEL.FINE, out: hit ? 'above' : null, text: hit ? `At or above ${hit.min} ${cell.unit}: NASA's ${hit.text} (a draft)` : `Below ${low.min} ${cell.unit}, NASA's level for the ${low.text} (a draft)` };
   }
   if (entry.context === 'exercise' && entry.status !== STATUS.OUT) return { level: LEVEL.FINE, out: null, text: 'Taken during exercise: recorded, not judged' };
   if (cell.normType === 'baseline-percent') {
@@ -274,17 +276,25 @@ const CAMERA_TITLE = {
   chest_grab_no_answer: 'Camera: no answer to "Are you okay?"',
   chest_grab_ok: 'You answered "I am okay" to the camera question',
 };
+// What became of a crew line, in the words of the crew screen's own rule (crew-alarm.js crewWords, clearWords): the
+// record knows the line was saved, not which screens were open, so it never says that a screen showed it.
 export function lineWords(status, clear = false) {
   switch (status) {
-    case 'shared': return clear ? 'Saved on the station computer, so the crew screens stopped showing the alarm.' : 'Saved on the station computer, so every crew screen where someone was signed in showed it.';
+    case 'shared': return clear ? `Saved on the station computer: the crew screens stop showing the alarm within ${ALARM_RULES.pollSeconds} seconds.` : `Saved on the station computer: every crew screen where someone is signed in shows it within ${ALARM_RULES.pollSeconds} seconds.`;
     case 'local': return 'This copy runs without the station server: no other crew screen got it.';
     case 'waiting': return 'Still kept in this browser: the station server has not taken it yet.';
     case 'unsent': return 'Not saved.';
     default: return '';
   }
 }
-function alertRows({ person, history, events, statusOf, ship, words }) {
+function alertRows({ person, history, events, unsent = [], statusOf, ship, words }) {
   const out = [];
+  // The program's own message to the doctor about an alarm or its all clear, with what became of it.
+  const alarmReport = (e, st, why = '') => {
+    const where = e.report.to === 'doctor-onboard' ? 'the doctor on board' : 'the doctor on Earth';
+    const clear = e.report.topic === 'alarm-clear';
+    out.push({ kind: 'entry', key: `a:report:${e.time}:${e.report.topic}${st === 'unsent' ? ':unsent' : ''}`, icon: st === 'unsent' ? 'circle-alert' : 'send', level: LEVEL.FINE, tag: 'Message to the doctor', title: `Automatic ${clear ? 'all clear' : 'alarm message'} to ${where}`, detail: `${sentChip(st, ship).text}${why ? `: ${why}` : ''}. ${firstWords(bodyOfAlarm(e.report.text), 220)}`.trim(), status: st, time: iso(e.time), source: 'Written by the program', example: false, link: { to: 'messages' } });
+  };
   for (const cell of CELLS) {
     if (cell.section === 'env' || !(cell.red || []).length) continue;
     (history(person.id, cell.indicator) || []).forEach((x, i) => {
@@ -308,15 +318,17 @@ function alertRows({ person, history, events, statusOf, ship, words }) {
       const clear = Boolean(e.alarm.clear);
       out.push({ kind: 'entry', key: `a:line:${e.time}:${clear ? 'clear' : 'open'}`, icon: clear ? 'circle-check' : 'users', level: clear ? LEVEL.FINE : LEVEL.URGENT, tag: clear ? 'All clear' : 'Crew line', title: clear ? `All clear for the crew: "${e.alarm.text}"` : `Crew line: "${e.alarm.text}"`, detail: lineWords(statusOf(e), clear), time: iso(e.time), source: 'Written by the program', example: false, link: { to: 'messages' } });
     }
-    if (e.kind === 'report' && e.report && (e.report.topic === 'alarm' || e.report.topic === 'alarm-clear')) {
-      const where = e.report.to === 'doctor-onboard' ? 'the doctor on board' : 'the doctor on Earth';
-      const clear = e.report.topic === 'alarm-clear';
-      const st = statusOf(e);
-      out.push({ kind: 'entry', key: `a:report:${e.time}:${e.report.topic}`, icon: 'send', level: LEVEL.FINE, tag: 'Message to the doctor', title: `Automatic ${clear ? 'all clear' : 'alarm message'} to ${where}`, detail: `${sentChip(st, ship).text}. ${firstWords(bodyOfAlarm(e.report.text), 220)}`.trim(), time: iso(e.time), source: 'Written by the program', example: false, link: { to: 'messages' } });
-    }
+    if (isAlarmReport(e)) alarmReport(e, statusOf(e));
+  }
+  // An automatic message the station computer did not take is listed too, as "Not sent", with the reason: what
+  // happened to the message to the doctor matters most when it failed.
+  for (const u of unsent || []) {
+    const e = u && u.event;
+    if (e && e.person === person.id && isAlarmReport(e)) alarmReport(e, 'unsent', u.why ? String(u.why).replace(/^not saved:\s*/, '') : '');
   }
   return out.sort(newestFirst);
 }
+const isAlarmReport = (e) => Boolean(e && e.kind === 'report' && e.report && (e.report.topic === 'alarm' || e.report.topic === 'alarm-clear'));
 // The program's alarm message starts with the same two sentences every time; the rest says what happened.
 const bodyOfAlarm = (text) => String(text || '').replace(/^Automatic message from the Crew Health Console \([^)]*\)\.\s*/, '');
 const firstWords = (text, max) => { const s = String(text || '').replace(/\s+/g, ' ').trim(); return s.length > max ? `${s.slice(0, max - 4).replace(/\s+\S*$/, '')} ...` : s; };
@@ -391,7 +403,7 @@ function cyclePart({ person, history, now }) {
 // - statusOf(event): what became of a message or a crew line ('queued', 'onboard', 'shared', 'local', ...)
 // - today: { sentence, body, mind, ship, stale: [text], alerts: [{ id, level, title, text, time, indicator, system }] }
 // - flagged: { indicator: level } from today's levels; notes: { indicator: words } such as "Common in flight"
-// - storeKind: 'server', 'browser', 'memory' or 'waiting'
+// - storeKind: 'server', 'browser', 'memory', 'waiting', or 'none' (the saved records could not be opened)
 // - mission: { name, launch, landing, example } or null; flightDay: { words } or null; ship: the simulation switches
 // - valueText(indicator, value): the screen's own words for a value (valueWords by default)
 export function buildRecord({ person, history, events = [], unsent = [], statusOf = () => null, now = new Date(), mission = null, flightDay = null, today = null, flagged = {}, notes = {}, storeKind = 'memory', ship = {}, valueText = null } = {}) {
@@ -400,7 +412,8 @@ export function buildRecord({ person, history, events = [], unsent = [], statusO
   if (person.vehicle) throw new Error('The ship has no medical record: cabin air belongs to the whole crew.');
   const words = (ind, v) => (ind === 'weighing' || ind === 'cycle' || typeof valueText !== 'function' ? valueWords(ind, v) : valueText(ind, v));
   const mine = (events || []).filter((e) => e && e.person === person.id);
-  const ctx = { person, history, words, now, flagged: flagged || {}, notes: notes || {}, events: mine, statusOf, ship };
+  const mineUnsent = (unsent || []).filter((u) => u && u.event && u.event.person === person.id);
+  const ctx = { person, history, words, now, flagged: flagged || {}, notes: notes || {}, events: mine, unsent: mineUnsent, statusOf, ship };
 
   const sections = [];
   const add = (id, items, extra = {}) => sections.push({ id, ...SECTION_INFO[id], private: Boolean(SECTION_INFO[id].private), count: items.length, items, ...extra });
@@ -421,7 +434,7 @@ export function buildRecord({ person, history, events = [], unsent = [], statusO
     add('medicines', entryRows(['medicines'], ctx), { empty: 'No medicines logged.' });
     add('symptoms', entryRows(['symptoms'], ctx), { empty: 'No symptoms logged.' });
     add('alerts', alertRows(ctx), { empty: 'No alarm and no red limit crossed.', note: "Crewmates' screens got only the crew line, never the rest of this record (14 CFR 1214.403)." });
-    add('encounters', encounterRows({ ...ctx, events: mine, unsent: (unsent || []).filter((u) => u && u.event && u.event.person === person.id) }), { empty: 'No messages sent.', note: 'Crewmates\' screens never get these. The automatic alarm messages are under "Alerts and what happened".' });
+    add('encounters', encounterRows(ctx), { empty: 'No messages sent.', note: 'Crewmates\' screens never get these. The automatic alarm messages are under "Alerts and what happened".' });
     const mind = measureRows(['mood', 'attitude', 'sleepQuality', 'cognition', 'reaction'], ctx);
     for (const r of mind) {
       const last = (history(person.id, r.indicator) || []).slice(-1)[0];
@@ -440,7 +453,7 @@ export function buildRecord({ person, history, events = [], unsent = [], statusO
     const cycle = cyclePart(ctx);
     if (cycle) add('cycle', entryRows(['cycle'], ctx), { empty: 'Nothing logged.', facts: cycle.facts, flags: cycle.flags });
     add('documents', [
-      { kind: 'doc', key: 'doc:fhir', id: 'fhir', title: 'Export for medical records (HL7 FHIR R4)', detail: 'Your number readings of the last 30 days, with LOINC codes and UCUM units, the way medical record systems read them; made-up data carry the HTEST test label. The private logs (medicines, symptoms, mind, cycle) are not in it.', action: 'Show the FHIR file' },
+      { kind: 'doc', key: 'doc:fhir', id: 'fhir', title: 'Export for medical records (HL7 FHIR R4)', detail: `Your readings of the last 30 days for the ${Object.keys(FHIR_MEASURES).length} measures that have a LOINC code, with UCUM units, the way medical record systems read them; made-up data carry the HTEST test label. The private logs (medicines, symptoms, mind, cycle) are not in it.`, action: 'Show the FHIR file' },
       { kind: 'doc', key: 'doc:copy', id: 'copy', title: 'A copy of all your records', detail: 'Every reading, answer and message of yours, and the ship\'s cabin readings, as one file (JSON lines). It holds the private parts too, so keep it safe. The made-up example flight is not part of it.', action: 'Save a copy' },
     ]);
   }
@@ -456,12 +469,16 @@ export function buildRecord({ person, history, events = [], unsent = [], statusO
   };
 }
 
+// Where what the person enters is kept (crew.js passes store.kind; 'none' when the saved records could not be opened,
+// so nothing is saved). The made-up example readings are never kept: the example flight makes them in the browser.
 const SAVED = {
-  server: 'Kept on the station computer, in one file named by this id.',
-  browser: 'Kept in this browser only: this copy runs without the station server.',
-  memory: 'Kept only until this page closes: this browser blocks storage.',
+  server: 'What you enter is kept on the station computer, in one file named by this id.',
+  browser: 'What you enter is kept in this browser only: this copy runs without the station server.',
+  memory: 'What you enter is kept only until this page closes: this browser blocks storage.',
   waiting: 'The station server is not answering: what you enter now waits in this browser until it is back.',
+  none: 'Nothing you enter is saved this time: the saved records could not be opened.',
 };
+const MADE_UP_NOT_SAVED = 'The made-up example readings are not saved anywhere: the example flight makes them in this browser.';
 function headerOf({ person, history, mine, mission, flightDay, storeKind }) {
   let readings = 0;
   let made = 0;
@@ -500,7 +517,7 @@ function headerOf({ person, history, mine, mission, flightDay, storeKind }) {
     facts: [
       ['Mission', missionText],
       ['Sex', person.sex ? sex : 'Not set in this example'],
-      ['Record', `${person.id}. ${SAVED[storeKind] || SAVED.memory}`],
+      ['Record', `${person.id}. ${SAVED[storeKind] || SAVED.memory}${made ? ` ${MADE_UP_NOT_SAVED}` : ''}`],
       ['In this record', counts.join('; ')],
     ],
   };

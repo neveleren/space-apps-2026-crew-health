@@ -14,6 +14,8 @@ import { CONNECTIONS } from '../src/integrations.js';
 import { PRIVATE_NOTE } from '../src/quicklog.js';
 import { LEVEL, VITAL_SIGNS } from '../src/state-levels.js';
 import { TIPS } from '../src/tips.js';
+import { ALARM_RULES } from '../src/crew-alarm.js';
+import { MEASURES as FHIR_MEASURES } from '../src/fhir.js';
 import {
   buildRecord, valueWords, sourceWords, readingVerdict, topicWords, cycleWords, checkinDays, messageTitle, lineWords, drawTime, drawWords,
   NOT_HELD, NOT_HELD_TEXT, NOT_HELD_CONNECTION, SECTION_ORDER, SECTION_INFO, RECORD_SOURCES, RECORD_RULES, I4_DATES,
@@ -71,7 +73,8 @@ test('the sections come in a fixed order, each with its count, and the measures 
   const facts = Object.fromEntries(rec.header.facts);
   assert.match(facts.Mission, /^Example flight \(made up\): launch \d+ \w+ 2026, landing \d+ \w+ 2026\. Flight day 167$/);
   assert.match(facts['In this record'], /readings, all of them made-up example data/);
-  assert.match(facts.Record, /^crew-2\. Kept on the station computer/);
+  // What the person enters is kept on the station computer; the made-up readings are not, and the record says so.
+  assert.match(facts.Record, /^crew-2\. What you enter is kept on the station computer, in one file named by this id\. The made-up example readings are not saved anywhere/);
 });
 
 test('only the signed-in person: crewmates, the ship and anyone else stay out, and the ship has no record', () => {
@@ -161,6 +164,29 @@ test('alerts: a red limit, the Help key, the crew line, the automatic message, a
   assert.equal(section(rec, 'encounters').items.length, 0);
 });
 
+test('honest words: an automatic alarm message that was not saved is listed as not sent, a crew line never claims a screen showed it, and where the record is kept', () => {
+  const m = machineWith([{ source: 'manual', indicator: 'spo2', value: 85, person: 'crew-1', time: ago(2) }]);
+  const lost = { v: 1, kind: 'report', time: ago(2), person: 'crew-1', report: { to: 'doctor-earth', text: 'Automatic message from the Crew Health Console (written by the program, not by Tom). Urgent alarm for Tom.', topic: 'alarm' } };
+  const other = { v: 1, kind: 'report', time: ago(2), person: 'crew-2', report: { to: 'doctor-earth', text: 'Automatic message from the Crew Health Console (written by the program, not by Elly). Urgent alarm for Elly.', topic: 'alarm' } };
+  const rec = record(tom, m, { unsent: [{ event: lost, why: 'not saved: 503 (no outbox key)' }, { event: other, why: 'not saved: 500' }] });
+  const msg = section(rec, 'alerts').items.filter((x) => x.tag === 'Message to the doctor');
+  assert.equal(msg.length, 1, "only Tom's own message, never Elly's");
+  assert.equal(msg[0].status, 'unsent');
+  assert.match(msg[0].detail, /^Not sent: 503 \(no outbox key\)\. Urgent alarm for Tom\.$/);
+  assert.equal(section(rec, 'encounters').items.length, 0, 'the automatic message is not counted twice');
+  // A crew line: the record knows it was saved, not which screens were open.
+  for (const clear of [false, true]) {
+    const w = lineWords('shared', clear);
+    assert.ok(!/showed|stopped/.test(w), w);
+    assert.match(w, new RegExp(`within ${ALARM_RULES.pollSeconds} seconds`));
+  }
+  // Saved records that could not be opened: nothing entered is saved, and the record says so.
+  assert.match(Object.fromEntries(buildRecord({ person: tom, history: () => [], now: NOW, storeKind: 'none' }).header.facts).Record, /^crew-1\. Nothing you enter is saved this time/);
+  // The FHIR file holds only the measures with a LOINC code, and says how many.
+  const fhir = section(rec, 'documents').items.find((d) => d.id === 'fhir');
+  assert.match(fhir.detail, new RegExp(`for the ${Object.keys(FHIR_MEASURES).length} measures that have a LOINC code`));
+});
+
 test('messages to the doctor: every topic gets its title, a message that was not saved shows as not sent', () => {
   const r = (topic, text = 'x', to = 'doctor-earth') => ({ to, text, ...(topic ? { topic } : {}) });
   assert.equal(messageTitle(r('pmc', 'x', 'doctor-onboard')), 'Summary for the private medical conference, to the doctor on board');
@@ -227,7 +253,8 @@ test('eyes: the OCT against NASA\'s two levels (drafts), the self-check answers,
   assert.match(oct[0].detail, /^At or above 55: past the needs-action limit \(a draft;/);
   assert.equal(oct[0].level, LEVEL.ACTION);
   assert.equal(oct[1].detail, "At or above 20 µm: NASA's earliest indication of SANS (a draft)");
-  assert.equal(oct[2].detail, "Below 20 µm, NASA's earliest indication of SANS (a draft)");
+  // Below the level is never worded as if it were the indication itself.
+  assert.equal(oct[2].detail, "Below 20 µm, NASA's level for the earliest indication of SANS (a draft)");
   const eye = items.find((x) => x.indicator === 'visionCheck');
   assert.equal(eye.title, 'Eye self-check: Vision changed');
   assert.equal(eye.detail, 'Worth telling your flight surgeon (a draft rule).');
@@ -250,8 +277,8 @@ test('the mind: the latest answers, the daily check-ins of the last days with th
     { source: 'weighing-report', indicator: 'weighing', value: ['home', 'sleep'], person: 'crew-1', time: ago(2) },
   ]);
   const events = [{ v: 1, kind: 'reading', time: ago(3), person: 'crew-1', reading: { source: 'reaction-test', indicator: 'reaction', value: 312, detail: { median: 312, lapses: 1, mode: 'full' } } }];
-  // An answer saved before the scale ("sluggish"): the machine of this version does not take it (its scale check), so
-  // it is handed in here directly; the record reads it as step 5, as src/fatigue.js does.
+  // An answer saved before the scale ("sluggish"), handed in here directly, so the test checks the record's own reading
+  // of the old words whatever the machine does with them: step 5, as src/fatigue.js reads it.
   const old = { time: new Date(ago(26)), value: 'sluggish', status: 'recorded', source: 'attitude-report', example: false };
   const history = (id, ind) => (ind === 'attitude' ? [...m.history(id, ind), old].sort((a, b) => a.time - b.time) : m.history(id, ind));
   const mind = section(buildRecord({ person: tom, history, events, now: NOW }), 'mind');
