@@ -2,6 +2,7 @@
 // Plain English, one idea per line. Written by Claude (Anthropic), an AI system, at the team's request.
 
 export const TIPS = {
+  falsealarm: { title: 'False alarm', lines: ['If the camera got it wrong, say so here: the alarm clears, and the note stays in your record so the doctor sees it.', 'NASA-STD-3001 Vol 2 asks that the crew can safely override automation (10165).'] },
   help: { title: 'Help key', lines: ['Hold it for 2 seconds to call for help by hand, at any time, from any screen.', 'It raises an urgent alert for the crew on board and the doctor, the same way as answering "I need help" to the camera question (NASA-STD-3001 Vol 2, 10178).'] },
   mission: { title: 'Mission profile', lines: ['Where the crew is decides how far help is: on the ISS a doctor answers within minutes and a return to Earth takes hours; on Mars a message takes up to about 22 minutes one way and there is no return for months (NASA HRP-48021).', 'The program works the same everywhere: it checks on board and does not need the link.'] },
   mydata: { title: 'Your data', lines: ['A copy of everything you entered or that was measured for you, as one file you keep.', 'The made-up example flight is not part of your data.'] },

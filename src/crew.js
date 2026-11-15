@@ -1044,6 +1044,7 @@ function renderAlerts() {
         h('p', {}, x.text, h('span', { class: 'muted' }, ` · ${x.system}`)),
         h('div', { class: 'actions' },
           btn('proc small', 'What to do', () => openProcedure(x), 'list-checks'),
+          x.system === 'Camera' ? btn('secondary small', 'I am okay: false alarm', async () => { await addReading('camera', 'chest_grab_ok', { source: { id: 'false-alarm', indicator: 'camera' } }); toast('Noted as a false alarm. The doctor sees it in your record.'); }, 'check', { 'data-tip': 't:falsealarm' }) : null,
           x.indicator ? btn('secondary small', 'Chart', () => openDetail(x.indicator), 'chart-line') : null,
           read ? null : btn('secondary small', 'Mark as read', () => markRead(x), 'check')));
     })) : h('div', { class: 'card' }, h('p', {}, h('b', {}, 'No messages.')), h('p', { class: 'muted' }, 'You will see a message here only when something needs you.')),
@@ -1278,6 +1279,7 @@ function askAreYouOk(person) {
   }
 }
 
+let camTimer = 0;
 async function toggleCamera() {
   const btn = byId('cam-toggle');
   if (camStop) { camStop(); camStop = null; render(); return; }
@@ -1301,6 +1303,9 @@ async function toggleCamera() {
     });
     btn.disabled = false;
     btn.textContent = 'Turn the camera off';
+    // Time-boxed by design: watching is a choice for a task (exercise, working alone), never in crew quarters.
+    clearTimeout(camTimer);
+    camTimer = setTimeout(() => { if (camStop) { camStop(); camStop = null; toast('The camera turned itself off after an hour. Turn it on again if you still want it.'); render(); } }, 60 * 60 * 1000);
     btn.className = 'btn secondary';
     renderBar();
   } catch (err) {
@@ -1493,7 +1498,7 @@ function renderSetup() {
         h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Where the crew is'), h('small', {}, `${profile().name}: signal delay ${profile().delay} one way; ${profile().evac}.`)),
           h('div', { class: 'seg small', role: 'group', 'aria-label': 'Mission' }, ...[['iss', 'ISS'], ['moon', 'Moon'], ['mars', 'Mars']].map(([k, label]) => h('button', { type: 'button', 'aria-pressed': String(ui.profile === k), onclick: () => { ui.profile = k; savePrefs(); renderSetup(); renderBar(); } }, ui.profile === k ? icon('check', { size: 14 }) : null, label))))),
       h('section', { class: 'card' }, cornerTip('t:camera', 'the camera'), h('h2', {}, 'Camera'),
-        h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, camOn ? 'The camera is on' : 'The camera is off'), h('small', {}, 'It watches for a hand held to the chest and asks "Are you okay?" first. A sleeping person is ignored. Video never leaves this computer and is never stored.')),
+        h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, camOn ? 'The camera is on' : 'The camera is off'), h('small', {}, 'It watches for a hand held to the chest and asks "Are you okay?" first. A sleeping person is ignored. It turns itself off after an hour; not for crew quarters. Video never leaves this computer and is never stored.')),
           h('button', { type: 'button', class: camOn ? 'btn secondary' : 'btn primary', id: 'cam-toggle', onclick: toggleCamera }, camOn ? 'Turn the camera off' : 'Turn the camera on')),
         h('div', { class: 'cam-wrap', id: 'cam-wrap', hidden: camOn ? null : true },
           h('div', { class: 'cam-view' }, h('video', { id: 'cam-video', playsinline: true, muted: true }), h('canvas', { id: 'cam-canvas', 'aria-hidden': 'true' }), h('span', { class: 'cam-on-tag' }, 'Camera on')),
