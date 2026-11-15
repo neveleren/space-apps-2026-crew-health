@@ -7,7 +7,7 @@ These files are not under the program's Apache-2.0 license. Each keeps its own l
 - **Videos: the Pexels License**, https://www.pexels.com/license/. Free to use and to modify, attribution not required (given here and on the screen anyway). The license page says: "All photos and videos on Pexels are free to use", "You can modify the photos and videos from Pexels", "Attribution is not required"; not allowed: "Identifiable people may not appear in a bad light or in a way that is offensive", "Don't sell unaltered copies of a photo or video", "Don't imply endorsement of your product by people or brands on the imagery", "Don't redistribute or sell the photos and videos on other stock photo or wallpaper platforms", "Don't use the photos or videos as part of your trade-mark, design-mark, trade-name, business name or service mark". Each video page shows "License: Free" and names https://www.pexels.com/license/ as its license in the page data.
 - **Sounds: Creative Commons 0 (CC0 1.0), public domain dedication**, https://creativecommons.org/publicdomain/zero/1.0/. Each Freesound page says "Creative Commons 0: You can copy, modify, distribute and perform the sound, even for commercial purposes, all without the need of asking permission".
 
-Each source page, and the Pexels license page, was opened on 15 Nov 2026 and the license read on the page itself before the file was used. No logo or brand is in focus in any video.
+Each source page, and the Pexels license page, was opened on 15 Nov 2026 and the license read on the page itself before the file was used; a second reviewer read all twelve source pages and the license page again the same day. No logo or brand is in focus in any video.
 
 ## Videos (Pexels License)
 
