@@ -92,10 +92,13 @@ export function eventProblem(e, { now = Date.now(), checkFuture = true } = {}) {
 
 // A crew alarm: one line that every crewmate's screen shows ("Elly needs help now: ..."), and nothing else of
 // the person's record (14 CFR 1214.403: crewmembers may not use another's medical information without consent).
+// clear: true marks the all-clear line that calls an earlier alarm off ("Elly is okay: false alarm"); it is true
+// or left out, never anything else.
 function alarmProblem(a) {
   if (!isObj(a)) return 'alarm must be an object';
-  if (unknownKey(a, ['text']) !== undefined) return 'alarm may hold only text';
+  if (unknownKey(a, ['text', 'clear']) !== undefined) return 'alarm may hold only text and clear';
   if (typeof a.text !== 'string' || !a.text.trim() || a.text.length > ALARM_CHARS) return `alarm.text must be text of 1 to ${ALARM_CHARS} characters`;
+  if (a.clear !== undefined && a.clear !== true) return 'alarm.clear must be true when it is given';
   return null;
 }
 
@@ -189,7 +192,10 @@ export function cleanEvent(e) {
     out.report = { to: e.report.to, text: e.report.text };
     if (e.report.topic !== undefined) out.report.topic = e.report.topic;
   }
-  if (e.kind === 'alarm') out.alarm = { text: e.alarm.text };
+  if (e.kind === 'alarm') {
+    out.alarm = { text: e.alarm.text };
+    if (e.alarm.clear === true) out.alarm.clear = true;
+  }
   return out;
 }
 
@@ -318,7 +324,7 @@ export const SECURITY_RULES = [
     rule: 'A save with an Origin must come from this server\'s own address, and a browser\'s Sec-Fetch-Site must say same-origin. A save with no Origin comes from a program such as curl, not from a web page.',
     draft: false, sources: [REFS.csrf, REFS.origin] },
   { id: 'event-shape', title: 'Every event is checked',
-    rule: `Version 1; kind ${EVENT_KINDS.join(', ')}; a person id of lower-case letters, digits and hyphens; the switches as true or false; a reading names a measure of src/config.js and carries a value the machine can read; a message to a doctor may name its topic with a short id; nothing else.`,
+    rule: `Version 1; kind ${EVENT_KINDS.join(', ')}; a person id of lower-case letters, digits and hyphens; the switches as true or false; a reading names a measure of src/config.js and carries a value the machine can read; a message to a doctor may name its topic with a short id; a crew alarm is one line of text, marked clear: true when it calls an earlier alarm off; nothing else.`,
     draft: false, sources: [REFS.input] },
   { id: 'future-time', title: 'No times from the future',
     rule: `An event may be dated at most ${LIMITS.futureMinutes} minutes ahead of this computer's clock, the usual clock tolerance (Kerberos).`,
