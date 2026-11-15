@@ -241,7 +241,7 @@ node tools/sbom.mjs --check
 ```
 
 - `npm test` runs Node's own test runner over 25 test files: the machine, history, camera rules, levels, cycle, server, store, PIN, supply chain, mind tools and the Earth break, quick logs, cells, connections, pages, crew alarm, screens, the fatigue scale and the AI's rules. The server tests start the real server on a throwaway data folder. The AI tests use a fake model, so they need no graphics chip and no download.
-- On 15 Nov 2026 (version 1.4.0): 464 tests: 462 pass, 0 fail, 2 skipped, with Node 24.13.0 (version 1.3.0: 385 tests, 383 pass, 0 fail, 2 skipped). The 2 skipped tests call the real ISSLive and NOAA services.
+- On 15 Nov 2026 (version 1.4.0): 467 tests: 465 pass, 0 fail, 2 skipped, with Node 24.13.0 (version 1.3.0: 385 tests, 383 pass, 0 fail, 2 skipped). The 2 skipped tests call the real ISSLive and NOAA services.
 - We also walk the pages in headless Chromium with Playwright. These scripts are kept outside this repository and are not part of `npm test`. Last run, 15 Nov 2026, against commit `09e93ae` (the merged review fixes), each on a fresh data folder:
 
 | Browser check | Steps | Result |

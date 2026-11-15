@@ -132,6 +132,9 @@ const BLOCKED = [
   ['Your oxygen is low, which may indicate hypoxia.', 'no-diagnosis'],
   ['Feeling dizzy can be a sign of dehydration.', 'no-diagnosis'],
   ['Your oxygen levels are low, which could be a sign of respiratory issues.', 'no-diagnosis'],
+  // Seen on this laptop on 15 Nov 2026 for a typed heart rate of 180.
+  ['This suggests that there may be an issue with your cardiac output or rhythm.', 'no-diagnosis'],
+  ['There could be a problem with your lungs.', 'no-diagnosis'],
   // Medicines and doses
   ['Take 400 mg of ibuprofen.', 'no-medicine'],
   ['You could try melatonin tonight.', 'no-medicine'],
@@ -160,6 +163,12 @@ for (const [text, rule] of BLOCKED) {
     assert.equal(res.rule, rule);
   });
 }
+
+test('a problem with a device or with the heart rate itself is not a diagnosis', () => {
+  for (const t of ['If there is a problem with the heart rate strap, type the reading in by hand.', 'There may be an issue with the heart rate reading, so measure it again.']) {
+    assert.equal(checkAnswer(t, { level: 'attention' }).ok, true, t);
+  }
+});
 
 test('an answer that plays down an urgent or needs-action level is held; at normal, one that raises the alarm is held', () => {
   for (const t of ['Everything is fine, nothing to worry about.', 'You are fine.', 'This is not serious.', 'All your readings look normal.', 'No action is needed.']) {

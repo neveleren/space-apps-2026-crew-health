@@ -399,6 +399,9 @@ export const ANSWER_CHECKS = Object.freeze([
   // "..., which may indicate hypoxia", "a sign of dehydration": an illness named next to the person's readings.
   { rule: 'no-diagnosis', re: new RegExp(`\\b(?:which|that) (?:may |might |could |can |would )?(?:indicates?|suggests?|means?|points? to|be a sign of|is a sign of) ${ADJ}(?:[a-z-]+ ){0,2}(?:${CONDITIONS})\\b`) },
   { rule: 'no-diagnosis', re: new RegExp(`\\b(?:signs?|symptoms?|indication) of ${ADJ}(?:[a-z-]+ )?(?:${CONDITIONS})\\b`) },
+  // "an issue with your cardiac output or rhythm" (seen on this laptop for a typed heart rate of 180, 15 Nov 2026):
+  // a vague finding about an organ is a diagnosis too. "a problem with the heart rate strap" is about a device.
+  { rule: 'no-diagnosis', re: /\b(?:issues?|problems?|troubles?|abnormalit(?:y|ies)) (?:with|in|of) (?:your|the) (?:heart(?! rate)|cardiac|rhythm|lungs?|breathing|kidneys?|liver|thyroid|circulation|blood flow|blood vessels)\b/ },
   // No medicines or doses.
   // A medicine's name or a dose counts also after "not": "do not take ibuprofen" is medicine advice too.
   { rule: 'no-medicine', strict: true, re: new RegExp(`\\b(?:${DRUGS})\\b`) },
