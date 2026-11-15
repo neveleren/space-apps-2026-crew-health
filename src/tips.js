@@ -2,7 +2,8 @@
 // Plain English, one idea per line. Written by Claude (Anthropic), an AI system, at the team's request.
 
 export const TIPS = {
-  flightday: { title: 'Flight day', lines: ['Days since launch; launch day is day 1.', 'Here it counts the made-up example flight, which always runs up to today: flight day 167, landing in 26 days.'] },
+  mydata: { title: 'Your data', lines: ['A copy of everything you entered or that was measured for you, as one file you keep.', 'The made-up example flight is not part of your data.'] },
+  flightday: { title: 'Flight day', lines: ['Days since launch; launch day is day 1. Mission elapsed time (MET) counts the same way in days, hours and minutes.', 'Here it counts the made-up example flight, which always runs up to today: flight day 167, landing in 26 days.'] },
   gmt: { title: 'GMT clock', lines: ['The ISS runs on GMT (Greenwich Mean Time).', '319/00:04 means day 319 of the year, 00:04. Every time in this app is GMT.'] },
   example: { title: 'Example data', lines: ['Made-up readings for four people, shaped like published flight studies.', 'For real NASA data choose an Inspiration4 person at sign-in. Switch the example off in Settings.'] },
   messages: { title: 'Messages', lines: ['Everything the program flagged, the most important first, each with what to do.', 'The colour is the highest level right now: blue attention, yellow needs action, red urgent.'] },
@@ -26,7 +27,7 @@ export const TIPS = {
   display: { title: 'Display', lines: ['Dark suits a dim cabin, light a bright one.', 'NASA\'s Human Integration Design Handbook reports that dark or light text did not change reading speed.'] },
   camera: { title: 'Camera', lines: ['Google MediaPipe models run on this computer and find body and face points; nothing goes online.', 'A hand on the chest for 1.5 s asks "Are you okay?"; only "I need help" or no answer in 20 s calls the doctor.', 'Eyes closed and still for 5 s means asleep: no alarm.'] },
   connections: { title: 'Connections', lines: ['How data get in and out of the program.', 'Working now: Bluetooth heart rate, the export for medical records (HL7 FHIR), NASA OSDR data. Each row\'s ? says more.'] },
-  onboard: { title: 'On board, for the demonstration', lines: ['These switches show what the program does in each situation: AI working or not, a doctor on board or not, a link to Earth or not.'] },
+  onboard: { title: 'Simulation', lines: ['These switches simulate situations for the demonstration: AI working or not, a doctor on board or not, a link to Earth or not, and the made-up example flight.', 'Each change shows in the status line, so a simulated situation is never mistaken for a real one.'] },
   bluetooth: { title: 'Bluetooth heart rate', lines: ['Works now with any chest strap or watch that speaks the standard Bluetooth Heart Rate profile (Chrome or Edge on a computer).', 'One reading a minute is saved for the signed-in person.'] },
   fhir: { title: 'Export for the doctor', lines: ['Works now: the last 30 days as an HL7 FHIR file with LOINC codes, the format medical record systems read.', 'Example data carry FHIR\'s official "test data" label.'] },
   osdr: { title: 'NASA OSDR', lines: ['Works now: real, de-identified Inspiration4 blood tests from NASA\'s Open Science Data Repository (OSD-575 and OSD-569).'] },

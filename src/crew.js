@@ -248,6 +248,7 @@ function thisValue(owner, last) {
   const when = stamp(last.time, nowTime());
   if (owner && owner.real) return `A real lab result from NASA OSDR (Inspiration4), ${when}.`;
   if (r.source === 'ble-heart-rate') return `Live from your Bluetooth heart rate monitor, ${when}.`;
+  if (r.source === 'manual') return `Typed in by hand, ${when}.`;
   if (r.example) return `Made-up example data, shaped like published flight studies (${when}).`;
   if (SELF_SOURCES.includes(r.source)) return `Your own answer, ${when}.`;
   if (r.source === 'camera') return `This computer's camera model, ${when}.`;
@@ -346,8 +347,8 @@ function renderBar() {
   else byId('met').textContent = p && p.real ? 'Inspiration4, 2021' : '';
   // Quiet and dark: a tag appears only when something is off.
   const tags = [];
-  if (p && !p.real && ui.example) tags.push(h('span', { class: 'tag example', 'data-tip': 't:example', tabindex: '0' }, 'EXAMPLE DATA'));
-  if (p) tags.push(h('span', { class: 'tag plain systems', 'data-tip': 's:systems', tabindex: '0' }, icon('cpu', { size: 16 }), 'Systems'));
+  if (p && !p.real && ui.example) tags.push(h('span', { class: 'tag example', 'data-tip': 't:example', tabindex: '0' }, 'Example data'));
+  if (p) tags.push(h('span', { class: 'tag plain systems', 'data-tip': 's:systems', tabindex: '0', role: 'img', 'aria-label': 'Systems: automation, AI, link, doctor, saving, sound' }, icon('cpu', { size: 18 })));
   if (p) {
     if (!ui.ship.linkToEarth) tags.push(h('span', { class: 'tag stale', 'data-tip': 't:nolink' }, icon('unlink', { size: 16 }), 'No link to Earth'));
     if (!ui.ship.aiWorks) tags.push(h('span', { class: 'tag', 'data-tip': 't:aioff' }, icon('ban', { size: 16 }), 'AI off'));
@@ -913,7 +914,10 @@ function renderDetail() {
         h('p', { class: 'muted' }, 'Which normal range it is compared with, and the sources:'),
         normsBox,
         owner === SHIP ? null : h('p', {}, h('button', { type: 'button', class: 'link', onclick: () => openArticles(indicator) }, 'Articles on this, to read without the AI'))),
-      more('Show readings as a table', h('div', { class: 'table-wrap', id: 'd-table' }))),
+      more('Show readings as a table', h('div', { class: 'table-wrap', id: 'd-table' })),
+      cell.kind === KIND.NUMBER && !cell.onlyOnEarth && PLAUSIBLE[indicator] !== undefined || indicator === 'bp'
+        ? more('Log a reading by hand', h('p', { class: 'note' }, 'Type a value from any device. It is saved as typed in by hand, with the time now.'), logReadingForm(cell, owner, () => redrawDetail()))
+        : null),
   );
   const ord = ORDINAL[indicator] || null;
   drawHistory(chart, tip, {
@@ -1144,14 +1148,15 @@ function openDoctor(a, kind, indicator = null) {
 // of the alerts active now; a new alert sounds again. Only the Settings switch turns sound off altogether.
 let audio = null;
 const sounded = new Set();
-function tone(freqs, seconds, gain) {
+function tone(freqs, seconds, gain, type = 'sine') {
   try {
     audio = audio || new (window.AudioContext || window.webkitAudioContext)();
     const t0 = audio.currentTime;
     freqs.forEach((f, i) => {
+      if (!f) return; // a pause
       const o = audio.createOscillator();
       const g = audio.createGain();
-      o.type = 'sine';
+      o.type = type;
       o.frequency.value = f;
       g.gain.setValueAtTime(0, t0 + i * seconds);
       g.gain.linearRampToValueAtTime(gain, t0 + i * seconds + 0.02);
@@ -1168,13 +1173,18 @@ function soundAlerts(list) {
   if (!fresh.length) return;
   for (const x of fresh) sounded.add(x.id);
   const top = Math.max(...fresh.map((x) => x.level));
-  if (top >= LEVEL.URGENT) {
-    tone([880, 660, 880, 660], 0.22, 0.10);
-    setTimeout(() => tone([880, 660, 880, 660], 0.22, 0.32), 1100);
-    try { const say = new SpeechSynthesisUtterance('Warning. ' + fresh.find((x) => x.level === top).title); say.lang = 'en-US'; speechSynthesis.speak(say); } catch { /* no voice */ }
-  } else {
-    tone([660], 0.35, 0.08);
-    setTimeout(() => tone([660], 0.35, 0.25), 900);
+  playLevel(top, fresh.find((x) => x.level === top).title);
+}
+// Warning: 400 and 1,024 Hz alternating square wave at 2.5 Hz. Caution: 512 Hz triangle wave, 1 s on, 1 s off.
+// The first repetition is 10 dB quieter (gain 0.1 then 0.32). Source: NASA-STD-3001 Vol 2 Rev F, Table 10.3-1, 10176.
+function playLevel(level, title = '') {
+  if (level >= LEVEL.URGENT) {
+    tone([400, 1024, 400, 1024, 400, 1024], 0.2, 0.10, 'square');
+    setTimeout(() => tone([400, 1024, 400, 1024, 400, 1024], 0.2, 0.32, 'square'), 1400);
+    try { const say = new SpeechSynthesisUtterance(`Warning. ${title}`); say.lang = 'en-US'; speechSynthesis.speak(say); } catch { /* no voice */ }
+  } else if (level >= LEVEL.ACTION) {
+    tone([512, 0], 1, 0.10, 'triangle');
+    setTimeout(() => tone([512, 0], 1, 0.32, 'triangle'), 2000);
   }
 }
 function silenceNow(list) {
@@ -1352,6 +1362,70 @@ function switchRow(id, label, sub, checked, onchange) {
     h('span', { class: 'switch-ctl' }, word, h('input', { type: 'checkbox', role: 'switch', class: 'switch', id, checked: checked ? true : null, onchange: (e) => { word.textContent = e.target.checked ? 'On' : 'Off'; onchange(e.target.checked); } })));
 }
 
+// Save every event of the signed-in person (and the ship) as one JSON-lines file; bring one back.
+function exportMine() {
+  const mine = stored.filter((e) => e.person === ui.person || e.person === SHIP.id);
+  const text = mine.map((e) => JSON.stringify(e)).join('\n');
+  const a = h('a', { href: URL.createObjectURL(new Blob([text], { type: 'application/x-ndjson' })), download: `crew-health-${ui.person}-${new Date().toISOString().slice(0, 10)}.jsonl` });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  toast(mine.length ? `Saved ${mine.length} events.` : 'Nothing of yours is saved yet: the example flight is made up and is not part of your data.');
+}
+async function restoreMine(file) {
+  if (!file) return;
+  const have = new Set(stored.map((e) => `${e.kind}|${e.person}|${e.time}|${JSON.stringify(e.reading || e.report || {})}`));
+  let added = 0;
+  let bad = 0;
+  for (const line of (await file.text()).split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    try {
+      const e = JSON.parse(line);
+      if (!e || !e.kind || !e.person || !e.time) { bad += 1; continue; }
+      const k = `${e.kind}|${e.person}|${e.time}|${JSON.stringify(e.reading || e.report || {})}`;
+      if (have.has(k)) continue;
+      have.add(k);
+      await keep(e);
+      added += 1;
+    } catch { bad += 1; }
+  }
+  rebuild();
+  render();
+  toast(`Brought back ${added} events${bad ? `; ${bad} lines could not be read` : ''}.`);
+}
+
+// Log a reading by hand on a measure page: the challenge asks for keyboard input, and NASA's own planned flow has
+// the crew medical officer type vital signs in. Plausibility limits keep typos out (a value outside them is refused).
+const PLAUSIBLE = { pulse: [20, 250], glucose: [10, 600], temp: [30, 44], spo2: [50, 100], sleep: [0, 16], resp: [3, 70], fluid: [0, 10000], bodyMass: [60, 120], eyePressure: [2, 70], hearing: [-10, 120], radiation: [0, 2000], vo2max: [5, 90], strength: [5, 500], co2: [0, 30], cabinTemp: [5, 45], cabinO2: [50, 300], cabinPressure: [0, 120], noise: [20, 140] };
+function logReadingForm(cell, owner, onDone) {
+  const ind = cell.indicator;
+  const isBp = ind === 'bp';
+  const range = PLAUSIBLE[ind];
+  if (!isBp && !range) return null;
+  const inp = (id, label, hint) => h('label', { class: 'log-field' }, h('span', {}, label), h('input', { id, type: 'number', inputmode: 'decimal', step: 'any', 'aria-describedby': `${id}-hint` }), h('small', { id: `${id}-hint` }, hint));
+  const fields = isBp
+    ? [inp('log-sys', 'Systolic (mmHg)', 'For example 118'), inp('log-dia', 'Diastolic (mmHg)', 'For example 76')]
+    : [inp('log-val', `${shortLabel(cell)}${cell.unit ? ` (${unitShort(cell)})` : ''}`, `Between ${range[0]} and ${range[1]}`)];
+  const save = async () => {
+    const num = (id) => Number(String(byId(id).value).replace(',', '.'));
+    let value;
+    if (isBp) {
+      const sys = num('log-sys');
+      const dia = num('log-dia');
+      if (!(sys >= 50 && sys <= 300 && dia >= 20 && dia <= 200 && sys > dia)) { toast('Check the numbers: systolic 50 to 300, diastolic 20 to 200, systolic higher.'); return; }
+      value = { sys, dia };
+    } else {
+      const v = num('log-val');
+      if (!Number.isFinite(v) || v < range[0] || v > range[1]) { toast(`That does not look like a reading: use a number between ${range[0]} and ${range[1]}.`); return; }
+      value = v;
+    }
+    await addReading(ind, value, { source: { id: 'manual', indicator: ind }, person: owner.id });
+    toast('Saved, typed in by hand.');
+    if (onDone) onDone();
+  };
+  return h('div', { class: 'log-form' }, ...fields, btn('primary small', 'Save the reading', save, 'check'));
+}
+
 function renderSetup() {
   const host = byId('screen-setup');
   const p = personById[ui.person];
@@ -1363,6 +1437,8 @@ function renderSetup() {
     h('div', { class: 'settings' },
       h('section', { class: 'card' }, cornerTip('t:display', 'the display'), h('h2', {}, 'Sound and display'),
         switchRow('st-sound', 'Sound and voice', 'Alerts that need action sound a tone; urgent ones also speak. The question "Are you okay?" is spoken too.', !ui.muted, (on) => { ui.muted = !on; if (ui.muted) { try { speechSynthesis.cancel(); } catch { /* none */ } } savePrefs(); renderBar(); }),
+        h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Test the alert sounds'), h('small', {}, 'Plays the needs-action tone, then the urgent tone, so the crew can check them (NASA-STD-3001 Vol 2, 10117).')),
+          btn('secondary small', 'Test', () => { playLevel(LEVEL.ACTION); setTimeout(() => playLevel(LEVEL.URGENT, 'This is a test.'), 4200); toast('Sound test: needs action, then urgent.'); }, 'volume-2')),
         h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Display'), h('small', {}, 'Dark suits a dim cabin; light suits a bright one.')),
           h('div', { class: 'seg small', role: 'group', 'aria-label': 'Display' }, ...THEMES.map(([k, label]) => h('button', { type: 'button', 'aria-pressed': String(pick === k), onclick: () => { setTheme(k); renderSetup(); } }, pick === k ? icon('check', { size: 14 }) : null, label))))),
       h('section', { class: 'card' }, cornerTip('t:camera', 'the camera'), h('h2', {}, 'Camera'),
@@ -1387,7 +1463,12 @@ function renderSetup() {
         h('p', {}, 'The levels (attention, needs action, urgent) and their thresholds are drafts: the team decides the final ones.'),
         h('p', { class: 'muted' }, 'Idea and decisions: team Just For Fun, NASA Space Apps Challenge 2026. Code written with Claude (Anthropic), an AI system.'),
         h('p', {}, h('a', { href: './machine.html' }, 'Technical view, for engineers'))),
-      h('section', { class: 'card' }, cornerTip('t:onboard', 'the demonstration switches'), h('h2', {}, 'On board, for the demonstration'),
+      h('section', { class: 'card' }, cornerTip('t:mydata', 'your data'), h('h2', {}, 'Your data'),
+        h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Save a copy of my data'), h('small', {}, 'Every reading, answer and message of yours, as one file, kept as long as you like (NASA-STD-3001 Vol 1, 7001).')),
+          btn('secondary small', 'Save a copy', () => exportMine(), 'file-json-2')),
+        h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Bring back a copy'), h('small', {}, 'Adds the events of a saved copy that are not here yet.')),
+          h('label', { class: 'btn secondary small' }, icon('send', { size: 18 }), 'Choose a file', h('input', { type: 'file', accept: '.jsonl,.json,application/json', hidden: true, onchange: (e) => restoreMine(e.target.files[0]) })))),
+      h('section', { class: 'card' }, cornerTip('t:onboard', 'the simulation switches'), h('h2', {}, 'Simulation, for the demonstration'),
         switchRow('st-ai', 'AI is working', 'With the AI off, only the automation works.', ui.ship.aiWorks, ship('aiWorks')),
         switchRow('st-doc', 'Doctor on board', 'Messages go to the doctor on board instead of Earth.', ui.ship.doctorOnBoard, ship('doctorOnBoard')),
         switchRow('st-link', 'Link to Earth', 'Without it, messages to Earth wait until the link is back.', ui.ship.linkToEarth, ship('linkToEarth')),
