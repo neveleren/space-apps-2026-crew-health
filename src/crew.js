@@ -1398,8 +1398,8 @@ function renderGroups(p, a, now) {
       list.hidden = !nowOpen;
       if (nowOpen) ui.openGroups.add(title); else ui.openGroups.delete(title);
       e.currentTarget.setAttribute('aria-expanded', String(nowOpen));
-      e.currentTarget.lastChild.textContent = nowOpen ? 'Hide' : `Show ${real.length}`;
-    } }, h('span', { class: 'fold-note' }, icon('circle-check', { size: 16 }), 'Nothing to look at'), h('span', { class: 'fold-act' }, open ? 'Hide' : `Show ${real.length}`)) : null;
+      e.currentTarget.lastChild.textContent = nowOpen ? 'Hide' : `Show all ${real.length}`;
+    } }, h('span', { class: 'fold-note' }, icon('circle-check', { size: 16 }), 'Nothing needs your attention'), h('span', { class: 'fold-act' }, open ? 'Hide' : `Show all ${real.length}`)) : null;
     return h('section', { class: 'group', 'data-foldable': foldable ? '1' : null, 'data-title': title },
       h('div', { class: 'group-head' }, h('h2', {}, title), toggle || (hint ? h('p', {}, hint) : null)),
       foldable && hint ? h('p', { class: 'note' }, hint) : null,
