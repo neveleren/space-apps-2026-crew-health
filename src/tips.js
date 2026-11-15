@@ -2,6 +2,7 @@
 // Plain English, one idea per line. Written by Claude (Anthropic), an AI system, at the team's request.
 
 export const TIPS = {
+  mission: { title: 'Mission profile', lines: ['Where the crew is decides how far help is: on the ISS a doctor answers within minutes and a return to Earth takes hours; on Mars a message takes up to about 22 minutes one way and there is no return for months (NASA HRP-48021).', 'The program works the same everywhere: it checks on board and does not need the link.'] },
   mydata: { title: 'Your data', lines: ['A copy of everything you entered or that was measured for you, as one file you keep.', 'The made-up example flight is not part of your data.'] },
   flightday: { title: 'Flight day', lines: ['Days since launch; launch day is day 1. Mission elapsed time (MET) counts the same way in days, hours and minutes.', 'Here it counts the made-up example flight, which always runs up to today: flight day 167, landing in 26 days.'] },
   gmt: { title: 'GMT clock', lines: ['The ISS runs on GMT (Greenwich Mean Time).', '319/00:04 means day 319 of the year, 00:04. Every time in this app is GMT.'] },

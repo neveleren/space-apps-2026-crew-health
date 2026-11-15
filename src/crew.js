@@ -71,7 +71,7 @@ function loadPrefs() {
   try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { return {}; }
 }
 function savePrefs() {
-  try { localStorage.setItem(KEY, JSON.stringify({ ship: ui.ship, muted: ui.muted, seen: [...ui.seen], example: ui.example })); } catch { /* storage blocked: the page still works */ }
+  try { localStorage.setItem(KEY, JSON.stringify({ ship: ui.ship, muted: ui.muted, seen: [...ui.seen], example: ui.example, profile: ui.profile })); } catch { /* storage blocked: the page still works */ }
 }
 
 // ---------- state ----------
@@ -93,6 +93,7 @@ const ui = {
   backTo: 'measures',
   stepsDone: {},
   openGroups: new Set(),
+  profile: prefs.profile || 'iss',
 };
 let store = null;
 let stored = [];
@@ -240,6 +241,16 @@ function procedureFor(it) {
   }
 }
 
+// ---------- mission profile ----------
+// Where the crew is decides how far help is. Delays are one way; sources: NASA HRP-48021 (Mars, up to about
+// 22 minutes one way, with two-week blackouts near solar conjunction) and the Earth-Moon distance (about 1.3 s).
+const PROFILES = {
+  iss: { name: 'ISS, low Earth orbit', delay: 'under a second', reply: 'a reply can come within minutes', evac: 'a return to Earth is possible within hours' },
+  moon: { name: 'Moon (orbit or surface)', delay: 'about 1.3 seconds', reply: 'a reply can come within minutes', evac: 'a return to Earth takes days' },
+  mars: { name: 'Mars transit or surface', delay: 'up to about 22 minutes', reply: 'a reply takes at least twice the delay, up to about 44 minutes, and the link can be down for two weeks near solar conjunction', evac: 'no return to Earth for many months' },
+};
+const profile = () => PROFILES[ui.profile] || PROFILES.iss;
+
 // ---------- "?" explanations ----------
 const SELF_SOURCES = ['mood-report', 'attitude-report', 'sleep-rating', 'cycle-log', 'cognition-test'];
 function thisValue(owner, last) {
@@ -290,6 +301,7 @@ function systemsTip() {
     h('p', { class: 'tp-title' }, 'Systems'),
     line('Automation', 'on: every reading is checked against its normal range and the team\'s rules, with or without the AI.'),
     line('AI', ui.ship.aiWorks ? 'the route is on, but no AI model is connected in this version.' : 'off: only the automation works.'),
+    line('Mission', `${profile().name}: signal delay ${profile().delay} one way; ${profile().evac}.`),
     line('Link to Earth', ui.ship.linkToEarth ? 'up: messages to Earth go with the next downlink.' : 'down: messages to Earth wait in the outbox.'),
     line('Doctor', ui.ship.doctorOnBoard ? 'on board.' : 'on Earth.'),
     line('Saved', saved),
@@ -1130,7 +1142,7 @@ function openDoctor(a, kind, indicator = null) {
   const toText = to === 'doctor-onboard' ? 'the doctor on board' : 'the doctor on Earth';
   const area = h('textarea', { id: 'doc-text', 'aria-label': 'Message text' });
   area.value = summaryFor(a, kind, indicator) || 'Please look at my data.';
-  const status = to === 'doctor-earth' ? (ui.ship.linkToEarth ? 'The message is saved in the outbox and goes to the ground with the next downlink.' : 'There is no link to Earth: the message waits in the outbox and goes when the link is back.') : 'The message goes to the doctor on board.';
+  const status = to === 'doctor-earth' ? `${ui.ship.linkToEarth ? 'The message is saved in the outbox and goes to the ground with the next downlink.' : 'There is no link to Earth: the message waits in the outbox and goes when the link is back.'} ${profile().name}: ${profile().reply}.` : 'The message goes to the doctor on board.';
   openPanel(`Message ${toText}`, [h('p', {}, status), area, h('p', { class: 'note' }, 'The automation drafted this text from your data; you can change it.')], [
     btn('primary', 'Send', async () => {
       const event = { v: 1, kind: 'report', time: new Date().toISOString(), person: ui.person, state: { ...ui.ship }, report: { to, text: area.value.slice(0, 4000) } };
@@ -1441,6 +1453,9 @@ function renderSetup() {
           btn('secondary small', 'Test', () => { playLevel(LEVEL.ACTION); setTimeout(() => playLevel(LEVEL.URGENT, 'This is a test.'), 4200); toast('Sound test: needs action, then urgent.'); }, 'volume-2')),
         h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Display'), h('small', {}, 'Dark suits a dim cabin; light suits a bright one.')),
           h('div', { class: 'seg small', role: 'group', 'aria-label': 'Display' }, ...THEMES.map(([k, label]) => h('button', { type: 'button', 'aria-pressed': String(pick === k), onclick: () => { setTheme(k); renderSetup(); } }, pick === k ? icon('check', { size: 14 }) : null, label))))),
+      h('section', { class: 'card' }, cornerTip('t:mission', 'the mission profile'), h('h2', {}, 'Mission'),
+        h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Where the crew is'), h('small', {}, `${profile().name}: signal delay ${profile().delay} one way; ${profile().evac}.`)),
+          h('div', { class: 'seg small', role: 'group', 'aria-label': 'Mission' }, ...[['iss', 'ISS'], ['moon', 'Moon'], ['mars', 'Mars']].map(([k, label]) => h('button', { type: 'button', 'aria-pressed': String(ui.profile === k), onclick: () => { ui.profile = k; savePrefs(); renderSetup(); renderBar(); } }, ui.profile === k ? icon('check', { size: 14 }) : null, label))))),
       h('section', { class: 'card' }, cornerTip('t:camera', 'the camera'), h('h2', {}, 'Camera'),
         h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, camOn ? 'The camera is on' : 'The camera is off'), h('small', {}, 'It watches for a hand held to the chest and asks "Are you okay?" first. A sleeping person is ignored. Video never leaves this computer and is never stored.')),
           h('button', { type: 'button', class: camOn ? 'btn secondary' : 'btn primary', id: 'cam-toggle', onclick: toggleCamera }, camOn ? 'Turn the camera off' : 'Turn the camera on')),
