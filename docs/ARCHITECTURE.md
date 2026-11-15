@@ -20,6 +20,7 @@ Written by Claude (Anthropic), an AI system, for team Just For Fun. The idea, th
 | Crew screen | `index.html`, `src/crew.js`, `support.css` | browser | The astronaut's own screen: Today, all measures, messages, settings |
 | Crew alarm | `src/crew-alarm.js` | browser; Node in the tests | The rules and words of the crew alarm: which line is new, the all clear, what a save became, the automatic message to the doctor, the timings (`ALARM_RULES`, drafts) |
 | Find, mission, fatigue scale | `src/find.js`, `src/mission.js`, `src/fatigue.js` | browser; Node in the tests | Find a measure by the name on its row; the crew's own mission dates and the flight day; the seven statements of the energy question and its low-day rule |
+| Medical record | `src/medrecord.js`, `src/record-view.js` | browser; Node in the tests (`src/medrecord.js`) | Everything about the signed-in person in one place, read only: `buildRecord()` turns the machine's history of the person, the saved events and today's levels into sections, newest first, each item linked to where it came from; `drawRecord()` draws them. Nothing is saved or sent, and nobody else's events are used |
 | Technical view | `machine.html`, `src/ui.js` | browser | Simulated devices, the cells, who gets each reading, the log, history and forecast |
 | The machine | `src/engine.js` | browser; its value checks also run in the server; Node in the tests | Cell, norm, red limit, route, history per person |
 | Cells and norms | `src/config.js` | everywhere | Every measure with its norms, sources and red limits; the people; the simulated sources; the team's open questions |
@@ -212,7 +213,7 @@ What is checked on every request, and what is not protected, is in `docs/SECURIT
 2. **The source of the norm.** Add `{ name, url }` to the source tables at the top of `config.js` and point the norm at it with `src`. A norm without a checked source stays out: use `record`. The cells added after the night's NASA-style reviews (written by Claude in the roles of NASA reviewers, not by NASA) also say where the measure is available on the ISS (`availability`, `availabilitySrc`); a new cell should too.
 3. **Red limits, only with a published value.** `red: [{ when, value, level, source, url, note, draft: true }]`, with `when` one of `below`, `atOrBelow`, `above`, `atOrAbove` and `level` `action` or `urgent`; `part` picks one number of a pair, `atRest` skips the limit during exercise. A value just past a limit must be outside the norm.
 4. **A simulated source in `SOURCES`**, so the technical view can send it and the checks can try its presets.
-5. **What follows by itself.** The server accepts the new measure (it checks readings against `CELLS`), and the technical view lists the cell and its source. On the crew screen, a number or self-report cell of the body or the mind shows up under "Other measures" until it is added to a group in `GROUPS` (`src/crew.js`); a cabin cell (`env`) shows under "Cabin air"; a private or complex cell shows only where `src/crew.js` places it.
+5. **What follows by itself.** The server accepts the new measure (it checks readings against `CELLS`), and the technical view lists the cell and its source. On the crew screen, a number or self-report cell of the body or the mind shows up under "Other measures" until it is added to a group in `GROUPS` (`src/crew.js`); a cabin cell (`env`) shows under "Cabin air"; a private or complex cell shows only where `src/crew.js` places it. On the Medical record, a number cell of the body shows under "Other measures" by itself.
 6. **Optional, for a complete page:** an icon (`ICON_FOR`) and search words (`WORDS`) in `src/crew.js`; the "?" text in `PROVENANCE` (`src/tips.js`); `EXPECTED_EVERY_DAYS`, `SLOW_MEASURES` or `VITAL_SIGNS` in `src/state-levels.js`; plausibility limits in `PLAUSIBLE` of `src/crew.js` (apart from blood pressure, the hand-entry form appears only for a measure listed there) and of `src/csv-import.js` (files and Bluetooth); a LOINC code in `MEASURES` in `src/fhir.js`, or a reason in `NOT_EXPORTED`.
 7. **Run `npm test`.** The tests require a known kind, a norm with data for number cells, complete and sourced red limits marked as drafts, every number cell either exported to FHIR or named with a reason, and every preset passing the server's check.
 
@@ -241,6 +242,8 @@ What is checked on every request, and what is not protected, is in `docs/SECURIT
 | `src/state-levels.js` | Levels, items, freshness, the ship's alarms and the dated sentence |
 | `src/trend.js` | The least-squares straight line and where it crosses the norm |
 | `src/crew.js` | The crew screen's logic and drawing |
+| `src/medrecord.js` | The medical record's sections, built from the person's own events (no DOM) |
+| `src/record-view.js` | The medical record screen, drawn from those sections |
 | `src/ui.js` | The technical view's logic and drawing |
 | `src/store.js` | Events kept on our server, in the browser's storage, or in memory |
 | `src/security.js` | The server's rules as data: the event check, hosts, origins, private paths, headers |
