@@ -19,6 +19,14 @@ import { symptomLog, medicineLog, logText, PRIVATE_NOTE } from './quicklog.js';
 import { topicSignal, offerText, renderTopicChips, renderTips, renderJournal, renderPlan, renderSteps, renderCalendar, nextUp, supportTip, TALK_REQUEST_TEXT } from './support.js';
 import { runReactionTest, compareToOwn, exampleEarlierRuns } from './reaction-test.js';
 import { runEarthBreak } from './earth-break.js';
+import { renderConnections, connectionTip, sourceInfo, toEvents, onlyNew, columnPicker } from './integrations.js';
+import { connectHealthDevice } from './ble.js';
+import { importCsv, mapReadings } from './csv-import.js';
+import { readCabinAir } from './isslive.js';
+import { readSpaceWeather } from './spaceweather.js';
+import { fhirBundle as fhirExport, FHIR_TYPE, fhirFileName } from './fhir.js';
+import { toICalendar, planDrafts, ICAL_TYPE, icalFileName } from './ical.js';
+import { pinAvailable, hasPin, pinLocked, checkPin, pinTriesLeft, pinProblem, setPin, clearPin, PIN_RULES } from './privacy.js';
 
 // One icon per measure, so a list can be read at a glance.
 const ICON_FOR = { pulse: 'heart-pulse', bp: 'activity', glucose: 'droplet', temp: 'thermometer', spo2: 'droplets', sleep: 'moon', resp: 'wind', fluid: 'glass-water', bodyMass: 'scale', eyePressure: 'eye', hearing: 'ear', radiation: 'radiation', vo2max: 'heart', strength: 'dumbbell', bone: 'bone', camera: 'camera', mood: 'smile', attitude: 'battery', sleepQuality: 'bed', cognition: 'brain', cycle: 'calendar-heart', xray: 'scan-line', ecg: 'chart-line', ultrasound: 'waves', exercise: 'flame', visionCheck: 'eye', octChange: 'eye', octScan: 'scan-line', symptoms: 'stethoscope', medicines: 'pill', co2: 'cloud-fog', cabinTemp: 'thermometer', cabinO2: 'orbit', cabinPressure: 'gauge', noise: 'volume-2', blood: 'test-tube' };
@@ -102,6 +110,9 @@ const ui = {
   stepsDone: {},
   openGroups: new Set(),
   profile: prefs.profile || 'iss',
+  conn: { on: { isslive: false, spaceweather: false }, connected: {}, busy: {}, live: {} },
+  exercising: false,
+  exerciseUntil: 0,
 };
 let store = null;
 let stored = [];
@@ -129,10 +140,26 @@ function rebuild() {
 async function keep(event) {
   stored.push(event);
   try {
-    await store.append(event);
+    return await store.append(event);
   } catch {
     toast('Could not save: this record exists only on this screen.');
+    return null;
   }
+}
+
+// A crewmate's screen learns only that this person needs help now, never the rest of the record
+// (14 CFR 1214.403: crewmembers may not use another's medical information without consent).
+const HOUR_MS = 60 * 60 * 1000;
+async function shareCrewAlarm(personId, indicator) {
+  const p = personById[personId];
+  if (!p || p.real || personId === SHIP.id) return;
+  const now = nowTime();
+  const a = assess({ machine, person: p, cells: CELLS, mission: MISSION, now });
+  const it = a.body.items.find((x) => x.level >= LEVEL.URGENT && (x.kind === 'red' || x.kind === 'camera') && (!x.cell || x.cell.indicator === indicator));
+  if (!it) return;
+  if (stored.some((e) => e.kind === 'alarm' && e.person === personId && Math.abs(Date.now() - msOf(e.time)) < HOUR_MS)) return;
+  const what = it.kind === 'red' ? `${it.cell.label} ${valueText(it.cell.indicator, it.m.last.value)} ${it.cell.unit || ''}`.trim() : 'an alarm was raised';
+  await keep({ v: 1, kind: 'alarm', time: new Date().toISOString(), person: personId, alarm: { text: `${p.name} needs help now: ${what}.` } });
 }
 
 // Every new reading goes through the machine and is saved, exactly like on the technical page.
@@ -142,6 +169,7 @@ async function addReading(indicator, value, { source = null, person = ui.person,
   machine.setState(event.state);
   const entry = machine.receive({ ...event.reading, person, time: event.time });
   await keep(event);
+  await shareCrewAlarm(person, indicator);
   render();
   return entry;
 }
@@ -244,7 +272,8 @@ function itemText(it, owner) {
   if (it.kind === 'red') return { title: owner && owner.id === SHIP.id ? `${it.level >= LEVEL.URGENT ? 'Ship emergency' : 'Ship caution'}: ${lower(cell.label)}` : cell.label, text: `${v}: ${limitWords(it.red)}${it.red.part ? ` (${it.red.part})` : ''}, the ${it.level >= LEVEL.URGENT ? 'urgent' : 'needs-action'} limit (${it.red.source}).`, time: last.time };
   if (it.kind === 'standard') return { title: cell.label, text: `${v}: ${side} the NASA standard (${normShort(cell, owner)}).`, time: last.time };
   if (it.kind === 'expected') return { title: cell.label, text: `${v}: ${side} the usual range on Earth (${rangeText(cell, owner)}). ${it.expected.text}`, time: last.time };
-  return { title: cell.label, text: `${v}: ${side} the normal range (${rangeText(cell, owner)})${it.m.streak > 1 ? `, ${it.m.streak} readings in a row` : ''}. Reading of ${fmtDT(last.time)}.`, time: last.time };
+  const others = (it.together || []).filter((x) => x !== cell.indicator && cellBy[x]).map((x) => lower(cellBy[x].label));
+  return { title: cell.label, text: `${v}: ${side} the normal range (${rangeText(cell, owner)})${it.m.streak > 1 ? `, ${it.m.streak} readings in a row` : ''}. Reading of ${fmtDT(last.time)}.${others.length ? ` Out of range at the same time: ${others.join(' and ')}. Several vital signs out together count more than one (NEWS2).` : ''}`, time: last.time };
 }
 
 // What to do, by the program's rules (shown in magenta, like NASA's electronic procedures).
@@ -285,6 +314,8 @@ function thisValue(owner, last) {
   if (r.example) return `Made-up example data, shaped like published flight studies (${when}).`;
   if (SELF_SOURCES.includes(r.source)) return `Your own answer, ${when}.`;
   if (r.source === 'camera') return `This computer's camera model, ${when}.`;
+  const info = sourceInfo(r.source);
+  if (info.thisValue && info.origin !== 'simulated' && info.origin !== 'unknown') return `${info.thisValue}, ${when}.`;
   const src = SOURCES.find((s) => s.id === r.source);
   return `Entered on the technical view from a simulated "${src ? src.label : r.source}", ${when}.`;
 }
@@ -331,8 +362,10 @@ function systemsTip() {
 }
 function tipContent(key) {
   if (key === 's:systems') return systemsTip();
+  if (key === 't:pin') return h('div', {}, h('p', { class: 'tp-title' }, 'PIN for my screen'), ...PIN_RULES.rules.map((r) => h('p', {}, `${r.text} `, r.src ? h('a', { href: r.src.url, target: '_blank', rel: 'noopener' }, r.src.name) : null)));
   const [kind, a1, a2] = String(key).split(':');
   if (kind === 'mind') return supportTip(a1);
+  if (kind === 'c') return connectionTip(a1);
   if (kind === 'm') return measureTip(a1, a2);
   if (kind === 'b') return bloodTip(a1, a2);
   const t = TIPS[a1];
@@ -371,11 +404,19 @@ function renderNav() {
 // Only the name and the measure, nothing else (ISS crew code of conduct: disclosure for immediate crew safety).
 function crewAlerts(now) {
   const out = [];
+  const seen = new Set();
   for (const c of CREW) {
     if (c.id === ui.person) continue;
     const a = assess({ machine, person: c, cells: CELLS, mission: MISSION, now });
     const it = a.body.items.find((x) => x.level >= LEVEL.URGENT && (x.kind === 'red' || x.kind === 'camera'));
-    if (it) out.push(`${c.name} needs help now: ${it.kind === 'red' ? `${it.cell.label} ${valueText(it.cell.indicator, it.m.last.value)} ${it.cell.unit || ''}`.trim() : 'an alarm was raised'}.`);
+    if (it) { out.push(`${c.name} needs help now: ${it.kind === 'red' ? `${it.cell.label} ${valueText(it.cell.indicator, it.m.last.value)} ${it.cell.unit || ''}`.trim() : 'an alarm was raised'}.`); seen.add(c.id); }
+  }
+  for (const e of stored) {
+    if (e.kind !== 'alarm' || !e.alarm || e.person === ui.person || seen.has(e.person)) continue;
+    const age = Date.now() - msOf(e.time);
+    if (age > 6 * HOUR_MS || age < -HOUR_MS) continue;
+    out.push(`${e.alarm.text.replace(/\.$/, '')}, GMT ${gmtDOY(e.time)}.`);
+    seen.add(e.person);
   }
   return out;
 }
@@ -435,13 +476,40 @@ function renderLogin() {
   byId('people-real').replaceChildren(...REAL.map(card));
 }
 
-function choosePerson(id) {
+async function choosePerson(id) {
+  if (pinAvailable() && hasPin(id)) { askPin(id); return; }
+  await enterAs(id);
+}
+async function enterAs(id) {
   ui.person = id;
   ui.screen = 'home';
   ui.detail = null;
   ui.find = '';
+  try {
+    store = await openStore({ person: id });
+    stored = [...store.events];
+  } catch {
+    toast('Could not open the saved records: nothing is saved this time.');
+  }
+  rebuild();
   render();
   window.scrollTo(0, 0);
+}
+function askPin(id) {
+  const p = personById[id];
+  const input = h('input', { id: 'pin-in', type: 'password', inputmode: 'numeric', autocomplete: 'off', maxlength: String(PIN_RULES.maxDigits), 'aria-describedby': 'pin-status' });
+  const lockedText = 'Locked after too many wrong tries. In this prototype the PIN lives only in this browser: clearing the site data removes it.';
+  const status = h('p', { id: 'pin-status', class: 'note', role: 'status' }, pinLocked(id) ? lockedText : '');
+  const go = async () => {
+    if (pinLocked(id)) { status.textContent = lockedText; return; }
+    if (await checkPin(id, input.value)) { closePanel(); await enterAs(id); return; }
+    input.value = '';
+    status.textContent = pinLocked(id) ? lockedText : `Wrong PIN. Tries left: ${pinTriesLeft(id)}.`;
+    input.focus();
+  };
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+  openPanel(`PIN for ${p.real ? `Participant ${p.code}` : p.name}`, [h('label', { class: 'log-field' }, h('span', {}, 'PIN'), input), status], [btn('primary', 'Open', go, 'shield')]);
+  setTimeout(() => input.focus(), 0);
 }
 
 // ---------- rendering: Today ----------
@@ -1162,10 +1230,8 @@ function renderBloodDetail(host, p, code) {
 // A condition that lasts for weeks is "new" once; it is new again only when its level rises or it clears and returns.
 function episodeStart(personId, it) {
   if (!it.cell || !it.m || !it.m.last) return it.time ? new Date(it.time).toISOString().slice(0, 13) : 'now';
-  const list = machine.history(personId, it.cell.indicator);
-  const run = Math.max(1, it.m.streak || 1);
-  const first = list[Math.max(0, list.length - run)];
-  return it.kind === 'forecast' ? 'forecast' : new Date(first ? first.time : it.m.last.time).toISOString().slice(0, 10);
+  if (it.kind === 'forecast') return 'forecast';
+  return new Date(it.m.runFrom || it.m.last.time).toISOString().slice(0, 10);
 }
 
 function alertsFor(personId) {
@@ -1213,9 +1279,9 @@ function renderAlerts() {
           x.indicator ? btn('secondary small', 'Chart', () => openDetail(x.indicator), 'chart-line') : null,
           read ? null : btn('secondary small', 'Mark as read', () => markRead(x), 'check')));
     })) : h('div', { class: 'card' }, h('p', {}, h('b', {}, 'No messages.')), h('p', { class: 'muted' }, 'You will see a message here only when something needs you.')),
-    h('h2', { class: 'section-title' }, 'Sent to the doctor'),
+    h('h2', { class: 'section-title' }, 'Sent messages'),
     reports.length ? h('ul', { class: 'msgs' }, ...reports.map((r) => h('li', { class: 'card msg' },
-      h('div', { class: 'msg-top' }, h('b', {}, r.report.to === 'doctor-onboard' ? 'To the doctor on board' : 'To the doctor on Earth'),
+      h('div', { class: 'msg-top' }, h('b', {}, r.report.text === TALK_REQUEST_TEXT ? 'Request for a private call, to Earth' : r.report.text.startsWith('Private letter for my psychologist') ? 'Private letter for your psychologist, to Earth' : r.report.to === 'doctor-onboard' ? 'To the doctor on board' : 'To the doctor on Earth'),
         r.report.to === 'doctor-earth' ? (ui.ship.linkToEarth ? h('span', { class: 'chip neutral' }, icon('send', { size: 16 }), 'In the outbox, goes with the next downlink') : staleChip('Waiting for the link')) : h('span', { class: 'chip neutral' }, icon('check', { size: 16 }), 'Saved for the doctor on board'),
         h('span', { class: 'when' }, `GMT ${gmtDOY(r.time)}`)),
       h('p', { style: 'white-space: pre-line' }, r.report.text)))) : h('p', { class: 'note' }, 'Nothing sent yet.'),
@@ -1341,7 +1407,7 @@ function openAdvice() {
 const MIND_KEY = (id) => `jff-mind-private-v1:${id}`;
 function loadMind(id) { try { return { journal: [], plan: null, worksheets: [], breaks: [], ...JSON.parse(localStorage.getItem(MIND_KEY(id)) || '{}') }; } catch { return { journal: [], plan: null, worksheets: [], breaks: [] }; } }
 function saveMind(id, data) { try { localStorage.setItem(MIND_KEY(id), JSON.stringify(data)); return true; } catch { toast('Could not save here: this browser blocks storage.'); return false; } }
-const queueReport = async (to, text, topic) => keep({ v: 1, kind: 'report', time: new Date().toISOString(), person: ui.person, state: { ...ui.ship }, report: { to, text: String(text).slice(0, 6000), topic } });
+const queueReport = async (to, text) => keep({ v: 1, kind: 'report', time: new Date().toISOString(), person: ui.person, state: { ...ui.ship }, report: { to, text: String(text).slice(0, 6000) } });
 
 function openMindSupport() {
   const p = personById[ui.person];
@@ -1370,7 +1436,7 @@ function openJournal() {
     onSave: (entry) => { const d = loadMind(p.id); d.journal = [entry, ...d.journal.filter((e) => e.id !== entry.id)]; if (!saveMind(p.id, d)) throw new Error('storage'); ctl && ctl.update(d.journal, { link: ui.ship.linkToEarth }); },
     onToggleTalk: (id, on) => { const d = loadMind(p.id); d.journal = d.journal.map((e) => (e.id === id ? { ...e, talk: on } : e)); saveMind(p.id, d); ctl && ctl.update(d.journal, { link: ui.ship.linkToEarth }); },
     onDelete: (id) => { const d = loadMind(p.id); d.journal = d.journal.filter((e) => e.id !== id); saveMind(p.id, d); ctl && ctl.update(d.journal, { link: ui.ship.linkToEarth }); },
-    onSendLetter: async (text) => { await queueReport(ui.ship.doctorOnBoard ? 'doctor-onboard' : 'doctor-earth', text, 'letter-to-psychologist'); toast(ui.ship.linkToEarth ? 'Your letter is in the outbox: it goes with the next downlink.' : 'Your letter waits in the outbox for the link.'); },
+    onSendLetter: async (text) => { await queueReport('doctor-earth', text); toast(ui.ship.linkToEarth ? 'Your letter is in the outbox: it goes with the next downlink.' : 'Your letter waits in the outbox for the link.'); },
   });
   openPanel('Mind support', [backToMind(), host]);
 }
@@ -1381,7 +1447,7 @@ function openPlan() {
   renderPlan(host, {
     plan: data.plan, example: ui.example && !p.real, link: ui.ship.linkToEarth, doctorOnBoard: ui.ship.doctorOnBoard,
     onSave: (plan) => { const d = loadMind(p.id); d.plan = plan; if (!saveMind(p.id, d)) throw new Error('storage'); toast('Your plan is saved in this browser only.'); },
-    onTalkNow: async (kind) => { if (kind === 'ground') { await queueReport(ui.ship.doctorOnBoard ? 'doctor-onboard' : 'doctor-earth', TALK_REQUEST_TEXT, 'talk-request'); toast('Your request for a private call is in the outbox.'); } },
+    onTalkNow: async (kind) => { if (kind === 'ground') { await queueReport('doctor-earth', TALK_REQUEST_TEXT); toast('Your request for a private call is in the outbox.'); } },
   });
   openPanel('Mind support', [backToMind(), host]);
 }
@@ -1404,7 +1470,8 @@ function openReactionTest(mode) {
   const p = personById[ui.person];
   runReactionTest({ mode, earlier: earlierRuns(p), onDone: async (result) => {
     if (result.median === null || result.median === undefined) { toast('Not enough presses to give a result.'); return; }
-    await addReading('cognition', Math.round(result.median), { source: { id: 'reaction-test', indicator: 'cognition' }, detail: result });
+    const detail = Object.fromEntries(['median', 'lapses', 'falseStarts', 'count', 'durationS', 'mode', 'score'].filter((k) => result[k] !== undefined).map((k) => [k, result[k]]));
+    await addReading('cognition', Math.round(result.median), { source: { id: 'reaction-test', indicator: 'cognition' }, detail });
     const cmp = compareToOwn(result, earlierRuns(p));
     toast(cmp && cmp.text ? cmp.text : 'Saved.');
   }, onCancel: () => {} });
@@ -1642,78 +1709,134 @@ async function toggleCamera() {
   }
 }
 
-// ---------- integrations ----------
-// A real Bluetooth chest strap or watch that speaks the standard Bluetooth Heart Rate profile.
-// Works in Chrome or Edge on a computer; the reading is saved once a minute, not every beat.
-let hr = { device: null, bpm: null, savedAt: 0 };
-async function connectHeartRate() {
-  if (!navigator.bluetooth) { toast('This browser has no Bluetooth: use Chrome or Edge on a computer.'); return; }
-  try {
-    const device = await navigator.bluetooth.requestDevice({ filters: [{ services: ['heart_rate'] }] });
-    const server = await device.gatt.connect();
-    const service = await server.getPrimaryService('heart_rate');
-    const ch = await service.getCharacteristic('heart_rate_measurement');
-    await ch.startNotifications();
-    hr.device = device;
-    ch.addEventListener('characteristicvaluechanged', (ev) => {
-      const v = ev.target.value;
-      const flags = v.getUint8(0);
-      hr.bpm = flags & 1 ? v.getUint16(1, true) : v.getUint8(1);
-      const live = byId('hr-live');
-      if (live) live.textContent = `${hr.bpm} bpm`;
-      if (Date.now() - hr.savedAt > 60 * 1000 && ui.person && !personById[ui.person].real) {
-        hr.savedAt = Date.now();
-        addReading('pulse', hr.bpm, { source: { id: 'ble-heart-rate', indicator: 'pulse' }, context: ui.exercising ? 'exercise' : null });
-      }
-    });
-    device.addEventListener('gattserverdisconnected', () => { hr = { device: null, bpm: null, savedAt: 0 }; render(); });
-    toast(`Connected: ${device.name || 'heart rate monitor'}.`);
-    render();
-  } catch (err) {
-    if (err && err.name !== 'NotFoundError') toast(`The heart rate monitor did not connect: ${err.message || err}`);
-  }
+// ---------- integrations (src/integrations.js lists every connection with its status and sources) ----------
+const EXERCISE_HOURS = 2; // draft: the "I am exercising" switch turns itself off after this, so it is never left on
+function exercisingNow() {
+  if (ui.exercising && ui.exerciseUntil && Date.now() > ui.exerciseUntil) { ui.exercising = false; ui.exerciseUntil = 0; }
+  return Boolean(ui.exercising);
 }
-
-// Export in HL7 FHIR, the standard medical records use (LOINC codes for the measures). Example data carry
-// FHIR's official "test data" label (HTEST), so they can never pass for a real person's record.
-const LOINC = {
-  pulse: { code: '8867-4', display: 'Heart rate', unit: '/min' },
-  temp: { code: '8310-5', display: 'Body temperature', unit: 'Cel' },
-  spo2: { code: '59408-5', display: 'Oxygen saturation in Arterial blood by Pulse oximetry', unit: '%' },
-  glucose: { code: '1558-6', display: 'Fasting glucose [Mass/volume] in Serum or Plasma', unit: 'mg/dL' },
-  sleep: { code: '93832-4', display: 'Sleep duration', unit: 'h' },
-  resp: { code: '9279-1', display: 'Respiratory rate', unit: '/min' },
+const saveFile = (text, type, name) => {
+  const a = h('a', { href: URL.createObjectURL(new Blob([text], { type })), download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
 };
-function fhirBundle(personId, days = 30) {
-  const since = msOf(nowTime()) - days * DAY;
-  const entries = [{ fullUrl: `urn:jff:patient:${personId}`, resource: { resourceType: 'Patient', id: personId, identifier: [{ system: 'urn:just-for-fun:crew', value: personId }] } }];
-  const test = ui.example ? { security: [{ system: 'http://terminology.hl7.org/CodeSystem/v3-ActReason', code: 'HTEST', display: 'test health data' }] } : undefined;
-  const vital = [{ coding: [{ system: 'http://terminology.hl7.org/CodeSystem/observation-category', code: 'vital-signs' }] }];
-  let n = 0;
-  for (const [ind, l] of Object.entries(LOINC)) {
-    for (const x of machine.history(personId, ind)) {
-      if (msOf(x.time) < since || !Number.isFinite(Number(x.value))) continue;
-      n += 1;
-      entries.push({ fullUrl: `urn:jff:obs:${personId}:${ind}:${n}`, resource: { resourceType: 'Observation', meta: test, status: 'final', category: vital, code: { coding: [{ system: 'http://loinc.org', code: l.code, display: l.display }] }, subject: { reference: `Patient/${personId}` }, effectiveDateTime: new Date(x.time).toISOString(), valueQuantity: { value: Number(x.value), unit: l.unit, system: 'http://unitsofmeasure.org', code: l.unit } } });
-    }
-  }
-  for (const x of machine.history(personId, 'bp')) {
-    if (msOf(x.time) < since) continue;
-    n += 1;
-    entries.push({ fullUrl: `urn:jff:obs:${personId}:bp:${n}`, resource: { resourceType: 'Observation', meta: test, status: 'final', category: vital, code: { coding: [{ system: 'http://loinc.org', code: '85354-9', display: 'Blood pressure panel with all children optional' }] }, subject: { reference: `Patient/${personId}` }, effectiveDateTime: new Date(x.time).toISOString(), component: [
-      { code: { coding: [{ system: 'http://loinc.org', code: '8480-6', display: 'Systolic blood pressure' }] }, valueQuantity: { value: Number(x.value.sys), unit: 'mm[Hg]', system: 'http://unitsofmeasure.org', code: 'mm[Hg]' } },
-      { code: { coding: [{ system: 'http://loinc.org', code: '8462-4', display: 'Diastolic blood pressure' }] }, valueQuantity: { value: Number(x.value.dia), unit: 'mm[Hg]', system: 'http://unitsofmeasure.org', code: 'mm[Hg]' } },
-    ] } });
-  }
-  return { bundle: { resourceType: 'Bundle', type: 'collection', timestamp: new Date().toISOString(), entry: entries }, count: n };
+
+function drawConnections(host = byId('conn-host'), p = personById[ui.person]) {
+  if (!host || !p) return;
+  renderConnections(host, { state: { real: Boolean(p.real), ...ui.conn }, onToggle: toggleFeed, onImport: importFile, onConnect: connectKind });
 }
 
+// Standard Bluetooth health devices: heart rate strap, thermometer, blood pressure cuff, pulse oximeter (src/ble.js).
+const devices = {};
+const liveRow = (kind) => (kind === 'heart-rate' ? 'ble-heart-rate' : 'ble-health');
+function liveText(kind, parsed, readings, skipped) {
+  if (!parsed) return skipped && skipped[0] ? `Not saved: ${skipped[0].reason}.` : '';
+  if (kind === 'heart-rate') return parsed.contact === false ? `${parsed.bpm} bpm, no skin contact: not saved` : `${parsed.bpm} bpm`;
+  const r = (readings || []).map((x) => `${valueText(x.indicator, x.value)} ${x.unit}`).join(', ');
+  return r || (skipped && skipped[0] ? `Not saved: ${skipped[0].reason}.` : '');
+}
+async function connectKind(kind) {
+  if (kind === 'fhir') { openFhir(); return; }
+  if (kind === 'ical') { saveCalendar(); return; }
+  const p = personById[ui.person];
+  if (!p || p.real) return;
+  if (devices[kind]) {
+    try { devices[kind].disconnect(); } catch { /* already gone */ }
+    delete devices[kind];
+    ui.conn.connected[kind] = false;
+    drawConnections();
+    return;
+  }
+  ui.conn.busy[kind] = true;
+  drawConnections();
+  try {
+    const handle = await connectHealthDevice(kind, (r) => {
+      const ex = r.indicator === 'pulse' && exercisingNow();
+      addReading(r.indicator, r.value, { source: { id: r.source, indicator: r.indicator }, context: ex ? 'exercise' : null, time: r.time });
+    }, {
+      onLive: (parsed, readings, skipped) => { ui.conn.live[liveRow(kind)] = liveText(kind, parsed, readings, skipped); drawConnections(); },
+      onDisconnect: () => { delete devices[kind]; ui.conn.connected[kind] = false; drawConnections(); },
+    });
+    if (handle) { devices[kind] = handle; ui.conn.connected[kind] = true; toast(`Connected: ${handle.name}.`); }
+  } catch (err) {
+    toast(err && err.name === 'NoBluetooth' ? err.message : `The device did not connect: ${(err && err.message) || err}`);
+  } finally {
+    ui.conn.busy[kind] = false;
+    drawConnections();
+  }
+}
+
+// Earth demos, off by default: live ISS cabin air from NASA ISSLive and NOAA space weather.
+let feedTimer = 0;
+const issText = (r, n) => `${(r.items || []).filter((i) => i.value !== null && i.item !== 'TIME_000001').slice(0, 4).map((i) => `${i.name} ${i.text ?? i.value} ${i.unit}`).join('; ')}${n ? `. Saved for the ship: ${n} new ${n === 1 ? 'value' : 'values'}` : ''}.`;
+const weatherText = (r) => `${r.name ? cap(r.name) : 'No reading'}${r.flux !== null && r.flux !== undefined ? `: protons of 10 MeV or more ${Number(r.flux).toFixed(2)} pfu` : ''}${r.time ? ` at GMT ${gmtDOY(r.time)}` : ''}. ${r.note || ''}`.trim();
+async function readFeed(id) {
+  ui.conn.live[id] = 'Reading...';
+  drawConnections();
+  if (id === 'isslive') {
+    // Cabin oxygen is shown in the row but not saved: converting the feed's value to the cell's measure is the team's open decision.
+    const r = await readCabinAir({ skip: ['cabinO2'] });
+    if (!r.ok) { ui.conn.live[id] = `No answer from ISSLive: ${r.error}`; drawConnections(); return; }
+    const fresh = onlyNew(r.readings, stored, SHIP.id);
+    for (const e of toEvents(fresh, { person: SHIP.id, state: ui.ship })) await keep(e);
+    if (fresh.length) rebuild();
+    ui.conn.live[id] = issText(r, fresh.length);
+    render();
+  } else if (id === 'spaceweather') {
+    const r = await readSpaceWeather();
+    ui.conn.live[id] = r.ok ? weatherText(r) : `No answer from NOAA: ${r.error}`;
+    drawConnections();
+  }
+}
+async function toggleFeed(id, on) {
+  ui.conn.on[id] = on;
+  if (!on) {
+    ui.conn.live[id] = null;
+    drawConnections();
+    if (!ui.conn.on.isslive && !ui.conn.on.spaceweather) { clearInterval(feedTimer); feedTimer = 0; }
+    return;
+  }
+  await readFeed(id);
+  if (!feedTimer) feedTimer = setInterval(() => { for (const k of ['isslive', 'spaceweather']) if (ui.conn.on[k]) readFeed(k); }, 5 * 60 * 1000);
+}
+
+// A CSV file from a wearable's export (Hexoskin, Astroskin, Actiware, Svantek) or any table with chosen columns.
+async function saveImported(readings, rejected, what, notes) {
+  const fresh = onlyNew(readings || [], stored, ui.person).slice(0, 5000);
+  for (const e of toEvents(fresh, { person: ui.person, state: ui.ship })) await keep(e);
+  rebuild();
+  render();
+  openPanel('Import from a file', [
+    h('p', {}, `${cap(what)}: ${fresh.length} new ${fresh.length === 1 ? 'reading' : 'readings'} saved${(rejected || []).length ? `; ${rejected.length} left out` : ''}.`),
+    ...(notes || []).map((n) => h('p', { class: 'note' }, String(n))),
+  ]);
+}
+async function importFile(file) {
+  const p = personById[ui.person];
+  if (!p || p.real || !file) return;
+  let text;
+  try { text = await file.text(); } catch { toast('Could not read the file.'); return; }
+  const res = importCsv(text, { person: p.id });
+  if (res.needsColumns) {
+    const picker = columnPicker(res.columns, { onPick: async (choice) => { const m = mapReadings(res.rows, choice); closePanel(); await saveImported(m.readings, m.rejected, 'the columns you chose', m.notes); } });
+    openPanel('Which columns?', [h('p', {}, res.notes[0] || 'Choose the time column, the value column and the measure.'), picker]);
+    return;
+  }
+  if (!res.format) { toast(res.notes[0] || 'No table was found in the file.'); return; }
+  await saveImported(res.readings, res.rejected, `${res.format.name}${res.format.documented ? '' : ' (layout guessed)'}`, res.notes);
+}
+
+// Export in HL7 FHIR R4 (src/fhir.js): LOINC codes, UCUM units, and where each value came from (Device, Provenance).
+// Example data carry FHIR's official "test data" label (HTEST), so they can never pass for a real person's record.
 function openFhir() {
-  const { bundle, count } = fhirBundle(ui.person);
-  const text = JSON.stringify(bundle, null, 2);
-  const pre = h('pre', { class: 'code', id: 'fhir-json' }, text.length > 60000 ? `${text.slice(0, 60000)}\n…` : text);
+  const p = personById[ui.person];
+  let res;
+  try { res = fhirExport({ machine, person: p, days: 30, example: ui.example, now: nowTime() }); } catch (err) { toast(err.message); return; }
+  const text = JSON.stringify(res.bundle, null, 2);
+  const pre = h('pre', { class: 'code', id: 'fhir-json' }, text.length > 60000 ? `${text.slice(0, 60000)}\n...` : text);
   openPanel('Export for the doctor: the FHIR standard', [
-    h('p', {}, `Readings in the last 30 days: ${count}. HL7 FHIR format with LOINC codes for the measures, the way medical record systems accept them.`),
+    h('p', {}, `Readings in the last 30 days: ${res.count}. HL7 FHIR R4 with LOINC codes and UCUM units, the way medical record systems accept them; each value names the device or answer it came from.`),
     ui.example ? h('p', { class: 'note' }, 'Example data carry FHIR\'s official "test data" label (HTEST).') : null,
     pre,
   ], [
@@ -1722,8 +1845,14 @@ function openFhir() {
         const r = document.createRange(); r.selectNodeContents(pre); const s = getSelection(); s.removeAllRanges(); s.addRange(r); toast('Selected: copy it with the keyboard.');
       }
     } }, 'Copy'),
-    h('a', { class: 'btn primary', href: URL.createObjectURL(new Blob([text], { type: 'application/fhir+json' })), download: `fhir-${ui.person}.json` }, 'Download the file'),
+    h('button', { type: 'button', class: 'btn primary', onclick: () => saveFile(text, FHIR_TYPE, fhirFileName(p.id, nowTime())) }, 'Download the file'),
   ]);
+}
+
+// "Add to plan": the planned reviews as a calendar file (iCalendar) any calendar program opens.
+function saveCalendar() {
+  saveFile(toICalendar(planDrafts({ from: new Date() }), { name: 'Crew health plan (draft)' }), ICAL_TYPE, icalFileName(ui.person || 'crew'));
+  toast('Calendar file saved: open it to add the planned reviews to a calendar.');
 }
 
 // ---------- settings ----------
@@ -1757,11 +1886,13 @@ async function restoreMine(file) {
   const have = new Set(stored.map((e) => `${e.kind}|${e.person}|${e.time}|${JSON.stringify(e.reading || e.report || {})}`));
   let added = 0;
   let bad = 0;
+  let other = 0;
   for (const line of (await file.text()).split(/\r?\n/)) {
     if (!line.trim()) continue;
     try {
       const e = JSON.parse(line);
       if (!e || !e.kind || !e.person || !e.time) { bad += 1; continue; }
+      if (e.person !== ui.person && e.person !== SHIP.id) { other += 1; continue; }
       const k = `${e.kind}|${e.person}|${e.time}|${JSON.stringify(e.reading || e.report || {})}`;
       if (have.has(k)) continue;
       have.add(k);
@@ -1771,7 +1902,7 @@ async function restoreMine(file) {
   }
   rebuild();
   render();
-  toast(`Brought back ${added} events${bad ? `; ${bad} lines could not be read` : ''}.`);
+  toast(`Brought back ${added} events${bad ? `; ${bad} lines could not be read` : ''}${other ? `; ${other} belonged to someone else and were left out` : ''}.`);
 }
 
 // Log a reading by hand on a measure page: the challenge asks for keyboard input, and NASA's own planned flow has
@@ -1806,6 +1937,40 @@ function logReadingForm(cell, owner, onDone) {
   return h('div', { class: 'log-form' }, ...fields, btn('primary small', 'Save the reading', save, 'check'));
 }
 
+function connectionsCard(p) {
+  const host = h('div', { id: 'conn-host' });
+  drawConnections(host, p);
+  return h('section', { class: 'card' }, cornerTip('t:connections', 'connections'), h('h2', {}, 'Connections'),
+    switchRow('st-exercise', 'I am exercising', `Heart rate from a strap or a cuff is then recorded, not judged against the resting range, so a workout raises no alarm. Low limits still count. It turns itself off after ${EXERCISE_HOURS} hours (draft).`, exercisingNow(), (on) => { ui.exercising = on; ui.exerciseUntil = on ? Date.now() + EXERCISE_HOURS * HOUR_MS : 0; }),
+    host);
+}
+function pinCard(p) {
+  if (!p || p.real) return null;
+  const tip = cornerTip('t:pin', 'the PIN');
+  if (!pinAvailable()) return h('section', { class: 'card' }, tip, h('h2', {}, 'PIN for my screen'), h('p', { class: 'muted' }, 'A PIN needs a secure page: open the program on this computer (127.0.0.1) or over https.'));
+  const has = hasPin(p.id);
+  const input = h('input', { id: 'pin-new', type: 'password', inputmode: 'numeric', autocomplete: has ? 'current-password' : 'new-password', maxlength: String(PIN_RULES.maxDigits), 'aria-describedby': 'pin-set-status' });
+  const status = h('p', { class: 'note', id: 'pin-set-status', role: 'status' });
+  const setIt = async () => {
+    const why = pinProblem(input.value);
+    if (why) { status.textContent = why; return; }
+    await setPin(p.id, input.value);
+    toast('PIN set: this screen asks for it at sign-in.');
+    renderSetup();
+  };
+  const removeIt = async () => {
+    if (!(await checkPin(p.id, input.value))) { input.value = ''; status.textContent = pinLocked(p.id) ? 'Locked after too many wrong tries.' : `Wrong PIN. Tries left: ${pinTriesLeft(p.id)}.`; return; }
+    clearPin(p.id);
+    toast('PIN removed.');
+    renderSetup();
+  };
+  return h('section', { class: 'card' }, tip, h('h2', {}, 'PIN for my screen'),
+    h('p', { class: 'muted' }, has ? 'Your screen asks for your PIN at sign-in. To remove the PIN, type it here.' : 'Optional: keeps a crewmate at the same computer out of your screen. 4 to 12 digits; 6 or more is better. Kept only in this browser, as a salted hash.'),
+    h('div', { class: 'log-form' }, h('label', { class: 'log-field' }, h('span', {}, has ? 'Your PIN' : 'New PIN'), input),
+      has ? btn('secondary small', 'Remove the PIN', removeIt, 'x') : btn('primary small', 'Set the PIN', setIt, 'shield')),
+    status);
+}
+
 function renderSetup() {
   const host = byId('screen-setup');
   const p = personById[ui.person];
@@ -1834,14 +1999,7 @@ function renderSetup() {
             h('div', { class: 'watch-row' }, h('p', {}, `Hand on the chest for ${CAM_RULES.chestSeconds} s: the question "Are you okay?", and an alarm only without confirmation.`), h('div', { class: 'meter', 'aria-hidden': 'true' }, h('span', { id: 'cam-chest-bar' }))),
             h('div', { class: 'watch-row' }, h('p', {}, `Eyes closed and almost no movement for ${CAM_RULES.sleepSeconds} s: "asleep", no alarm.`), h('div', { class: 'meter', 'aria-hidden': 'true' }, h('span', { id: 'cam-sleep-bar' })))),
           h('p', { class: 'note' }, "Google MediaPipe models (Apache 2.0) run on this computer. Google's model cards say they are not meant for decisions a human life depends on: this is a demonstration."))),
-      h('section', { class: 'card' }, cornerTip('t:connections', 'connections'), h('h2', {}, 'Connections'),
-        h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Bluetooth heart rate monitor'), h('small', { id: 'hr-live' }, hr.device ? `${hr.bpm ?? '…'} bpm` : 'Any chest strap or watch with the standard Bluetooth Heart Rate profile.')),
-          btn('secondary small', hr.device ? 'Connected' : 'Connect', connectHeartRate, 'bluetooth', { disabled: p.real ? true : null, 'data-tip': 't:bluetooth' })),
-        switchRow('st-exercise', 'I am exercising', 'Heart rate from the strap is then recorded, not judged against the resting range, so a workout raises no alarm. Low limits still count.', Boolean(ui.exercising), (on) => { ui.exercising = on; }),
-        h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Export for the doctor'), h('small', {}, 'A file medical record systems can read (HL7 FHIR).')),
-          btn('secondary small', 'Open', openFhir, 'file-json-2', { disabled: p.real ? true : null, 'data-tip': 't:fhir' })),
-        h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'NASA data'), h('small', {}, 'Real Inspiration4 blood tests from NASA OSDR.')),
-          h('a', { href: INSPIRATION4.source.urls[0], target: '_blank', rel: 'noopener', 'data-tip': 't:osdr' }, 'OSD-575'))),
+      connectionsCard(p),
       h('section', { class: 'card' }, h('h2', {}, 'About'),
         h('p', {}, `${MISSION.name}: launch ${fmtDate(MISSION.launch)}, landing ${fmtDate(MISSION.landing)}.`),
         h('p', {}, 'The levels (attention, needs action, urgent) and their thresholds are drafts: the team decides the final ones.'),
@@ -1852,6 +2010,7 @@ function renderSetup() {
           btn('secondary small', 'Save a copy', () => exportMine(), 'file-json-2')),
         h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Bring back a copy'), h('small', {}, 'Adds the events of a saved copy that are not here yet.')),
           h('label', { class: 'btn secondary small' }, icon('send', { size: 18 }), 'Choose a file', h('input', { type: 'file', accept: '.jsonl,.json,application/json', hidden: true, onchange: (e) => restoreMine(e.target.files[0]) })))),
+      pinCard(p),
       h('section', { class: 'card' }, cornerTip('t:onboard', 'the simulation switches'), h('h2', {}, 'Simulation, for the demonstration'),
         switchRow('st-ai', 'AI is working', 'With the AI off, only the automation works.', ui.ship.aiWorks, ship('aiWorks')),
         switchRow('st-doc', 'Doctor on board', 'Messages go to the doctor on board instead of Earth.', ui.ship.doctorOnBoard, ship('doctorOnBoard')),
@@ -1926,7 +2085,6 @@ setInterval(clock, 1000);
 let resizeFrame = 0;
 window.addEventListener('resize', () => { cancelAnimationFrame(resizeFrame); resizeFrame = requestAnimationFrame(() => { if (ui.screen === 'detail') redrawDetail(); }); });
 
-store = await openStore();
-stored = [...store.events];
+stored = [];
 rebuild();
 render();

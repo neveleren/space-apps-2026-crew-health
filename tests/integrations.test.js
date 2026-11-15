@@ -642,3 +642,15 @@ test('live: NOAA SWPC answers with a proton flux and an S level', LIVE, async ()
   assert.ok(r.level >= 0 && r.level <= 5);
   console.log(JSON.stringify({ level: r.level, flux: r.flux, time: r.time, alert: r.latestAlert && [r.latestAlert.time, r.latestAlert.title] }));
 });
+
+test('a heart rate strap without skin contact saves nothing', async () => {
+  const ble = await import('../src/ble.js');
+  // flags 0x04: contact feature supported, bit 1 clear: no contact; 0 bpm
+  const parsed = ble.parseHeartRate(new Uint8Array([0x04, 0]));
+  assert.equal(parsed.contact, false);
+  const out = ble.toReadings('heart-rate', parsed, new Date('2026-11-15T03:00:00Z'));
+  assert.deepEqual(out.readings, []);
+  assert.match(out.skipped[0].reason, /skin contact/);
+  const on = ble.toReadings('heart-rate', ble.parseHeartRate(new Uint8Array([0x06, 72])), new Date('2026-11-15T03:00:00Z'));
+  assert.equal(on.readings[0].value, 72);
+});

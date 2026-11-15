@@ -30,7 +30,7 @@ export const COMPARE_RULE = {
   slowerPct: 10,
   fasterPct: 10,
   placeholder: true,
-  text: "Slower or faster means a median at least 10% away from your own earlier runs. Placeholder: the team's open decision.",
+  text: "Slower or faster means a median at least 10% away from the earlier runs it is compared with. Placeholder: the team's open decision.",
 };
 
 export const SAY = "Modelled on NASA's Reaction Self Test. Compare only with yourself; not a fitness-for-duty test.";

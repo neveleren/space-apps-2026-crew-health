@@ -226,7 +226,11 @@ export function toReadings(kind, parsed, time = new Date()) {
     if (!isPlausible(indicator, value)) { skipped.push({ indicator, value, reason: 'outside the plausibility limits' }); return; }
     out.push({ source: k.source, indicator, value, unit, time: at });
   };
-  if (kind === 'heart-rate') add('pulse', parsed.bpm || null, 'bpm');
+  if (kind === 'heart-rate') {
+    // A strap that reports no skin contact sends noise (often 0 bpm), which must never raise the crew.
+    if (parsed.contact === false) skipped.push({ indicator: 'pulse', reason: 'the strap has no skin contact' });
+    else add('pulse', parsed.bpm || null, 'bpm');
+  }
   else if (kind === 'thermometer') {
     if (parsed.special) skipped.push({ indicator: 'temp', reason: `the device sent ${parsed.special}` });
     add('temp', parsed.celsius, '°C');

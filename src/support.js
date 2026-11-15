@@ -197,7 +197,7 @@ export const MIND_TIPS = [
     for: ['lowMood', 'topic:ground', 'topic:crew', 'topic:workload', 'topic:home'],
   },
   {
-    id: 'breathe', icon: 'wind', action: 'break', title: 'Five minutes of slow breathing',
+    id: 'breathe', icon: 'wind', action: 'break', title: 'A few minutes of slow breathing',
     text: 'Breathe in, then breathe out slowly, for longer than you breathed in. The Earth break paces it for you.',
     badge: BADGE.earth, source: SRC.breath2023,
     why: 'In a one-month study on Earth, 5 minutes a day of breathing with long, slow exhales improved mood more than mindfulness meditation (Cell Reports Medicine, 2023).',

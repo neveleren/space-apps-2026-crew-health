@@ -145,7 +145,7 @@ export function runEarthBreak({ onDone, onCancel, durationS = BREAK_RULES.durati
     left.textContent = completed ? 'Done' : 'Stopped';
     const box = h('div', { class: 'sup-eb-ask', role: 'group', 'aria-labelledby': 'sup-eb-ask-title' },
       h('h2', { id: 'sup-eb-ask-title' }, 'How do you feel now?'),
-      h('div', { class: 'actions' }, FEELINGS.map(([k, label]) => btn(k === 'better' ? 'primary' : 'secondary', label, () => finish(k)))),
+      h('div', { class: 'actions' }, FEELINGS.map(([k, label]) => btn('secondary', label, () => finish(k)))),
       h('button', { type: 'button', class: 'link', onclick: () => finish(null) }, 'Skip'),
       h('p', { class: 'note' }, 'Only you see your answer.'),
       h('p', {}, badge(BADGE.nasa)),
