@@ -468,6 +468,7 @@ function renderHome() {
   byId('today-note').hidden = true;
 
   renderCheckin(p, now, top);
+  renderComingUp(p, now);
   const keys = KEY_NUMBERS.filter((ind) => cellBy[ind] && machine.history(p.id, ind).length).slice(0, 4);
   byId('keynum-rows').replaceChildren(...keys.map((ind) => measureRow(p, ind, a, now)));
   renderGroups(p, a, now);
@@ -493,6 +494,30 @@ function mindChoice(p, a, primaryFirst) {
     choices,
     h('div', { class: 'actions' }, btn('secondary small', 'Not now', () => { offerDismissed.add(p.id); renderHome(); })),
     h('p', { class: 'note' }, "The team's idea: this conversation is not recorded or read, and the AI is there day and night, unlike doctors. Which AI it is, the team decides."));
+}
+
+// ---------- coming up: what is due, from the medical routine of an ISS flight ----------
+// Cadences: private medical conference weekly and private psychological conference every two weeks (NASA BHP and
+// CHP-IDSP, 2024 and 2025); thinking test monthly (NASA OCHMO-TB-016, WinSCAT); eye checks on flight days 30 and 90
+// and 30 days before return (NASA JSC 2018). The dates below are an example schedule, marked as such.
+function renderComingUp(p, now) {
+  const card = byId('comingup');
+  if (!p || p.real || !ui.example) { card.hidden = true; return; }
+  const day = Math.floor((msOf(now) - msOf(MISSION.launch)) / DAY) + 1;
+  const toLanding = Math.max(0, Math.ceil((msOf(MISSION.landing) - msOf(now)) / DAY));
+  const landingDay = day + toLanding;
+  const every = (n, offset = 0) => { const d = (n - ((day + offset) % n)) % n; return d === 0 ? n : d; };
+  const eyeDays = [30, 90, landingDay - 30].filter((d) => d > day);
+  const items = [
+    { ic: 'stethoscope', what: 'Private medical conference with your flight surgeon (weekly)', in: every(7, 3) },
+    { ic: 'message-square', what: 'Private talk with your psychologist (every 2 weeks)', in: every(14, 5) },
+    { ic: 'zap', what: 'Thinking test (monthly)', in: every(30, 11) },
+    eyeDays.length ? { ic: 'scan-line', what: 'Eye check: vision, retina scan (OCT)', in: eyeDays[0] - day } : { ic: 'scan-line', what: 'Eye check after landing', in: toLanding + 1 },
+  ].sort((a, b) => a.in - b.in).slice(0, 3);
+  const when = (n) => (n === 1 ? 'tomorrow' : `in ${n} days`);
+  byId('comingup-note').textContent = 'Example schedule';
+  byId('comingup-list').replaceChildren(...items.map((it) => h('li', {}, icon(it.ic, { size: 18 }), h('span', {}, it.what), h('span', { class: 'when' }, when(it.in)))));
+  card.hidden = false;
 }
 
 // ---------- morning check-in ----------
@@ -1551,6 +1576,7 @@ function render() {
   const p = personById[ui.person];
   byId('checkin').hidden = Boolean(p.real);
   byId('keynums').hidden = Boolean(p.real);
+  if (p.real) byId('comingup').hidden = true;
   const names = { home: 'Today', measures: 'All measures', alerts: 'Messages', setup: 'Settings' };
   const detailName = ui.detail ? (String(ui.detail).startsWith('blood:') ? 'Blood test' : (cellBy[ui.detail] || {}).label) : '';
   byId('screen-name').textContent = ui.screen === 'detail' ? detailName : names[ui.screen];
@@ -1577,6 +1603,7 @@ byId('today-head-tip').replaceWith(tipButton('t:today', 'this message'));
 byId('keynums-tip').replaceWith(tipButton('t:keynums', 'key numbers'));
 byId('measures-tip').replaceWith(tipButton('t:measures', 'all measures'));
 byId('checkin-tip').replaceWith(tipButton('t:checkin', 'the daily check-in'));
+byId('comingup-tip').replaceWith(tipButton('t:comingup', 'what is coming up'));
 byId('who-btn').addEventListener('click', () => { if (camStop) { camStop(); camStop = null; } closePanel(); ui.person = null; render(); });
 byId('alerts-btn').addEventListener('click', () => setScreen('alerts'));
 byId('ci-send').addEventListener('click', sendCheckin);

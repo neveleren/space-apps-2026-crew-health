@@ -2,6 +2,7 @@
 // Plain English, one idea per line. Written by Claude (Anthropic), an AI system, at the team's request.
 
 export const TIPS = {
+  comingup: { title: 'Coming up', lines: ['What the medical routine of an ISS flight brings next: a private medical conference every week, a private talk with the psychologist every two weeks, a thinking test every month, eye checks on flight days 30 and 90 and 30 days before return.', 'The dates here are an example schedule; on a real flight they come from the crew timeline.'] },
   falsealarm: { title: 'False alarm', lines: ['If the camera got it wrong, say so here: the alarm clears, and the note stays in your record so the doctor sees it.', 'NASA-STD-3001 Vol 2 asks that the crew can safely override automation (10165).'] },
   help: { title: 'Help key', lines: ['Hold it for 2 seconds to call for help by hand, at any time, from any screen.', 'It raises an urgent alert for the crew on board and the doctor, the same way as answering "I need help" to the camera question (NASA-STD-3001 Vol 2, 10178).'] },
   mission: { title: 'Mission profile', lines: ['Where the crew is decides how far help is: on the ISS a doctor answers within minutes and a return to Earth takes hours; on Mars a message takes up to about 22 minutes one way and there is no return for months (NASA HRP-48021).', 'The program works the same everywhere: it checks on board and does not need the link.'] },

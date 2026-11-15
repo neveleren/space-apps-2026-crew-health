@@ -255,6 +255,10 @@ h1 .tip-btn, h2 .tip-btn, p .tip-btn { width: 30px; height: 30px; margin-left: 2
 .needs .link { min-height: 32px; }
 .link.ink { color: var(--ink); text-decoration-color: var(--axis); }
 .empty-find { margin: 0; color: var(--muted); }
+.due { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.due li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; }
+.due li .icon { align-self: center; color: var(--muted); }
+.due .when { font-family: var(--font-mono); color: var(--muted); white-space: nowrap; }
 .log-form { display: flex; flex-wrap: wrap; align-items: end; gap: 12px 16px; }
 .log-field { display: grid; gap: 4px; font-weight: 600; }
 .log-field input { width: 11em; min-height: 44px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--axis); background: var(--bg); color: var(--ink); font-family: var(--font-mono); font-size: 18px; }
@@ -523,6 +527,11 @@ dialog p { margin: 0; }
           <div class="actions"><button type="button" class="btn primary" id="ci-send">Save my check-in</button><button type="button" class="link" id="ci-cancel">Not now</button></div>
           <p class="note">Your answers build up for a planned review, for example every two weeks. One bad day never raises an alarm.</p>
         </div>
+      </section>
+
+      <section class="card" id="comingup" aria-labelledby="comingup-title" hidden>
+        <div class="checkin-row"><p><b id="comingup-title">Coming up</b> <span id="comingup-tip"></span></p><span class="note" id="comingup-note"></span></div>
+        <ul class="due" id="comingup-list"></ul>
       </section>
 
       <section class="group" id="keynums" aria-labelledby="keynums-title">
