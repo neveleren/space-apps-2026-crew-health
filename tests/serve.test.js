@@ -429,14 +429,20 @@ test('without a key the message is not queued and not kept, so the screen can sa
   }, { OUTBOX_KEY_FILE: join(APP, 'demo-keys', 'no-such-key.json') });
 });
 
-test('a message to the doctor on board stays on board: kept for the screen, not queued for the downlink, no key needed', async () => {
+test('without a key a message to the doctor on board is still kept (that doctor reads it here); one to Earth is refused', async () => {
   await withServer(async (srv, dir) => {
     assert.equal((await postJson(srv, report('crew-1', 'Can you look at my ankle?', minutes(-1), 'doctor-onboard'))).status, 204);
     assert.deepEqual(await filesIn(join(dir, 'outbox')), []);
     const own = (await getJson(srv, '/api/events?person=crew-1')).value;
     assert.equal(own[0].report.to, 'doctor-onboard');
-    assert.equal((await postJson(srv, report('crew-1', 'And this one to Earth.'))).status, 503, 'a message to Earth still needs the key');
+    assert.equal((await postJson(srv, report('crew-1', 'And this one to Earth.'))).status, 503, 'a message to Earth needs the key');
   }, { OUTBOX_KEY_FILE: join(APP, 'demo-keys', 'no-such-key.json') });
+  await withServer(async (srv, dir) => {
+    const r = await postJson(srv, report('crew-1', 'Can you look at my ankle?', minutes(-1), 'doctor-onboard'));
+    assert.equal(r.status, 201, 'with a key it is queued too, as before');
+    assert.equal(JSON.parse(r.text).outbox.to, 'doctor-onboard');
+    assert.equal((await filesIn(join(dir, 'outbox'))).length, 1);
+  });
 });
 
 // The static copy (GitHub Pages) gets no headers, so a page may carry the policy in a meta tag. That copy of the

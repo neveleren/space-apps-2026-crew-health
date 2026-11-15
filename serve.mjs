@@ -3,8 +3,8 @@
 // server implementations work best, and ask that data be kept in plain files with no personal
 // information in file names. This file needs only Node.js.
 // It serves the pages and keeps the events (readings, reviews, messages to a doctor) in app/data, one plain file
-// per person, named by the person's id. A message to the doctor on Earth is also queued in app/data/outbox with its
-// text sealed for the flight surgeon's key: the hand-over point for the station's downlink. Nothing leaves this computer.
+// per person, named by the person's id. A message to a doctor is also queued in app/data/outbox with its text sealed
+// for the flight surgeon's key: the hand-over point for the station's downlink. Nothing leaves this computer.
 // The protection rules, with their sources, are in src/security.js; docs/SECURITY.md says what is protected and what is not.
 // Run: node serve.mjs   then open http://127.0.0.1:8080/
 // Settings: PORT; HOST, the address to listen on; HOSTS, more host names to answer to (comma-separated);
@@ -194,13 +194,13 @@ async function postEvent(req, res) {
   const problem = eventProblem(event);
   if (problem) return json(res, 400, { error: `not a valid event: ${problem}` });
   const clean = cleanEvent(event);
-  // A message to the doctor on Earth is queued first: if that fails, nothing is kept and the screen says so, so it
-  // can be sent again. A message to the doctor on board stays on board: it is not handed to the downlink, and it
-  // needs no ground key.
+  // A message is queued first: if that fails, nothing is kept and the screen says so, so it can be sent again.
+  // Without a key on this computer, a message to the doctor on board is still kept (that doctor reads it here);
+  // only a message to Earth, which cannot reach the ground without the key, is refused.
   let outbox = null;
-  if (clean.kind === 'report' && clean.report.to === 'doctor-earth') {
-    if (!OUTBOX_KEY) return json(res, 503, { error: 'no outbox key on this computer: the message was not queued' });
-    outbox = await queueMessage(clean);
+  if (clean.kind === 'report') {
+    if (OUTBOX_KEY) outbox = await queueMessage(clean);
+    else if (clean.report.to !== 'doctor-onboard') return json(res, 503, { error: 'no outbox key on this computer: the message was not queued' });
   }
   await mkdir(DATA, { recursive: true });
   await appendFile(join(DATA, `${clean.person}.jsonl`), `${JSON.stringify(clean)}\n`, 'utf8');
@@ -220,7 +220,7 @@ async function loadOutboxKey() {
     if (kty !== 'EC' || crv !== 'P-256') throw new Error('the key must be an EC P-256 public key');
     return { kid: String(k.kid || 'unnamed'), demo: k.demo === true, publicKey: createPublicKey({ key: { kty, crv, x, y }, format: 'jwk' }) };
   } catch (err) {
-    console.error(`No outbox key in ${file} (${err.message}): messages to the doctor on Earth cannot be queued.`);
+    console.error(`No outbox key in ${file} (${err.message}): messages to a doctor cannot be queued.`);
     return null;
   }
 }
@@ -343,6 +343,6 @@ const server = createServer(async (req, res) => {
 server.listen(PORT, HOST, () => {
   const at = HOST.includes(':') ? `[${HOST}]` : HOST;
   console.log(`Skeleton running at http://${at}:${PORT}/ (no internet needed). Data: ${DATA}. Stop with Ctrl+C.`);
-  console.log(`Answers only to the host names ${[...HOSTS].join(', ')}. Messages to the doctor on Earth are queued in ${OUTBOX}${OUTBOX_KEY ? `, sealed for key "${OUTBOX_KEY.kid}"${OUTBOX_KEY.demo ? ' (a DEMO key, not a real one)' : ''}` : ', but there is no outbox key'}.`);
+  console.log(`Answers only to the host names ${[...HOSTS].join(', ')}. Messages to a doctor are queued in ${OUTBOX}${OUTBOX_KEY ? `, sealed for key "${OUTBOX_KEY.kid}"${OUTBOX_KEY.demo ? ' (a DEMO key, not a real one)' : ''}` : ', but there is no outbox key'}.`);
   if (!LOCAL_HOSTS.includes(hostName(at))) console.log('Note: listening beyond this computer. There is no sign-in: anyone on the network who uses a name from HOSTS can read every person\'s data (/api/events?all=1).');
 });
