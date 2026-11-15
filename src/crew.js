@@ -509,15 +509,61 @@ function renderComingUp(p, now) {
   const every = (n, offset = 0) => { const d = (n - ((day + offset) % n)) % n; return d === 0 ? n : d; };
   const eyeDays = [30, 90, landingDay - 30].filter((d) => d > day);
   const items = [
-    { ic: 'stethoscope', what: 'Private medical conference with your flight surgeon (weekly)', in: every(7, 3) },
+    { ic: 'stethoscope', what: 'Private medical conference with your flight surgeon (weekly)', in: every(7, 3), act: () => openPmc(p) },
     { ic: 'message-square', what: 'Private talk with your psychologist (every 2 weeks)', in: every(14, 5) },
     { ic: 'zap', what: 'Thinking test (monthly)', in: every(30, 11) },
     eyeDays.length ? { ic: 'scan-line', what: 'Eye check: vision, retina scan (OCT)', in: eyeDays[0] - day } : { ic: 'scan-line', what: 'Eye check after landing', in: toLanding + 1 },
   ].sort((a, b) => a.in - b.in).slice(0, 3);
   const when = (n) => (n === 1 ? 'tomorrow' : `in ${n} days`);
   byId('comingup-note').textContent = 'Example schedule';
-  byId('comingup-list').replaceChildren(...items.map((it) => h('li', {}, icon(it.ic, { size: 18 }), h('span', {}, it.what), h('span', { class: 'when' }, when(it.in)))));
+  byId('comingup-list').replaceChildren(...items.map((it) => h('li', {}, icon(it.ic, { size: 18 }), h('span', {}, it.what, it.act ? [' ', btn('secondary small', 'Prepare', it.act, null, { 'data-tip': 't:pmc' })] : null), h('span', { class: 'when' }, when(it.in)))));
   card.hidden = false;
+}
+
+// A one-page summary of the last 7 days for the private medical conference; the person edits it and decides.
+function pmcSummary(p, now) {
+  const since = msOf(now) - 7 * DAY;
+  const lines = [`For my private medical conference. ${p.name}, flight day ${Math.floor((msOf(now) - msOf(MISSION.launch)) / DAY) + 1}, the last 7 days:`];
+  const nums = ['pulse', 'bp', 'spo2', 'temp', 'resp', 'sleep', 'fluid'];
+  for (const ind of nums) {
+    const cell = cellBy[ind];
+    if (!cell) continue;
+    const list = machine.history(p.id, ind).filter((x) => msOf(x.time) >= since);
+    if (!list.length) continue;
+    if (ind === 'bp') {
+      const sys = list.map((x) => Number(x.value.sys));
+      const dia = list.map((x) => Number(x.value.dia));
+      lines.push(`- Blood pressure: ${list.length} readings, ${Math.min(...sys)}/${Math.min(...dia)} to ${Math.max(...sys)}/${Math.max(...dia)} mmHg${list.some((x) => x.status === STATUS.OUT) ? ', some outside the normal range' : ''}.`);
+      continue;
+    }
+    const v = list.map((x) => Number(x.value)).filter(Number.isFinite);
+    if (!v.length) continue;
+    const avg = v.reduce((s, x) => s + x, 0) / v.length;
+    const r = (x) => (Math.abs(x) >= 100 ? String(Math.round(x)) : fmtVal(x));
+    lines.push(`- ${cell.label}: ${v.length} readings, average ${r(avg)} ${cell.unit || ''}, from ${r(Math.min(...v))} to ${r(Math.max(...v))}${list.some((x) => x.status === STATUS.OUT) ? ', some outside the normal range' : ''}.`.replace(/ +\./g, '.').replace(/ +,/g, ','));
+  }
+  const count = (ind, val) => machine.history(p.id, ind).filter((x) => msOf(x.time) >= since && x.value === val).length;
+  const moods = ['good', 'fair', 'bad'].map((v) => `${count('mood', v)} ${v}`).join(', ');
+  lines.push(`- Check-ins: mood ${moods}; energy ${count('attitude', 'energetic')} energetic, ${count('attitude', 'sluggish')} sluggish.`);
+  const active = alertsFor(p.id).filter((x) => x.system !== 'Ship');
+  if (active.length) lines.push(`- Flagged by the program: ${active.map((x) => `${x.title} (${LEVEL_WORD[x.level]})`).join('; ')}.`);
+  lines.push('', 'What I want to talk about:', '');
+  return lines.join('\n');
+}
+function openPmc(p) {
+  const area = h('textarea', { 'aria-label': 'Summary for the private medical conference' });
+  area.value = pmcSummary(p, nowTime());
+  openPanel('Prepare for your private medical conference', [
+    h('p', {}, 'A summary of your last 7 days, drafted by the automation. Change anything; add what you want to talk about. Nothing is sent unless you press Send.'),
+    area,
+    h('p', { class: 'note' }, 'NASA flight surgeons hold a private medical conference with each crew member every week, about 15 minutes.'),
+  ], [btn('primary', 'Send to my flight surgeon', async () => {
+    const to = ui.ship.doctorOnBoard ? 'doctor-onboard' : 'doctor-earth';
+    await keep({ v: 1, kind: 'report', time: new Date().toISOString(), person: ui.person, state: { ...ui.ship }, report: { to, text: area.value.slice(0, 6000), topic: 'pmc' } });
+    closePanel();
+    toast(to === 'doctor-earth' ? (ui.ship.linkToEarth ? 'Saved in the outbox: it goes with the next downlink.' : 'Saved in the outbox: it goes when the link is back.') : 'Saved for the doctor on board.');
+    render();
+  }, 'send')]);
 }
 
 // ---------- morning check-in ----------
