@@ -4,7 +4,7 @@ Crew Health Console, team Just For Fun, NASA Space Apps Challenge 2026, challeng
 
 This page shows in one place which NASA requirements the program touches, how far it meets each one, and the file or test that shows it. It is written for a NASA engineer who wants to check the claims.
 
-- **Checked:** 15 Nov 2026, against commit `45b7735` (branch `main` after the fixes of the final review). `npm test`: 270 tests, 268 pass, 0 fail, 2 live checks skipped unless `JFF_LIVE=1` (276 and 274 on version 1.2.0; 385 and 383 on version 1.3.0, which added the medical record, the cycle log, the doctor's drafts with three NASA rules, readiness and landing, and the alert log for an analog test; 467 tests on version 1.4.0, which added the Earth break scenes and the local AI with its rules, 0 fail, 2 skipped). The AI rows (sections 2.3 and 2.4), the ISS research software rows and the unit test row were checked again for version 1.4.0, against branch `rel-1.4.0` at commit `cbdc8de`.
+- **Checked:** 15 Nov 2026, against commit `45b7735` (branch `main` after the fixes of the final review). `npm test`: 270 tests, 268 pass, 0 fail, 2 live checks skipped unless `JFF_LIVE=1` (276 and 274 on version 1.2.0; 385 and 383 on version 1.3.0, which added the medical record, the cycle log, the doctor's drafts with three NASA rules, readiness and landing, and the alert log for an analog test; 467 tests on version 1.4.0, which added the Earth break scenes and the local AI with its rules, 0 fail, 2 skipped). The AI rows (sections 2.3 and 2.4), the ISS research software rows and the unit test row were checked again for version 1.4.0, against branch `rel-int` at commit `1f41fdd`.
 - **What this is:** a hackathon prototype. No NASA office, flight surgeon or security assessor has reviewed it. NASA appears here as the source of standards and data. NASA has not endorsed, approved or used this program.
 - **Limits that run through every table:**
   - every threshold is a draft: the team and the flight surgeons decide;
@@ -326,7 +326,7 @@ All links were opened on 15 Nov 2026.
 - Accessibility: axe-core 4.10.2 in headless Chromium against the local server, without pressing Send, Save or any switch.
 - Contrast: worked out from the colour tokens in `index.html`, both themes, and measured on the rendered pages: every visible text against its background, in the same set-ups as axe-core.
 - FHIR: the bundles of the four example crew members against HL7's R4 JSON schema.
-- Every function and test named on this page was searched for in the code; for version 1.4.0, the AI rows in branch `rel-1.4.0`.
+- Every function and test named on this page was searched for in the code; for version 1.4.0, the AI rows at commit `1f41fdd` on branch `rel-int`.
 - The browser, contrast and schema checks ran from scripts outside this repository; they are not part of `npm test`.
 
 [v1]: https://www.nasa.gov/wp-content/uploads/2023/11/nasa-std-3001-vol-1-rev-c-with-signature.pdf
