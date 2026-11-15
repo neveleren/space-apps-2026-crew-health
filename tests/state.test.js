@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { createMachine } from '../src/engine.js';
 import { CELLS, CREW, SHIP } from '../src/config.js';
 import { exampleFlight, MISSION } from '../src/demo-crew.js';
-import { assess, assessShip, headline, LEVEL } from '../src/state-levels.js';
+import { assess, assessShip, headline, headlineFor, topLevel, LEVEL, RULES, SLOW_MEASURES, EXPECTED } from '../src/state-levels.js';
 
 function flightMachine(extra = []) {
   const machine = createMachine({ cells: CELLS, crew: [...CREW, SHIP], state: { aiWorks: true, doctorOnBoard: false, linkToEarth: true } });
@@ -31,12 +31,19 @@ test('Member 4: many bad-mood days make the mind "needs action"', () => {
   assert.equal(a.psyche.level, LEVEL.ACTION);
 });
 
-test('changes common in flight (temperature up, short sleep) stay at "attention"', () => {
-  const a = assess({ machine: flightMachine(), person: person('crew-3'), cells: CELLS, mission: MISSION, now });
-  for (const ind of ['temp', 'sleep']) {
-    const it = a.body.items.find((x) => x.cell && x.cell.indicator === ind);
-    if (it) assert.equal(it.level, LEVEL.ATTENTION, ind);
+test('changes common in flight (temperature up, short sleep) are information on the page, never the headline', () => {
+  const machine = flightMachine();
+  const seen = new Set();
+  for (const p of CREW) {
+    const a = assess({ machine, person: p, cells: CELLS, mission: MISSION, now });
+    assert.ok(a.body.items.every((x) => x.kind !== 'expected'), p.id);
+    for (const x of a.info.filter((i) => i.kind === 'expected')) {
+      assert.equal(x.level, LEVEL.FINE);
+      assert.ok(x.expected.source && x.expected.url && x.expected.draft, 'the band carries its source and is a draft');
+      seen.add(x.cell.indicator);
+    }
   }
+  assert.deepEqual([...seen].sort(), ['sleep', 'temp']);
 });
 
 test('a camera alarm after "Are you okay?" makes the body "urgent"', () => {
@@ -56,4 +63,190 @@ test("the message follows the team's template", () => {
   assert.equal(headline('14 Nov 2026', LEVEL.FINE, LEVEL.FINE), 'As of 14 Nov 2026, your physical and mental condition is excellent. Keep it up, well done!');
   assert.equal(headline('14 Nov 2026', LEVEL.ATTENTION, LEVEL.FINE), 'As of 14 Nov 2026, your physical condition needs attention, your mental condition is excellent.');
   assert.equal(headline('14 Nov 2026', LEVEL.FINE, LEVEL.ACTION), 'As of 14 Nov 2026, your mental condition needs action, your physical condition is excellent.');
+});
+
+// ---------- safety and calm (drafts) on a small made-up flight ----------
+const DAY = 24 * 60 * 60 * 1000;
+const MIS = { name: 'test flight', launch: '2026-01-01T00:00:00.000Z', landing: '2026-07-01T00:00:00.000Z', today: '2026-05-01T12:00:00.000Z' };
+const at = (n, hour = 8) => new Date(Date.parse(MIS.launch) + n * DAY + hour * 60 * 60 * 1000).toISOString();
+const fresh = (state) => createMachine({ cells: CELLS, crew: [...CREW, SHIP], state: state || { aiWorks: true, doctorOnBoard: false, linkToEarth: true } });
+const put = (m, n, indicator, value, who = 'crew-1', extra = {}) => m.receive({ person: who, source: indicator, indicator, value, time: at(n), ...extra });
+// One ordinary day: every daily measure in its norm, and the check-in.
+function ordinaryDay(m, n, who = 'crew-1') {
+  for (const [ind, v] of [['pulse', 70], ['bp', { sys: 112, dia: 72 }], ['temp', 36.7], ['sleep', 7.2], ['resp', 14], ['fluid', 2700], ['radiation', 100 + n * 0.3], ['mood', 'good'], ['attitude', 'energetic']]) put(m, n, ind, v, who);
+}
+function ordinaryDays(m, from, to, who = 'crew-1') { for (let n = from; n <= to; n += 1) ordinaryDay(m, n, who); }
+const judgeOn = (m, n, who = 'crew-1') => assess({ machine: m, person: person(who), cells: CELLS, mission: MIS, now: new Date(at(n, 12)) });
+const itemOf = (a, indicator) => [...a.body.items, ...a.info].find((x) => x.cell && x.cell.indicator === indicator && x.kind !== 'stale');
+
+test('temperature: the in-flight rise is common only within its band, and a fever never is', () => {
+  const late = (value) => { const m = fresh(); ordinaryDays(m, 90, 100); put(m, 100, 'temp', value); return judgeOn(m, 100); };
+  const warm = late(37.9); // day 100: the rise has built up; below the fever line
+  assert.equal(itemOf(warm, 'temp').kind, 'expected');
+  assert.equal(warm.body.level, LEVEL.FINE);
+  const fever = late(38.0); // CDC: 38 °C or more is a fever
+  assert.equal(itemOf(fever, 'temp').kind, 'red');
+  assert.equal(fever.body.level, LEVEL.ACTION);
+  assert.equal(late(40.6).body.level, LEVEL.URGENT);
+  assert.equal(late(34.9).body.level, LEVEL.URGENT);
+  // Day 3: the rise has hardly begun, so 37.6 °C is not "common in flight": watched once, attention when it stays.
+  const m = fresh();
+  ordinaryDays(m, 0, 2);
+  put(m, 3, 'temp', 37.6);
+  assert.equal(itemOf(judgeOn(m, 3), 'temp').kind, 'watch');
+  put(m, 4, 'temp', 37.6);
+  put(m, 5, 'temp', 37.6);
+  assert.equal(itemOf(judgeOn(m, 5), 'temp').kind, 'out');
+  assert.equal(judgeOn(m, 5).body.level, LEVEL.ATTENTION);
+  // Before launch nothing is "common in flight".
+  const pre = fresh();
+  put(pre, -5, 'temp', 37.6);
+  assert.notEqual(itemOf(judgeOn(pre, -5), 'temp').kind, 'expected');
+  assert.ok(EXPECTED.temp.below <= 38.0, 'the band ends below the fever line');
+});
+
+test('sleep: 5 hours or more is common in flight; shorter nights are watched, and need attention when they go on', () => {
+  const m = fresh();
+  ordinaryDays(m, 80, 99);
+  for (let n = 80; n <= 99; n += 1) put(m, n, 'sleep', 6.0, 'crew-1', { time: at(n, 9) });
+  assert.equal(itemOf(judgeOn(m, 99), 'sleep').kind, 'expected');
+  put(m, 100, 'sleep', 5.0);
+  assert.equal(itemOf(judgeOn(m, 100), 'sleep').kind, 'expected');
+  // A run of common 6-hour nights does not count toward a streak: one night under 5 hours is only watched.
+  put(m, 101, 'sleep', 4.5);
+  const one = judgeOn(m, 101);
+  assert.equal(itemOf(one, 'sleep').kind, 'watch');
+  assert.equal(one.body.level, LEVEL.FINE);
+  put(m, 102, 'sleep', 4.5);
+  put(m, 103, 'sleep', 4.5);
+  assert.equal(judgeOn(m, 103).body.level, LEVEL.ATTENTION);
+  for (let n = 104; n <= 107; n += 1) put(m, n, 'sleep', 4.5);
+  assert.equal(judgeOn(m, 107).body.level, LEVEL.ACTION, `${RULES.outStreakForActionDaily} short nights in a row`);
+});
+
+test('a reading past a red limit raises its level at once; a daily vital just outside the norm waits for a repeat', () => {
+  const m = fresh();
+  ordinaryDays(m, 110, 120);
+  put(m, 120, 'spo2', 85);
+  const a = judgeOn(m, 120);
+  const red = itemOf(a, 'spo2');
+  assert.equal(red.kind, 'red');
+  assert.equal(red.level, LEVEL.URGENT);
+  assert.equal(red.red.source, 'MedlinePlus (NIH)');
+  assert.equal(a.body.items[0], red, 'the red item comes first');
+  // Heart rate 58: outside the Earth norm, far inside its red limits. Once is watched, three in a row is attention.
+  const p = fresh();
+  ordinaryDays(p, 110, 120);
+  put(p, 120, 'pulse', 58, 'crew-1', { time: at(120, 9) });
+  assert.equal(judgeOn(p, 120).body.level, LEVEL.FINE);
+  put(p, 121, 'pulse', 58);
+  put(p, 122, 'pulse', 58);
+  assert.equal(judgeOn(p, 122).body.level, LEVEL.ATTENTION);
+  // A measure taken rarely (eye pressure, on flight days 30 and 90) is judged on its one reading.
+  const e = fresh();
+  ordinaryDays(e, 85, 90);
+  put(e, 90, 'eyePressure', 24);
+  assert.equal(itemOf(judgeOn(e, 90), 'eyePressure').level, LEVEL.ATTENTION);
+});
+
+test('forecast: noisy daily vitals give no forecast alert; slow measures and a clear trend do', () => {
+  const m = flightMachine();
+  for (const p of CREW) {
+    const a = assess({ machine: m, person: p, cells: CELLS, mission: MISSION, now });
+    for (const it of a.body.items.filter((x) => x.kind === 'forecast')) assert.ok(SLOW_MEASURES.includes(it.cell.indicator), `${p.id} ${it.cell.indicator}`);
+  }
+  // Temperature rising 0.1 °C a day for 8 days, still inside the norm: the line clearly outruns the scatter.
+  const t = fresh();
+  for (let n = 10; n <= 17; n += 1) put(t, n, 'temp', Math.round((36.2 + 0.1 * (n - 10)) * 10) / 10);
+  const rising = itemOf(judgeOn(t, 17), 'temp');
+  assert.equal(rising.kind, 'forecast');
+  assert.ok(rising.m.clearTrend);
+  // The same rise over only 3 days is too few points to call clear.
+  const s = fresh();
+  for (let n = 10; n <= 12; n += 1) put(s, n, 'temp', Math.round((36.6 + 0.2 * (n - 10)) * 10) / 10);
+  assert.equal(itemOf(judgeOn(s, 12), 'temp'), undefined);
+});
+
+test('no fresh data: silence is never "excellent"', () => {
+  const m = fresh();
+  ordinaryDays(m, 100, 116);
+  assert.equal(headlineFor('1 May 2026', judgeOn(m, 116)), 'As of 1 May 2026, your physical and mental condition is excellent. Keep it up, well done!');
+  const silent = judgeOn(m, 120); // four days with no reading at all
+  assert.equal(silent.fresh.body, false);
+  assert.equal(silent.fresh.mind, false);
+  assert.ok(silent.fresh.missing.some((x) => x.indicator === 'pulse' && x.days === 4));
+  assert.equal(headlineFor('1 May 2026', silent), 'As of 1 May 2026, there is not enough fresh data to judge your physical and mental condition.');
+  // Body readings go on, the check-in stops.
+  for (let n = 117; n <= 120; n += 1) for (const [ind, v] of [['pulse', 70], ['bp', { sys: 112, dia: 72 }], ['temp', 36.7], ['sleep', 7.2], ['resp', 14], ['fluid', 2700], ['radiation', 140]]) put(m, n, ind, v);
+  assert.equal(headlineFor('1 May 2026', judgeOn(m, 120)), 'As of 1 May 2026, there is not enough fresh data to judge your mental condition, your physical condition is excellent.');
+  // A problem comes before missing data.
+  put(m, 120, 'spo2', 94);
+  assert.equal(headlineFor('1 May 2026', judgeOn(m, 120)), 'As of 1 May 2026, your physical condition needs attention, there is not enough fresh data to judge your mental condition.');
+  // An empty record is not "excellent" either.
+  assert.equal(headlineFor('1 May 2026', judgeOn(fresh(), 120)), 'As of 1 May 2026, there is not enough fresh data to judge your physical and mental condition.');
+});
+
+test("ship: a cabin value past the ship's own limit reaches every person's message as a ship alarm", () => {
+  const m = fresh();
+  ordinaryDays(m, 110, 120, 'crew-1');
+  ordinaryDays(m, 110, 120, 'crew-2');
+  m.receive({ person: 'ship', source: 'co2-sensor', indicator: 'co2', value: 4.2, time: at(120) });
+  const caution = judgeOn(m, 120);
+  assert.equal(caution.ship.level, LEVEL.FINE, 'CO2 above the norm but inside the ship limit stays on the ship row');
+  assert.equal(assessShip({ machine: m, ship: SHIP, cells: CELLS, mission: MIS, now: new Date(at(120, 12)) }).level, LEVEL.ATTENTION);
+  m.receive({ person: 'ship', source: 'pressure-sensor', indicator: 'cabinPressure', value: 30, time: at(120, 9) });
+  for (const who of ['crew-1', 'crew-2']) {
+    const a = judgeOn(m, 120, who);
+    assert.equal(a.ship.level, LEVEL.URGENT, who);
+    assert.equal(a.body.level, LEVEL.FINE, "the ship's air is not the person's body");
+    assert.equal(topLevel(a), LEVEL.URGENT);
+    assert.equal(headlineFor('1 May 2026', a), 'Ship emergency: follow ship procedures. As of 1 May 2026, your physical and mental condition is excellent.');
+  }
+});
+
+test('headline drafts: ship caution, and no doctor to call', () => {
+  assert.equal(headline('1 May 2026', LEVEL.FINE, LEVEL.ATTENTION, { shipLevel: LEVEL.ACTION }), 'Ship caution: follow ship procedures. As of 1 May 2026, your mental condition needs attention, your physical condition is excellent.');
+  assert.equal(headline('1 May 2026', LEVEL.URGENT, LEVEL.FINE, { doctorReachable: false }), 'As of 1 May 2026, your physical condition needs help: the crew on board has been alerted, your mental condition is excellent.');
+  assert.equal(headline('1 May 2026', LEVEL.URGENT, LEVEL.FINE), 'As of 1 May 2026, your physical condition needs help: a doctor has been called, your mental condition is excellent.');
+  // The camera with no doctor on board and no link: urgent, and the message says who was alerted.
+  const m = fresh({ aiWorks: true, doctorOnBoard: false, linkToEarth: false });
+  ordinaryDays(m, 110, 120);
+  put(m, 120, 'camera', 'chest_grab_no_answer');
+  const a = judgeOn(m, 120);
+  assert.equal(a.doctorReachable, false);
+  assert.match(headlineFor('1 May 2026', a), /needs help: the crew on board has been alerted/);
+});
+
+test('mind: the placeholder rule needs 6 low days of the last 14 for attention and 8 for action', () => {
+  const lowDays = (k) => {
+    const m = fresh();
+    ordinaryDays(m, 106, 120);
+    for (let n = 120 - k + 1; n <= 120; n += 1) put(m, n, 'mood', 'bad', 'crew-1', { time: at(n, 9) });
+    return judgeOn(m, 120).psyche.level;
+  };
+  assert.equal(lowDays(RULES.badDaysForAttention - 1), LEVEL.FINE);
+  assert.equal(lowDays(RULES.badDaysForAttention), LEVEL.ATTENTION);
+  assert.equal(lowDays(RULES.badDaysForAction), LEVEL.ACTION);
+});
+
+test('example flight: most days calm, the real problems still flagged', () => {
+  const machine = createMachine({ cells: CELLS, crew: [...CREW, SHIP], state: { aiWorks: true, doctorOnBoard: false, linkToEarth: true } });
+  const events = exampleFlight(CREW);
+  const launch = Date.parse(MISSION.launch);
+  const end = Date.parse(MISSION.today);
+  const above = Object.fromEntries(CREW.map((p) => [p.id, 0]));
+  let days = 0;
+  let i = 0;
+  for (let t = launch + DAY + 18 * 60 * 60 * 1000; t <= end; t += DAY) {
+    for (; i < events.length && Date.parse(events[i].time) <= t; i += 1) {
+      const ev = events[i];
+      if (ev.kind === 'reading') machine.receive({ ...ev.reading, person: ev.person, time: ev.time });
+    }
+    days += 1;
+    for (const p of CREW) if (topLevel(assess({ machine, person: p, cells: CELLS, mission: MISSION, now: new Date(t) })) > LEVEL.FINE) above[p.id] += 1;
+  }
+  for (const id of ['crew-1', 'crew-2', 'crew-3']) assert.ok(above[id] < days * 0.1, `${id}: ${above[id]} of ${days} days above fine`);
+  for (; i < events.length; i += 1) { const ev = events[i]; if (ev.kind === 'reading') machine.receive({ ...ev.reading, person: ev.person, time: ev.time }); }
+  assert.equal(assess({ machine, person: person('crew-4'), cells: CELLS, mission: MISSION, now }).psyche.level, LEVEL.ACTION, "member 4's mood slide");
+  assert.ok(assess({ machine, person: person('crew-2'), cells: CELLS, mission: MISSION, now }).body.items.some((x) => x.kind === 'forecast' && x.cell.indicator === 'vo2max'), "Elly's endurance");
 });
