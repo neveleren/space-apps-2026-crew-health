@@ -27,6 +27,11 @@ import { readSpaceWeather } from './spaceweather.js';
 import { fhirBundle as fhirExport, FHIR_TYPE, fhirFileName } from './fhir.js';
 import { toICalendar, planDrafts, ICAL_TYPE, icalFileName } from './ical.js';
 import { pinAvailable, hasPin, pinLocked, checkPin, pinTriesLeft, pinProblem, setPin, clearPin, PIN_RULES } from './privacy.js';
+import {
+  ALARM_RULES, initialsOf, typedNumber, eventKey, newShared, crewLines, latestLine, alarmSince, alarmText, falseAlarmText, allClearText, SIGN_IN_HELP_TEXT,
+  needsNewLine, alarmReportText, messageStatus, lineStatus, statusFromOutbox, doctorWords, doctorShort, crewWords, clearWords, noteWords, askTimerText, sentChip,
+  restorePlan, shortReason,
+} from './crew-alarm.js';
 
 // One icon per measure, so a list can be read at a glance.
 const ICON_FOR = { pulse: 'heart-pulse', bp: 'activity', glucose: 'droplet', temp: 'thermometer', spo2: 'droplets', sleep: 'moon', resp: 'wind', fluid: 'glass-water', bodyMass: 'scale', eyePressure: 'eye', hearing: 'ear', radiation: 'radiation', vo2max: 'heart', strength: 'dumbbell', bone: 'bone', camera: 'camera', mood: 'smile', attitude: 'battery', sleepQuality: 'bed', cognition: 'brain', reaction: 'zap', cycle: 'calendar-heart', xray: 'scan-line', ecg: 'chart-line', ultrasound: 'waves', exercise: 'flame', visionCheck: 'eye', octChange: 'eye', octScan: 'scan-line', symptoms: 'stethoscope', medicines: 'pill', co2: 'cloud-fog', cabinTemp: 'thermometer', cabinO2: 'orbit', cabinPressure: 'gauge', noise: 'volume-2', blood: 'test-tube' };
@@ -80,14 +85,19 @@ function toast(text) {
   lastToast = node;
   setTimeout(() => { node.remove(); if (lastToast === node) lastToast = null; }, Math.max(3600, 70 * String(text).length));
 }
+function dropToast() {
+  for (const n of document.querySelectorAll('.toast')) n.remove();
+  lastToast = null;
+}
 
-// Per-device conveniences only (the switches of the situation, the muted sound, seen alerts).
+// Per-device conveniences only (the switches of the situation, seen alerts). "Sound off" is not kept: it never
+// passes to the next person, and it starts on again at every sign-in (NASA-STD-3001 Vol 2, 10114).
 const KEY = 'jff-crew-ui-v1';
 function loadPrefs() {
   try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { return {}; }
 }
 function savePrefs() {
-  try { localStorage.setItem(KEY, JSON.stringify({ ship: ui.ship, muted: ui.muted, seen: [...ui.seen], example: ui.example, profile: ui.profile })); } catch { /* storage blocked: the page still works */ }
+  try { localStorage.setItem(KEY, JSON.stringify({ ship: ui.ship, seen: [...ui.seen].slice(-2000), example: ui.example, profile: ui.profile })); } catch { /* storage blocked: the page still works */ }
 }
 
 // ---------- state ----------
@@ -100,7 +110,7 @@ const ui = {
   from: '',
   to: '',
   ship: { aiWorks: true, doctorOnBoard: false, linkToEarth: true, ...(prefs.ship || {}) },
-  muted: Boolean(prefs.muted),
+  muted: false,
   example: prefs.example !== false,
   seen: new Set(prefs.seen || []),
   checkin: { mood: null, attitude: null, sleepQuality: null, weighing: [] },
@@ -137,51 +147,294 @@ function rebuild() {
   machine.setState(ui.ship);
 }
 
-async function keep(event) {
-  stored.push(event);
-  try {
-    return { ok: true, answer: await store.append(event) };
-  } catch {
-    toast('Could not save: this record exists only on this screen.');
-    return { ok: false, answer: null };
+// ---------- saving ----------
+// Our own station server runs on this computer (http, localhost or 127.0.0.1); a static copy on the web has none.
+// The same test as src/store.js.
+const ownServer = () => location.protocol === 'http:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+const apiUrl = (path) => new URL(path, location.href).href;
+// The station server did not answer: what the person enters waits in this browser and goes when it answers (QA-08).
+let serverDown = false;
+
+// Events the station server has not taken yet. They stay on the screen, are kept in this browser, and are sent as
+// soon as the server answers again. Like the browser store of a static copy, the list holds whoever entered them
+// on this computer, so the record of a person who signed out meanwhile still reaches the server.
+const WAIT_KEY = 'jff-crew-waiting-v1';
+let waiting = (() => {
+  try { const x = JSON.parse(localStorage.getItem(WAIT_KEY) || '[]'); return Array.isArray(x) ? x.filter((e) => e && e.kind && e.person && e.time) : []; } catch { return []; }
+})();
+let waitingKept = true; // false when this browser blocks storage: then the list lives only until the page closes
+function saveWaiting() { try { localStorage.setItem(WAIT_KEY, JSON.stringify(waiting)); waitingKept = true; } catch { waitingKept = false; } }
+const isWaiting = (e) => { const k = eventKey(e); return waiting.some((w) => eventKey(w) === k); };
+function holdForServer(e) { if (!isWaiting(e)) { waiting.push(e); saveWaiting(); } schedulePoll(ALARM_RULES.retrySeconds); }
+function dropWaiting(e) { const k = eventKey(e); waiting = waiting.filter((w) => eventKey(w) !== k); saveWaiting(); }
+
+// What became of each message and crew line, by eventKey: from the server's answer, or the outbox at sign-in.
+const savedAs = new Map();
+// Messages to a doctor that were not saved: "Sent messages" lists them as "Not sent", with "Send again" (QA-06).
+let unsent = [];
+
+function forget(event) {
+  stored = stored.filter((e) => e !== event);
+  if (store && Array.isArray(store.events)) { const i = store.events.indexOf(event); if (i >= 0) store.events.splice(i, 1); }
+}
+function note(event, res, kind = store ? store.kind : 'memory') {
+  const k = eventKey(event);
+  if (event.kind === 'report') {
+    savedAs.set(k, messageStatus(res, { to: event.report.to, storeKind: kind }));
+    if (res.ok) unsent = unsent.filter((u) => !(u.event.report.to === event.report.to && u.event.report.text === event.report.text));
   }
+  if (event.kind === 'alarm') savedAs.set(k, lineStatus(res, { storeKind: kind }));
+  return res;
+}
+function failed(event, why, quiet) {
+  if (event.kind === 'report') unsent = [...unsent.filter((u) => u.event !== event), { event, why }];
+  if (event.kind === 'report' || event.kind === 'alarm') savedAs.set(eventKey(event), 'unsent');
+  if (!quiet) toast(`Not saved: ${shortReason(why)}. Try again.`);
+  return { ok: false, answer: null, why };
+}
+// The status of a saved message or crew line, for the words on the screen.
+function statusOf(event) {
+  if (!event) return null;
+  if (isWaiting(event)) return 'waiting';
+  const k = eventKey(event);
+  if (savedAs.has(k)) return savedAs.get(k);
+  const server = store && store.kind === 'server';
+  if (event.kind === 'alarm') return server ? 'shared' : 'local';
+  return server ? 'server' : 'local';
+}
+
+// Every event goes through here, and the answer says what really happened: { ok, answer } when saved; { ok, waiting }
+// when it is kept in this browser until the station server answers; { ok: false, why } when it was not saved. An
+// event that was not saved leaves the screen again, so the screen never shows more than the record holds (QA-06,
+// QA-07). retry: a passing refusal of the station computer (a 5xx answer other than "no outbox key") is tried again
+// too, for the parts of a call for help (QA-01).
+async function keep(event, { quiet = false, retry = false } = {}) {
+  stored.push(event);
+  if (serverDown && ownServer()) { holdForServer(event); return note(event, { ok: true, waiting: true, answer: null }); }
+  if (!store) { forget(event); return failed(event, 'nothing is open to save into', quiet); }
+  try {
+    const answer = await store.append(event);
+    return note(event, { ok: true, answer });
+  } catch (err) {
+    const why = String((err && err.message) || err);
+    const answered = /^not saved: \d{3}/.test(why);
+    if (store.kind === 'server' && (!answered || (retry && /^not saved: 5\d\d/.test(why) && !/^not saved: 503/.test(why)))) {
+      if (!answered) { serverDown = true; schedulePoll(ALARM_RULES.retrySeconds); }
+      holdForServer(event);
+      return note(event, { ok: true, waiting: true, answer: null, why });
+    }
+    forget(event);
+    return failed(event, why, quiet);
+  }
+}
+
+// Sends what waits in this browser, oldest first. A refusal for good (4xx, or 503 "no outbox key") leaves the list
+// and is reported; a passing one (5xx) stays for the next try; no answer at all stops until the next look.
+let flushing = false;
+async function flushWaiting() {
+  const out = { sent: 0, refused: 0, reached: false, events: [] };
+  if (flushing || !waiting.length || !ownServer()) return out;
+  flushing = true;
+  try {
+    for (const e of [...waiting]) {
+      let res;
+      try {
+        res = await fetch(apiUrl('./api/events'), { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(e) });
+      } catch { break; }
+      out.reached = true;
+      if (res.ok) {
+        let answer = null;
+        if (res.status === 201) { try { answer = await res.json(); } catch { /* no answer body */ } }
+        dropWaiting(e);
+        note(e, { ok: true, answer }, 'server');
+        out.sent += 1;
+        out.events.push(e);
+      } else if (res.status >= 500 && res.status !== 503) {
+        continue;
+      } else {
+        let why = '';
+        try { why = (await res.json()).error || ''; } catch { /* no reason given */ }
+        dropWaiting(e);
+        forget(e);
+        failed(e, `not saved: ${res.status}${why ? ` (${why})` : ''}`, true);
+        out.refused += 1;
+      }
+    }
+  } finally {
+    flushing = false;
+  }
+  return out;
+}
+
+// Every open crew screen looks at the station computer every ALARM_RULES.pollSeconds while someone is signed in:
+// new crew lines and the ship's readings come in, the banner and Today are drawn again, and a new crewmate alarm
+// sounds (FS-01, HF-01, PO-1). The same look sends what waits in this browser, and notices when a server that did
+// not answer is back. The crew screen still reads only its person's events (/api/events?person=<id>).
+let pollTimer = 0;
+let polling = false;
+function schedulePoll(seconds = ALARM_RULES.pollSeconds) {
+  clearTimeout(pollTimer);
+  pollTimer = 0;
+  if (!ownServer()) return;
+  if (!ui.person && !waiting.length) return;
+  pollTimer = setTimeout(pollOnce, seconds * 1000);
+}
+async function pollOnce() {
+  if (polling) return;
+  polling = true;
+  try {
+    const person = ui.person;
+    // The sign-in screen only sends what waits (a call for help from there, or the record of someone who signed out).
+    if (!person) {
+      const f = waiting.length ? await flushWaiting() : { reached: false };
+      if (f.reached && serverDown) { serverDown = false; store = null; }
+      checkHelpCall();
+      return;
+    }
+    if (waiting.length && !serverDown) await flushWaiting();
+    if (personById[person].real) return;
+    const res = await fetch(apiUrl(`./api/events?person=${encodeURIComponent(person)}`), { headers: { Accept: 'application/json' }, cache: 'no-store' });
+    if (!res.ok || !(res.headers.get('content-type') || '').includes('application/json')) return;
+    const events = await res.json();
+    if (ui.person !== person || !Array.isArray(events)) return;
+    if (serverDown || !store || store.kind !== 'server') { await reconnect(person); return; }
+    const fresh = newShared(events, stored, { ship: SHIP.id });
+    if (fresh.length) {
+      stored.push(...fresh);
+      if (fresh.some((e) => e.kind === 'reading')) rebuild();
+      redrawShared();
+    }
+    checkHelpCall();
+  } catch {
+    // no answer this time: the next look tries again
+  } finally {
+    polling = false;
+    schedulePoll(waiting.length ? ALARM_RULES.retrySeconds : ALARM_RULES.pollSeconds);
+  }
+}
+// The banner, the Messages key and Today again, without touching a form the person may be typing in.
+function redrawShared() {
+  renderBar();
+  if (ui.screen === 'home') renderHome();
+  else if (ui.screen === 'alerts') renderAlerts();
+}
+// The station server answers again: send what waited, then read the record from the server.
+async function reconnect(person) {
+  // serverDown stays true until the server's store is open, so what is entered meanwhile still waits in this browser.
+  const sent = await flushWaiting();
+  if (!sent.reached && waiting.length) return;
+  let s;
+  try { s = await openStore({ person }); } catch { return; }
+  if (ui.person !== person || !s || s.kind !== 'server') return;
+  const late = waiting.length ? await flushWaiting() : { events: [] };
+  store = s;
+  serverDown = false;
+  stored = withWaiting([...s.events, ...sent.events, ...late.events], person);
+  await readOutbox();
+  rebuild();
+  render();
+  checkHelpCall();
+  toast(`The station server answers again.${sent.sent ? ` ${sent.sent} ${sent.sent === 1 ? 'record' : 'records'} kept in this browser ${sent.sent === 1 ? 'is' : 'are'} saved there now.` : ''}${sent.refused ? ` ${sent.refused} could not be saved: see Sent messages.` : ''}`);
 }
 
 // What a sent message became, in words; null when it was not saved (keep() has already said so).
 function sentText(to, res, what = 'The message') {
   if (!res || !res.ok) return null;
-  if (to !== 'doctor-earth') return `${what} is saved for the doctor on board.`;
-  const queued = res.answer && res.answer.outbox && res.answer.outbox.status === 'queued';
-  if (queued) return `${what} is sealed in the outbox: it goes ${ui.ship.linkToEarth ? 'with the next downlink' : 'when the link is back'}.`;
-  return `${what} is saved on this computer only: this copy runs without the station server, so nothing is sent.`;
+  const st = messageStatus(res, { to, storeKind: store ? store.kind : 'memory' });
+  if (st === 'waiting') return `${what} is kept in this browser: the station server is not answering, and it goes there${to === 'doctor-earth' ? ' and into the outbox' : ''} when it answers again.`;
+  if (st === 'onboard') return `${what} is saved for the doctor on board.`;
+  if (st === 'queued') return `${what} is sealed in the outbox: it goes ${ui.ship.linkToEarth ? 'with the next downlink' : 'when the link is back'}.`;
+  if (st === 'local') return `${what} is saved on this computer only: this copy runs without the station server, so nothing is sent.`;
+  return `${what} is saved on the station server.`;
 }
 
+// ---------- the crew alarm ----------
 // A crewmate's screen learns only that this person needs help now, never the rest of the record
-// (14 CFR 1214.403: crewmembers may not use another's medical information without consent).
+// (14 CFR 1214.403: crewmembers may not use another's medical information without consent). A new line is written
+// whenever the set of urgent signs changes, and an all clear when it ends (FS-05); each urgent line also sends an
+// automatic message to the doctor, so "a doctor has been called" is true (FS-02).
 const HOUR_MS = 60 * 60 * 1000;
-async function shareCrewAlarm(personId, indicator) {
-  const p = personById[personId];
-  if (!p || p.real || personId === SHIP.id) return;
+const HELP_SOURCE = { id: 'help-key', indicator: 'camera' };
+const URGENT_LABELS = CELLS.filter((c) => c.section !== 'env' && (c.red || []).some((r) => r.level === 'urgent')).map((c) => c.label);
+const SIGN_TOKENS = [...URGENT_LABELS, 'Help key', 'camera'];
+const CAMERA_SIGN = { chest_grab: 'the camera saw a hand held to the chest', chest_grab_help: 'answered "I need help" to the camera question', chest_grab_no_answer: 'no answer to the camera question "Are you okay?"' };
+
+// The newest camera or Help key alarm of the last day, unless a later "I am okay" cleared it (the rule
+// state-levels.js follows too). Made-up example events never raise a crew alarm.
+function cameraAlarm(personId, now = nowTime()) {
+  const cam = machine.history(personId, 'camera').filter((x) => msOf(now) - msOf(x.time) <= LEVEL_RULES.cameraHours * HOUR_MS);
+  let i = cam.length - 1;
+  while (i >= 0 && cam[i].status !== STATUS.OUT) i -= 1;
+  if (i < 0 || cam[i].example || cam.slice(i + 1).some((x) => x.value === 'chest_grab_ok')) return null;
+  return cam[i];
+}
+// The urgent signs of one person now, from real readings only.
+function urgentSigns(p) {
   const now = nowTime();
   const a = assess({ machine, person: p, cells: CELLS, mission: MISSION, now });
-  const it = a.body.items.find((x) => x.level >= LEVEL.URGENT && (x.kind === 'red' || x.kind === 'camera') && (!x.cell || x.cell.indicator === indicator));
-  if (!it) return;
-  if (stored.some((e) => e.kind === 'alarm' && e.person === personId && Math.abs(Date.now() - msOf(e.time)) < HOUR_MS)) return;
-  const what = it.kind === 'red' ? `${it.cell.label} ${valueText(it.cell.indicator, it.m.last.value)} ${it.cell.unit || ''}`.trim() : 'an alarm was raised';
-  await keep({ v: 1, kind: 'alarm', time: new Date().toISOString(), person: personId, alarm: { text: `${p.name} needs help now: ${what}.` } });
+  const reds = a.body.items.filter((x) => x.kind === 'red' && x.level >= LEVEL.URGENT && x.m && x.m.last && !x.m.last.example);
+  const cam = cameraAlarm(p.id, now);
+  const helpKey = Boolean(cam && cam.source === HELP_SOURCE.id);
+  const tokens = [...(cam ? [helpKey ? 'Help key' : 'camera'] : []), ...reds.map((x) => x.cell.label)];
+  const signs = [...(cam && !helpKey ? [CAMERA_SIGN[cam.value] || 'a camera alarm'] : []), ...reds.map((x) => `${x.cell.label} ${valueText(x.cell.indicator, x.m.last.value)} ${x.cell.unit || ''}`.trim())];
+  const what = [
+    ...(cam ? [helpKey ? `${p.name} pressed the Help key, GMT ${gmtDOY(cam.time)}.` : `The camera saw a hand held to the chest, and ${cam.value === 'chest_grab_help' ? `${p.name} answered "I need help"` : 'there was no answer to "Are you okay?"'}, GMT ${gmtDOY(cam.time)}.`] : []),
+    ...reds.map((x) => `${x.cell.label} ${itemText(x, p).text}`),
+  ];
+  return { cam, helpKey, tokens, signs, what };
+}
+// The latest value of each sign a line named, for the all clear: "Blood oxygen (SpO2) 98 %".
+function valuesNamedIn(p, text) {
+  return CELLS.filter((c) => URGENT_LABELS.includes(c.label) && String(text).includes(c.label)).map((c) => {
+    const last = machine.history(p.id, c.indicator).slice(-1)[0];
+    return last ? `${c.label} ${valueText(c.indicator, last.value)} ${c.unit || ''}`.trim() : null;
+  }).filter(Boolean);
+}
+const crewSentence = (st, clear) => ({
+  shared: clear ? 'The crew screens on board stop showing the alarm.' : 'The crew screens on board show the alarm.',
+  local: 'This copy runs without the station server: no other crew screen has it.',
+  waiting: 'The crew line was still waiting for the station computer when this was written.',
+  unsent: 'The crew line was not saved.',
+})[st] || '';
+
+async function shareCrewAlarm(personId, { force = false, falseAlarm = false } = {}) {
+  const p = personById[personId];
+  if (!p || p.real || personId === SHIP.id) return null;
+  const u = urgentSigns(p);
+  const last = latestLine(stored, personId);
+  if (!force && !needsNewLine(last, u.tokens, SIGN_TOKENS)) return null;
+  const time = new Date().toISOString();
+  const clear = !u.tokens.length;
+  const named = last && !last.alarm.clear ? valuesNamedIn(p, last.alarm.text) : [];
+  const text = clear ? (falseAlarm ? falseAlarmText(p.name) : allClearText(p.name, named.join('; '))) : alarmText(p.name, { helpKey: u.helpKey, signs: u.signs });
+  const line = { v: 1, kind: 'alarm', time, person: personId, alarm: clear ? { text, clear: true } : { text } };
+  const lineRes = await keep(line, { quiet: true, retry: true });
+  const gone = falseAlarm ? [`${p.name} pressed "I am okay: false alarm" at GMT ${gmtDOY(time)}.`] : [];
+  const what = clear ? [...gone, falseAlarm ? '' : `No reading is past an urgent limit now${named.length ? `: ${named.join('; ')}` : ''}.`, last && !last.alarm.clear ? `The crew line of GMT ${gmtDOY(last.time)} is over.` : ''] : [...gone, ...u.what];
+  const report = {
+    v: 1, kind: 'report', time, person: personId, state: { ...ui.ship },
+    report: { to: ui.ship.doctorOnBoard ? 'doctor-onboard' : 'doctor-earth', text: alarmReportText({ name: p.name, gmt: gmtDOY(time), what, clear, crew: crewSentence(statusOf(line), clear) }), topic: clear ? 'alarm-clear' : 'alarm' },
+  };
+  const reportRes = await keep(report, { quiet: true, retry: true });
+  return { line, lineRes, report, reportRes, clear };
 }
 
-// Every new reading goes through the machine and is saved, exactly like on the technical page.
-async function addReading(indicator, value, { source = null, person = ui.person, context = null, time = null, detail = null } = {}) {
+// Every new reading goes through the machine and is saved, exactly like on the technical page. A reading that was
+// not saved leaves the screen again. share: false skips the crew alarm (the false alarm writes its own line).
+async function addReading(indicator, value, { source = null, person = ui.person, context = null, time = null, detail = null, quiet = false, retry = false, share = true, force = false } = {}) {
   const src = source || sourceFor(indicator);
   const event = { v: 1, kind: 'reading', time: time || new Date().toISOString(), person, state: { ...ui.ship }, reading: { source: src.id, indicator, value, ...(context ? { context } : {}), ...(detail ? { detail } : {}) } };
   machine.setState(event.state);
   const entry = machine.receive({ ...event.reading, person, time: event.time });
-  const res = await keep(event);
-  await shareCrewAlarm(person, indicator);
+  const res = await keep(event, { quiet, retry });
+  // Not saved: the machine forgets it again; the screen was not redrawn with it, so a form keeps what was typed.
+  if (!res.ok) { rebuild(); renderBar(); return { entry, ok: false, why: res.why }; }
+  const shared = share ? await shareCrewAlarm(person, { force }) : null;
   render();
-  return { entry, ok: res.ok };
+  return { entry, ok: true, waiting: Boolean(res.waiting), shared };
 }
+// "Saved", or what happened instead, for the toasts of the forms.
+const savedWord = (res, ok = 'Saved') => (res && res.waiting ? 'Kept in this browser until the station server answers' : ok);
 
 // ---------- the person's measures ----------
 // The tiles follow the machine's cells, so a new measure in config.js shows up here by itself.
@@ -258,17 +511,29 @@ function valueText(indicator, value) {
   return fmtVal(value);
 }
 
-const whereDoctor = () => (ui.ship.doctorOnBoard ? 'on board' : ui.ship.linkToEarth ? 'on Earth' : 'when the link is back; until then the crew on board and the crew medical officer were alerted (a draft default; the team decides)');
 // The words of a red limit: "at or below 88", "above 180".
 const limitWords = (red) => `${({ atOrBelow: 'at or below', atOrAbove: 'at or above', below: 'below', above: 'above' })[red.when] || red.when} ${red.value}`;
+
+// The crew line and the automatic message to the doctor of one person's current alarm (those written from since on),
+// so the screen says what really happened to them instead of what should have (FS-02, FS-04).
+const SINCE_SLACK_MS = 60 * 1000;
+function alarmLineOf(personId, since = 0) {
+  const lines = stored.filter((e) => e.kind === 'alarm' && e.person === personId && e.alarm && !e.alarm.clear && msOf(e.time) >= since - SINCE_SLACK_MS);
+  return lines.sort((a, b) => msOf(a.time) - msOf(b.time)).slice(-1)[0] || null;
+}
+function alarmReportOf(personId, since = 0) {
+  const mine = [...stored, ...unsent.map((u) => u.event)].filter((e) => e.kind === 'report' && e.person === personId && e.report && e.report.topic === 'alarm' && msOf(e.time) >= since - SINCE_SLACK_MS);
+  return mine.sort((a, b) => msOf(a.time) - msOf(b.time)).slice(-1)[0] || null;
+}
+const isHelpKeyItem = (it, ownerId) => { const c = it.kind === 'camera' ? machine.history(ownerId, 'camera').filter((x) => x.status === STATUS.OUT).slice(-1)[0] : null; return Boolean(c && c.source === HELP_SOURCE.id); };
 
 // What one item of the assessment says, in plain words.
 function itemText(it, owner) {
   if (it.kind === 'tell') return { title: it.title, text: it.text, time: it.time }; // the levels word these items themselves (state-levels.js)
   if (it.kind === 'camera') {
-    const last = machine.history(owner.id, 'camera').filter((x) => x.status === STATUS.OUT).slice(-1)[0];
-    if (last && last.source === 'help-key') return { title: 'Help requested with the Help key', text: `You held the Help key. The automation called the doctor ${whereDoctor()}.`, time: it.time };
-    return { title: 'Camera: alarm after the question "Are you okay?"', text: `${it.value === 'chest_grab_help' ? 'You answered that you need help' : 'There was no answer'}. The automation called the doctor ${whereDoctor()}.`, time: it.time };
+    const doc = doctorWords(statusOf(alarmReportOf(owner.id, msOf(it.time))), ui.ship);
+    if (isHelpKeyItem(it, owner.id)) return { title: 'Help requested with the Help key', text: `You held the Help key. ${doc}`, time: it.time };
+    return { title: 'Camera: alarm after the question "Are you okay?"', text: `${it.value === 'chest_grab_help' ? 'You answered that you need help' : 'There was no answer'}. ${doc}`, time: it.time };
   }
   if (it.kind === 'mood') return { title: 'Mood and energy', text: `Low check-ins in the last ${LEVEL_RULES.psycheDays} days: ${it.days} ${it.days === 1 ? 'day' : 'days'}. The planned review will look at this.`, time: null };
   const cell = it.cell;
@@ -286,14 +551,27 @@ function itemText(it, owner) {
   return { title: cell.label, text: `${v}: ${side} the normal range (${rangeText(cell, owner)})${it.m.streak > 1 ? `, ${it.m.streak} readings in a row` : ''}. Reading of ${fmtDT(last.time)}.${others.length ? ` Out of range at the same time: ${others.join(' and ')}. Several vital signs out together count more than one (NEWS2).` : ''}`, time: last.time };
 }
 
-// What to do, by the program's rules (shown in magenta, like NASA's electronic procedures).
-function procedureFor(it) {
+// Low blood sugar is treated first, then measured again: ADA's 15-15 rule ("In most conscious individuals, have 15
+// grams of fast-acting carbohydrates, and recheck glucose in 15 minutes"; ADA hypoglycemia sheet, 2025, and the ADA
+// page below, both read on 15 Nov 2026). The other signs keep their steps (FS-07).
+const SUGAR_STEP = {
+  text: 'You, if you are awake and can swallow: take 15 g of fast sugar now (glucose tablets or gel, or half a cup of juice or regular soda), then check again in 15 minutes; if it is still below 70, take 15 g more.',
+  link: { name: 'ADA: the 15-15 rule', url: 'https://diabetes.org/living-with-diabetes/hypoglycemia-low-blood-glucose/symptoms-treatment' },
+};
+
+// What to do, by the program's rules (shown in magenta, like NASA's electronic procedures). The automation steps say
+// what really happened to the crew line and the message to the doctor.
+function procedureFor(it, personId = ui.person) {
   const reachable = ui.ship.doctorOnBoard || ui.ship.linkToEarth;
   if (it.kind === 'red' && it.cell && it.cell.section === 'env') return ['Follow the ship\'s own procedure for this alarm; this screen only mirrors the ship.', 'The crew and mission control decide.'];
-  if (it.kind === 'red' && it.level >= LEVEL.URGENT) return ['Automation: your crewmates and the crew medical officer have been alerted.', 'You: repeat the reading now if you can, at rest.', reachable ? 'Automation: the doctor has been called.' : 'Automation: the message to the doctor waits for the next link.', 'Crew medical officer: open the emergency procedure for this sign.'];
-  if (it.kind === 'red') return ['You: repeat the reading now, at rest if you can.', 'You: if it stays past the limit, tell the crew medical officer.', reachable ? 'You: message the doctor with the "Message the doctor" button.' : 'Automation: the message to the doctor waits for the next link.'];
+  const sugar = it.kind === 'red' && it.cell && it.cell.indicator === 'glucose' && it.m && it.m.side === 'below' ? [SUGAR_STEP] : [];
+  const since = alarmSince(it);
+  const crewStep = () => crewWords(statusOf(alarmLineOf(personId, since)));
+  const doctorStep = () => doctorWords(statusOf(alarmReportOf(personId, since)), ui.ship);
+  if (it.kind === 'red' && it.level >= LEVEL.URGENT) return [...sugar, crewStep(), ...(sugar.length ? [] : ['You: repeat the reading now if you can, at rest.']), doctorStep(), 'Crew medical officer: open the emergency procedure for this sign.'];
+  if (it.kind === 'red') return [...sugar, ...(sugar.length ? [] : ['You: repeat the reading now, at rest if you can.']), 'You: if it stays past the limit, tell the crew medical officer.', reachable ? 'You: message the doctor with the "Message the doctor" button.' : 'You: message the doctor with the "Message the doctor" button; with no link it waits in the outbox and goes when the link is back.'];
   switch (it.kind) {
-    case 'camera': return ['The automation has already called the doctor.', 'If the alarm was a mistake, tell the doctor with "Message the doctor".', 'The question "Are you okay?" and its waiting time can be changed in the rules.'];
+    case 'camera': return [crewStep(), doctorStep(), 'If the alarm was a mistake, press "I am okay: false alarm": the crew screens clear and the doctor gets a note.', 'The question "Are you okay?" and its waiting time can be changed in the rules.'];
     case 'standard': return ['Repeat the test in the next few days.', 'Show the result to the doctor: the "Message the doctor" button.', 'NASA standard: at least 80% of your own pre-flight level.'];
     case 'forecast': return ['Take a new reading.', 'If the line is confirmed, tell the doctor.', 'The forecast here is a straight line through the readings, not a medical model.'];
     case 'expected': return ['This is a common change in flight; the source is named in the explanation.', 'If you feel unwell, tell the doctor.'];
@@ -360,7 +638,8 @@ function bloodTip(code, personId) {
 }
 function systemsTip() {
   const line = (label, value) => h('p', {}, h('b', {}, `${label}: `), value);
-  const saved = store ? ({ server: 'on this computer, in the program\'s own files', browser: 'in this browser only (a static copy)', memory: 'only until this page closes (storage is blocked)' }[store.kind] || store.kind) : 'not yet';
+  const saved = serverDown ? `the station server is not answering: kept in this browser ${waitingKept ? '' : '(only until this page closes, storage is blocked) '}until it answers again`
+    : store ? ({ server: 'on this computer, in the program\'s own files', browser: 'in this browser only (a static copy)', memory: 'only until this page closes (storage is blocked)' }[store.kind] || store.kind) : 'not yet';
   return h('div', {},
     h('p', { class: 'tp-title' }, 'Systems'),
     line('Automation', 'on: every reading is checked against its normal range and the team\'s rules, with or without the AI.'),
@@ -369,7 +648,7 @@ function systemsTip() {
     line('Link to Earth', ui.ship.linkToEarth ? 'up: messages to Earth go with the next downlink.' : 'down: messages to Earth wait in the outbox.'),
     line('Doctor', ui.ship.doctorOnBoard ? 'on board.' : 'on Earth.'),
     line('Saved', saved),
-    line('Sound', ui.muted ? 'off (Settings).' : 'on: needs action sounds a tone, urgent a tone and a voice.'));
+    line('Sound', ui.muted ? 'needs-action tones and the spoken question are off until the next sign-in; urgent alarms still sound.' : `on: needs action sounds a tone; urgent repeats a tone and a voice every ${ALARM_RULES.repeatSeconds} s until someone acknowledges it (a draft).`));
 }
 function tipContent(key) {
   if (key === 's:systems') return systemsTip();
@@ -407,12 +686,14 @@ function renderNav() {
   byId('tabs-in').replaceChildren(...NAV.map(([view, label, ic]) => h('button', {
     type: 'button', class: 'key', 'data-view': view,
     'aria-current': ui.screen === view || (ui.screen === 'detail' && view === (ui.backTo || 'measures')) ? 'page' : null,
-    onclick: () => setScreen(view),
+    onclick: () => { if (view === 'alerts') ackAll(); setScreen(view); },
   }, icon(ic, { size: 22 }), h('span', {}, label))));
 }
 
 // Every crew screen shows when a crewmate needs help now: an urgent red limit or a camera or Help alarm.
 // Only the name and the measure, nothing else (ISS crew code of conduct: disclosure for immediate crew safety).
+// Each person's latest crew line counts, so an all clear ("Tom is okay: false alarm") takes the line away (FS-05).
+// The first part only ever sees the made-up example flight: crewmates' real readings never reach this screen.
 function crewAlerts(now) {
   const out = [];
   const seen = new Set();
@@ -420,14 +701,27 @@ function crewAlerts(now) {
     if (c.id === ui.person) continue;
     const a = assess({ machine, person: c, cells: CELLS, mission: MISSION, now });
     const it = a.body.items.find((x) => x.level >= LEVEL.URGENT && (x.kind === 'red' || x.kind === 'camera'));
-    if (it) { out.push(`${c.name} needs help now: ${it.kind === 'red' ? `${it.cell.label} ${valueText(it.cell.indicator, it.m.last.value)} ${it.cell.unit || ''}`.trim() : 'an alarm was raised'}.`); seen.add(c.id); }
+    if (it) {
+      out.push({ id: `example|${ui.person}|${c.id}|${it.kind}|${it.cell ? it.cell.indicator : ''}`, person: c.id, text: `${c.name} needs help now: ${it.kind === 'red' ? `${it.cell.label} ${valueText(it.cell.indicator, it.m.last.value)} ${it.cell.unit || ''}`.trim() : 'an alarm was raised'}.` });
+      seen.add(c.id);
+    }
   }
-  for (const e of stored) {
-    if (e.kind !== 'alarm' || !e.alarm || e.person === ui.person || seen.has(e.person)) continue;
-    const age = Date.now() - msOf(e.time);
-    if (age > 6 * HOUR_MS || age < -HOUR_MS) continue;
-    out.push(`${e.alarm.text.replace(/\.$/, '')}, GMT ${gmtDOY(e.time)}.`);
+  for (const e of crewLines(stored, { viewer: ui.person, now: Date.now() })) {
+    if (seen.has(e.person)) continue;
+    out.push({ id: `line|${ui.person}|${e.person}|${e.time}`, person: e.person, text: `${e.alarm.text.replace(/\.$/, '')}, GMT ${gmtDOY(e.time)}.`, voice: e.alarm.text });
     seen.add(e.person);
+  }
+  return out;
+}
+
+// Notices that stay on the banner while they hold: a call for help that is not saved everywhere yet (QA-01), and a
+// station server that does not answer (QA-08).
+function systemNotices() {
+  const out = [];
+  const help = helpNotice();
+  if (help) out.push(help);
+  if (serverDown && ui.person) {
+    out.push({ icon: 'wifi-off', bold: 'The station server is not answering.', rest: `What you enter is kept in this browser until it is back${waitingKept ? '' : ', and only until this page closes, because this browser blocks storage'}. ${store && store.kind === 'server' ? 'New alarms of your crewmates do not reach this screen until then.' : "Your earlier records and your crewmates' alarms are not shown until then."}` });
   }
   return out;
 }
@@ -437,9 +731,10 @@ function renderBar() {
   byId('brand').replaceChildren(icon('orbit', { size: 22, label: 'Crew Health Console' }), h('span', { class: p ? 'sr-only' : '' }, 'Crew Health'));
   byId('tabs').hidden = !p;
   byId('who-btn').hidden = !p;
-  byId('help-btn').hidden = !p || Boolean(p.real);
+  // The Help key is there for everyone, also on the sign-in screen, where it raises help for "this computer".
+  byId('help-btn').hidden = Boolean(p && p.real);
   if (p) {
-    byId('who-avatar').textContent = p.name.slice(0, 1);
+    byId('who-avatar').textContent = initialsOf(p);
     byId('who-name').textContent = p.name;
     byId('who-btn').setAttribute('aria-label', `${p.name}. Switch person`);
   }
@@ -455,33 +750,46 @@ function renderBar() {
     if (!ui.ship.aiWorks) tags.push(h('span', { class: 'tag', 'data-tip': 't:aioff' }, icon('ban', { size: 16 }), 'AI off'));
     if (ui.muted) tags.push(h('span', { class: 'tag', 'data-tip': 't:soundoff' }, icon('bell-off', { size: 16 }), 'Sound off'));
     if (camStop) tags.push(h('span', { class: 'tag plain', 'data-tip': 't:camon' }, icon('camera', { size: 16 }), 'Camera on'));
+    if (exercisingNow()) tags.push(h('span', { class: 'tag', 'data-tip': 't:exercising', tabindex: '0' }, icon('flame', { size: 16 }), 'Exercising'));
   }
   byId('sys-summary').replaceChildren(...tags);
+  // The crewmates' lines first, so the sound knows them too.
+  const lines = p && !p.real ? crewAlerts(nowTime()) : [];
+  currentLines = lines;
   // The Messages key takes the colour of the highest active level, like the ISS "Home" key.
   const box = byId('alerts-btn');
   box.hidden = !p || p.real;
+  const list = p && !p.real ? alertsFor(p.id) : [];
+  soundAlerts(list);
   if (p && !p.real) {
-    const list = alertsFor(p.id);
     const unseen = list.filter((x) => !ui.seen.has(x.id)).length;
     const top = list.length ? Math.max(...list.map((x) => x.level)) : LEVEL.FINE;
-    soundAlerts(list);
     box.className = `annunciator ${list.length ? LV_CLASS[top] : ''}`;
     if (!list.length) box.replaceChildren(icon('bell', { size: 18 }), h('span', { class: 'ann-word' }, 'No messages'));
     else box.replaceChildren(icon(LEVEL_ICON[top], { size: 18 }), h('span', { class: 'ann-word' }, 'Messages'), h('b', {}, unseen ? `${unseen} new` : String(list.length)));
     box.setAttribute('aria-label', list.length ? `Messages: ${list.length}, ${unseen} new, highest level ${LEVEL_WORD[top]}` : 'No messages');
   }
+  // The banner on every screen: the notices, then each crewmate's line, and Silence while an alarm sounds. It is
+  // redrawn only when its words change, so a screen reader does not read the same alert again at every click.
   const banner = byId('crew-banner');
-  const alerts = p && !p.real ? crewAlerts(nowTime()) : [];
-  banner.hidden = !alerts.length;
-  banner.replaceChildren(...alerts.map((t) => h('p', {}, icon('octagon-alert', { size: 18 }), h('b', {}, t), ' Go to them; the crew medical officer has the steps.')));
+  const notes = systemNotices();
+  const sounding = ring.on;
+  const sig = JSON.stringify([notes, lines.map((l) => [l.id, l.text]), sounding]);
+  if (banner.dataset.sig !== sig) {
+    banner.dataset.sig = sig;
+    fill(banner,
+      ...notes.map((n) => h('p', {}, icon(n.icon, { size: 18 }), h('b', {}, n.bold), n.rest ? ` ${n.rest}` : '')),
+      ...lines.map((l) => h('p', {}, icon('octagon-alert', { size: 18 }), h('b', {}, l.text), l.person === SHIP.id ? ' Nobody was signed in there; the crew medical officer has the steps.' : ' Go to them; the crew medical officer has the steps.')),
+      sounding || lines.length ? h('p', {}, sounding ? btn('secondary small', 'Silence', () => { ackAll(); renderBar(); }, 'volume-x') : null, lines.length ? tipButton('t:crewalarm', 'crew alarms') : null) : null);
+  }
+  banner.hidden = !notes.length && !lines.length;
   renderNav();
 }
 
 // ---------- rendering: sign-in ----------
 function renderLogin() {
-  const initials = (p) => (p.real ? String(p.code || '').replace(/^C0*/, 'C') : /\d$/.test(p.name) ? `C${p.name.slice(-1)}` : p.name.slice(0, 1));
   const card = (p) => h('button', { type: 'button', class: 'person', onclick: () => choosePerson(p.id) },
-    h('span', { class: 'avatar' }, initials(p)), h('b', {}, p.real ? `Participant ${p.code}` : p.name),
+    h('span', { class: 'avatar' }, initialsOf(p)), h('b', {}, p.real ? `Participant ${p.code}` : p.name),
     h('span', {}, p.real ? 'Real blood tests, 2021' : 'Example crew member'));
   byId('people-crew').replaceChildren(...CREW.map(card));
   byId('people-real').replaceChildren(...REAL.map(card));
@@ -492,19 +800,108 @@ async function choosePerson(id) {
   await enterAs(id);
 }
 async function enterAs(id) {
+  clearPerson();
   ui.person = id;
   ui.screen = 'home';
   ui.detail = null;
   ui.find = '';
+  ui.muted = false; // every sign-in starts with sound on (HF-02)
   try {
     store = await openStore({ person: id });
-    stored = [...store.events];
   } catch {
+    store = null;
     toast('Could not open the saved records: nothing is saved this time.');
   }
+  // On the station computer a store that is not the server's means the server did not answer: say so, keep what is
+  // entered in this browser, and send it when the server answers again (QA-08).
+  serverDown = Boolean(store) && ownServer() && store.kind !== 'server';
+  const flushed = store && store.kind === 'server' && waiting.length ? await flushWaiting() : { events: [] };
+  stored = withWaiting(store ? [...store.events, ...flushed.events] : [], id);
+  await readOutbox();
+  if (ui.person !== id) return;
   rebuild();
   render();
   window.scrollTo(0, 0);
+  schedulePoll();
+  if (serverDown) toast('The station server is not answering: what you enter is kept in this browser until it is back.');
+}
+// One list for this person's screen, each event once: their own, the ship's and the crew lines, with those that still
+// wait for the server.
+function withWaiting(list, id) {
+  const out = [];
+  const have = new Set();
+  for (const e of [...list, ...waiting]) {
+    const k = eventKey(e);
+    if (have.has(k) || !(e.person === id || e.person === SHIP.id || e.kind === 'alarm')) continue;
+    have.add(k);
+    out.push(e);
+  }
+  return out;
+}
+// What became of the earlier messages: the outbox of the station server lists each with its status.
+async function readOutbox() {
+  if (!store || store.kind !== 'server' || typeof store.outbox !== 'function') return;
+  let items = [];
+  try { items = await store.outbox(); } catch { return; }
+  for (const e of stored) if (e.kind === 'report' && !savedAs.has(eventKey(e))) savedAs.set(eventKey(e), statusFromOutbox(e, items));
+}
+
+// Signing out leaves nothing of the person behind: answers in progress, open panels, devices, the offer, the steps
+// ticked, the exercise switch, the last notice, the sounds and the records in memory (QA-02).
+function clearPerson() {
+  if (camStop) { camStop(); camStop = null; }
+  clearTimeout(camTimer);
+  if (asking) { clearInterval(asking.timer); asking = null; }
+  if (byId('ask-ok').open) byId('ask-ok').close();
+  closePanel();
+  hideTip();
+  stopRinging();
+  try { speechSynthesis.cancel(); } catch { /* no voice */ }
+  for (const k of Object.keys(devices)) { try { devices[k].disconnect(); } catch { /* already gone */ } delete devices[k]; }
+  clearInterval(feedTimer);
+  feedTimer = 0;
+  ui.conn = { on: { isslive: false, spaceweather: false }, connected: {}, busy: {}, live: {} };
+  ui.checkin = { mood: null, attitude: null, sleepQuality: null, weighing: [] };
+  ui.checkinOpen = false;
+  ui.exercising = false;
+  ui.exerciseUntil = 0;
+  ui.stepsDone = {};
+  ui.openGroups = new Set();
+  ui.period = 'flight';
+  ui.periodChosen = false;
+  ui.from = '';
+  ui.to = '';
+  ui.backTo = 'measures';
+  ui.find = '';
+  offerDismissed.clear();
+  privacyShown.clear();
+  acked.clear();
+  toneDone.clear();
+  currentLines = [];
+  helpCall = null;
+  unsent = [];
+  savedAs.clear();
+  serverDown = false;
+  store = null;
+  stored = [];
+  dropToast();
+  // What the page still holds out of sight: the topic chips of a closed check-in form (they are drawn only when the
+  // form opens), the last side sheet and the last "?" card.
+  byId('ci-topics').replaceChildren();
+  byId('panel-title').textContent = '';
+  byId('panel-body').replaceChildren();
+  byId('panel-actions').replaceChildren();
+  const tipCard = document.getElementById('tip-pop');
+  if (tipCard) tipCard.replaceChildren();
+  rebuild();
+}
+function signOut() {
+  clearPerson();
+  ui.person = null;
+  ui.screen = 'home';
+  ui.detail = null;
+  render();
+  schedulePoll();
 }
 function askPin(id) {
   const p = personById[id];
@@ -550,7 +947,7 @@ function renderHome() {
   const all = [...(a.ship ? a.ship.items : []), ...a.body.items, ...a.psyche.items].sort((x, y) => y.level - x.level);
   const items = all.length === 4 ? all : all.slice(0, 3);
   const short = (it) => {
-    if (it.kind === 'camera') return 'The automation called the doctor';
+    if (it.kind === 'camera') return cap(doctorShort(statusOf(alarmReportOf(p.id, msOf(it.time))), ui.ship));
     if (it.kind === 'tell') return it.short;
     if (it.kind === 'mood') return `${it.days} low days in the last two weeks`;
     if (it.kind === 'forecast') return `Forecast: in the normal range now, may leave it around ${fmtDate(it.m.forecast.crossing.date)}`;
@@ -559,7 +956,7 @@ function renderHome() {
     const where = it.kind === 'standard' ? 'the NASA standard' : 'the normal range';
     return `${v}, ${it.m.side === 'below' ? 'below' : 'above'} ${where}${it.m.streak > 1 && it.kind === 'out' ? ` in the last ${it.m.streak} readings` : ''}${it.kind === 'expected' ? ' (common in flight)' : ''}`;
   };
-  const name = (it) => (it.cell ? (it.cell.section === 'env' ? `${it.cell.label} (ship)` : it.cell.label) : it.kind === 'mood' ? 'Mood and energy' : 'Camera');
+  const name = (it) => (it.cell ? (it.cell.section === 'env' ? `${it.cell.label} (ship)` : it.cell.label) : it.kind === 'mood' ? 'Mood and energy' : isHelpKeyItem(it, p.id) ? 'Help key' : 'Camera');
   const open = (it) => (it.cell ? openDetail(it.cell.indicator) : it.kind === 'mood' ? openDetail('mood') : setScreen('alerts'));
   byId('today-reasons').hidden = !items.length;
   byId('today-reasons').replaceChildren(
@@ -715,16 +1112,30 @@ function renderCheckin(p, now, top = LEVEL.FINE) {
   byId('ci-send').setAttribute('aria-disabled', any ? 'false' : 'true');
 }
 
+// Each answer is saved on its own; an answer that was not saved stays chosen in the open form, so pressing Save again
+// sends only what is missing (QA-07).
 async function sendCheckin() {
   const c = ui.checkin;
   if (!c.mood && !c.attitude && !c.sleepQuality) { toast('Choose at least one answer.'); return; }
-  if (c.mood) await addReading('mood', c.mood);
-  if (c.attitude) await addReading('attitude', c.attitude);
-  if (c.sleepQuality) await addReading('sleepQuality', c.sleepQuality);
-  if (c.weighing && c.weighing.length) await addReading('weighing', c.weighing);
+  const parts = [['mood', 'mood', 'mood'], ['attitude', 'attitude', 'energy'], ['sleepQuality', 'sleepQuality', 'sleep'], ['weighing', 'weighing', 'topics']];
+  const kept = [];
+  const lost = [];
+  let waitingNow = false;
+  for (const [key, indicator, word] of parts) {
+    const v = c[key];
+    if (v === null || v === undefined || (Array.isArray(v) && !v.length)) continue;
+    const r = await addReading(indicator, v, { quiet: true });
+    if (r.ok) { kept.push(word); c[key] = key === 'weighing' ? [] : null; if (r.waiting) waitingNow = true; } else lost.push(word);
+  }
+  if (lost.length) {
+    ui.checkinOpen = true;
+    toast(`Not saved: ${lost.join(', ')}. Your answers are still chosen: try again.${kept.length ? ` Saved: ${kept.join(', ')}.` : ''}`);
+    render();
+    return;
+  }
   ui.checkin = { mood: null, attitude: null, sleepQuality: null, weighing: [] };
   ui.checkinOpen = false;
-  toast('Check-in saved. The planned review will look at it.');
+  toast(waitingNow ? 'Check-in kept in this browser: it goes to the station server when it answers again.' : 'Check-in saved. The planned review will look at it.');
   render();
 }
 
@@ -1133,7 +1544,7 @@ function renderDetail() {
       h('h2', {}, 'Answer now'),
       cell.howTo ? h('ol', { class: 'links' }, ...cell.howTo.map((s) => h('li', {}, s))) : null,
       cell.indicator === 'visionCheck' ? amslerGrid() : null,
-      h('div', { class: 'answers' }, ...cell.answers.map((ans) => btn('secondary', ans.label, async () => { await addReading(indicator, ans.value); toast(cell.tellDoctor && cell.tellDoctor.values.includes(ans.value) ? 'Saved. Worth telling your flight surgeon: use Message the doctor.' : 'Saved.'); redrawDetail(); }))),
+      h('div', { class: 'answers' }, ...cell.answers.map((ans) => btn('secondary', ans.label, async () => { const r = await addReading(indicator, ans.value, { quiet: true }); if (!r.ok) { toast(`Not saved: ${shortReason(r.why)}. Try again.`); return; } toast(`${savedWord(r)}.${cell.tellDoctor && cell.tellDoctor.values.includes(ans.value) ? ' Worth telling your flight surgeon: use Message the doctor.' : ''}`); redrawDetail(); }))),
       cell.howToSrc ? h('p', { class: 'note' }, 'How to: ', h('a', { href: cell.howToSrc.url, target: '_blank', rel: 'noopener' }, cell.howToSrc.name)) : null) : null,
     wordCell ? null : periodBar(redrawDetail),
     wordCell ? h('section', { class: 'card' }, h('h2', {}, 'Your answers'),
@@ -1248,7 +1659,9 @@ function renderBloodDetail(host, p, code) {
 // ---------- alerts and messages ----------
 // When the current episode of a condition began: the first reading of the current run outside the range.
 // A condition that lasts for weeks is "new" once; it is new again only when its level rises or it clears and returns.
+// Each press of the Help key and each camera alarm is its own episode, so a second call for help sounds again.
 function episodeStart(personId, it) {
+  if (it.kind === 'camera' && it.time) return new Date(it.time).toISOString();
   if (!it.cell || !it.m || !it.m.last) return it.time ? new Date(it.time).toISOString().slice(0, 13) : 'now';
   if (it.kind === 'forecast') return 'forecast';
   return new Date(it.m.runFrom || it.m.last.time).toISOString().slice(0, 10);
@@ -1263,7 +1676,7 @@ function alertsFor(personId) {
   for (const it of [...a.body.items, ...a.psyche.items]) {
     const tx = itemText(it, p);
     const stamp = it.m && it.m.last ? msOf(it.m.last.time) : it.time ? msOf(it.time) : msOf(now);
-    out.push({ id: `${personId}|${it.kind}|${it.cell ? it.cell.indicator : ''}|${it.level}|${episodeStart(personId, it)}`, level: it.level, title: tx.title, text: tx.text, time: stamp, steps: procedureFor(it), indicator: it.cell ? it.cell.indicator : it.kind === 'mood' ? 'mood' : null, system: it.kind === 'camera' ? 'Camera' : it.kind === 'mood' ? 'Mind' : 'Body' });
+    out.push({ id: `${personId}|${it.kind}|${it.cell ? it.cell.indicator : ''}|${it.level}|${episodeStart(personId, it)}`, level: it.level, title: tx.title, text: tx.text, time: stamp, steps: procedureFor(it, personId), indicator: it.cell ? it.cell.indicator : it.kind === 'mood' ? 'mood' : null, system: it.kind === 'camera' ? (isHelpKeyItem(it, personId) ? 'Help key' : 'Camera') : it.kind === 'mood' ? 'Mind' : 'Body', camera: it.kind === 'camera' });
   }
   for (const it of s.items) {
     const last = it.m.last;
@@ -1273,20 +1686,47 @@ function alertsFor(personId) {
   return out.sort((x, y) => y.level - x.level || y.time - x.time);
 }
 
+// The title of a sent message, by its topic (and, for messages from before topics, by its words).
+function sentTitle(r) {
+  const where = r.report.to === 'doctor-onboard' ? 'the doctor on board' : 'the doctor on Earth';
+  const t = r.report.topic;
+  if (t === 'talk-request' || r.report.text === TALK_REQUEST_TEXT) return 'Request for a private call, to Earth';
+  if (t === 'letter-to-psychologist' || r.report.text.startsWith('Private letter for my psychologist')) return 'Private letter for your psychologist, to Earth';
+  if (t === 'alarm') return `Automatic alarm message, to ${where}`;
+  if (t === 'alarm-clear') return `Automatic all clear, to ${where}`;
+  if (t === 'pmc') return `Summary for the private medical conference, to ${where}`;
+  return `To ${where}`;
+}
+const CHIP_TONE = { neutral: 'chip neutral', off: 'chip off', stale: 'chip stale', bad: 'chip lv2' };
+function sentRow(r, status, why = '') {
+  const c = sentChip(status, ui.ship);
+  const again = status === 'unsent' ? btn('secondary small', 'Send again', async () => {
+    const res = await keep(r, { quiet: true });
+    toast(res.ok ? sentText(r.report.to, res) : `Not sent: ${shortReason(res.why)}. Try again later, or tell the crew medical officer.`);
+    render();
+  }, 'send') : null;
+  return h('li', { class: 'card msg' },
+    h('div', { class: 'msg-top' }, h('b', {}, sentTitle(r)), h('span', { class: CHIP_TONE[c.tone] || 'chip neutral' }, icon(c.icon, { size: 16 }), c.text), h('span', { class: 'when' }, `GMT ${gmtDOY(r.time)}`)),
+    status === 'unsent' ? h('p', { class: 'note' }, `Not saved: ${shortReason(why)}. Nothing was sent.`) : null,
+    h('p', { style: 'white-space: pre-line' }, r.report.text),
+    again ? h('div', { class: 'actions' }, again) : null);
+}
+
 function renderAlerts() {
   const host = byId('screen-alerts');
   const list = alertsFor(ui.person);
   const reports = stored.filter((e) => e.kind === 'report' && e.person === ui.person).sort((a, b) => msOf(b.time) - msOf(a.time));
+  const notSent = unsent.filter((u) => u.event.person === ui.person).sort((a, b) => msOf(b.event.time) - msOf(a.event.time));
   const count = (lv) => list.filter((x) => x.level === lv).length;
   const unseen = list.filter((x) => !ui.seen.has(x.id));
   const cell = (lv, label) => { const n = count(lv); return h('div', { class: n ? 'on' : '' }, h('span', { class: n ? `lvc${lv}` : '' }, icon(LEVEL_ICON[lv], { size: 16 }), label), h('b', { class: n ? `lvc${lv}` : '' }, String(n))); };
-  const markRead = (x) => { ui.seen.add(x.id); savePrefs(); render(); };
-  fill(host, 
+  const markRead = (x) => { ui.seen.add(x.id); acked.add(x.id); savePrefs(); render(); };
+  fill(host,
     h('div', { class: 'screen-head' }, h('h1', {}, 'Messages'), h('p', {}, list.length ? `${unseen.length ? `${unseen.length} new. ` : ''}The most important first. The levels and their thresholds are drafts; the team decides.` : 'You will see a message here only when something needs you.')),
     h('div', { class: 'count-strip' }, cell(LEVEL.URGENT, 'Urgent'), cell(LEVEL.ACTION, 'Needs action'), cell(LEVEL.ATTENTION, 'Attention')),
     h('div', { class: 'actions' },
-      unseen.length ? btn('secondary small', 'Mark all as read', () => { for (const x of list) ui.seen.add(x.id); savePrefs(); render(); }, 'check') : null,
-      btn('secondary small', 'Silence all sounds', () => { silenceNow(list); toast('Silenced. A new alert will sound again; turn sound off altogether in Settings.'); }, 'bell-off')),
+      unseen.length ? btn('secondary small', 'Mark all as read', () => { for (const x of list) { ui.seen.add(x.id); acked.add(x.id); } savePrefs(); render(); }, 'check') : null,
+      btn('secondary small', 'Silence all sounds', () => { silenceNow(); renderBar(); toast('Silenced. A new alert will sound again. Settings can turn off the needs-action tone; urgent alarms always sound.'); }, 'bell-off')),
     list.length ? h('ul', { class: 'msgs' }, ...list.map((x) => {
       const read = ui.seen.has(x.id);
       return h('li', { class: `card msg ${read ? 'read' : LV_CLASS[x.level]}` },
@@ -1295,27 +1735,46 @@ function renderAlerts() {
         h('p', {}, x.text, h('span', { class: 'muted' }, ` · ${x.system}`)),
         h('div', { class: 'actions' },
           btn('proc small', 'What to do', () => openProcedure(x), 'list-checks'),
-          x.system === 'Camera' ? btn('secondary small', 'I am okay: false alarm', async () => { await addReading('camera', 'chest_grab_ok', { source: { id: 'false-alarm', indicator: 'camera' } }); toast('Noted as a false alarm. The doctor sees it in your record.'); }, 'check', { 'data-tip': 't:falsealarm' }) : null,
+          x.camera ? btn('secondary small', 'I am okay: false alarm', () => falseAlarm(x), 'check', { 'data-tip': 't:falsealarm' }) : null,
           x.indicator ? btn('secondary small', 'Chart', () => openDetail(x.indicator), 'chart-line') : null,
           read ? null : btn('secondary small', 'Mark as read', () => markRead(x), 'check')));
     })) : h('div', { class: 'card' }, h('p', {}, h('b', {}, 'No messages.')), h('p', { class: 'muted' }, 'You will see a message here only when something needs you.')),
     h('h2', { class: 'section-title' }, 'Sent messages'),
-    reports.length ? h('ul', { class: 'msgs' }, ...reports.map((r) => h('li', { class: 'card msg' },
-      h('div', { class: 'msg-top' }, h('b', {}, r.report.text === TALK_REQUEST_TEXT ? 'Request for a private call, to Earth' : r.report.text.startsWith('Private letter for my psychologist') ? 'Private letter for your psychologist, to Earth' : r.report.to === 'doctor-onboard' ? 'To the doctor on board' : 'To the doctor on Earth'),
-        r.report.to !== 'doctor-earth' ? h('span', { class: 'chip neutral' }, icon('check', { size: 16 }), 'Saved for the doctor on board') : store && store.kind !== 'server' ? h('span', { class: 'chip off' }, icon('info', { size: 16 }), 'Saved on this computer only') : ui.ship.linkToEarth ? h('span', { class: 'chip neutral' }, icon('send', { size: 16 }), 'Sealed in the outbox for the next downlink') : staleChip('Waiting for the link'),
-        h('span', { class: 'when' }, `GMT ${gmtDOY(r.time)}`)),
-      h('p', { style: 'white-space: pre-line' }, r.report.text)))) : h('p', { class: 'note' }, 'Nothing sent yet.'),
+    reports.length || notSent.length ? h('ul', { class: 'msgs' },
+      ...notSent.map((u) => sentRow(u.event, 'unsent', u.why)),
+      ...reports.map((r) => sentRow(r, statusOf(r)))) : h('p', { class: 'note' }, 'Nothing sent yet.'),
   );
+}
+
+// "I am okay: false alarm": the record keeps the alarm and the answer; the person's own alarm and every crew screen
+// clear, and the doctor who was called gets a short note (F1, QA-03, FS-05). The screen says what really happened.
+async function falseAlarm(x) {
+  const p = personById[ui.person];
+  if (!p || p.real) return;
+  const r = await addReading('camera', 'chest_grab_ok', { source: { id: 'false-alarm', indicator: 'camera' }, quiet: true, share: false });
+  if (!r.ok) { toast(`Not saved: ${shortReason(r.why)}. The alarm still stands: try again.`); return; }
+  const s = await shareCrewAlarm(p.id, { force: true, falseAlarm: true });
+  // A call for help of this person that is still on its way is called off too: the banner stops saying "Help was NOT
+  // sent: tell the crew in person now", and no "Your call for help is saved now" follows when it arrives.
+  if (helpCall && helpCall.person === p.id) helpCall = null;
+  for (const a of alertsFor(p.id)) if (a.camera) { ui.seen.add(a.id); acked.add(a.id); }
+  ui.seen.add(x.id);
+  acked.add(x.id);
+  savePrefs();
+  const crew = s ? (s.clear ? clearWords(statusOf(s.line)) : 'Another sign is still urgent, so the crew screens show that one now.') : '';
+  const doc = s ? noteWords(statusOf(s.report), ui.ship) : '';
+  toast(`Noted as a false alarm${r.waiting ? ', kept in this browser until the station server answers' : ''}. ${crew} ${doc}`.trim());
+  render();
 }
 
 // ---------- panels: AI, doctor, advice, articles, procedure ----------
 // Panels open as a sheet beside the screen and do not block it (NASA's HIDH prefers non-modal dialogs).
 let panelReturn = null;
-function openPanel(title, body, actions = []) {
+function openPanel(title, body, actions = [], { closeLabel = 'Close' } = {}) {
   panelReturn = document.activeElement;
   byId('panel-title').textContent = title;
   byId('panel-body').replaceChildren(...body.filter(Boolean));
-  byId('panel-actions').replaceChildren(...actions.filter(Boolean), btn('secondary', 'Close', () => closePanel()));
+  byId('panel-actions').replaceChildren(...actions.filter(Boolean), btn('secondary', closeLabel, () => closePanel()));
   const dlg = byId('panel');
   if (dlg.open) dlg.close();
   dlg.show();
@@ -1427,7 +1886,9 @@ function openAdvice() {
 const MIND_KEY = (id) => `jff-mind-private-v1:${id}`;
 function loadMind(id) { try { return { journal: [], plan: null, worksheets: [], breaks: [], ...JSON.parse(localStorage.getItem(MIND_KEY(id)) || '{}') }; } catch { return { journal: [], plan: null, worksheets: [], breaks: [] }; } }
 function saveMind(id, data) { try { localStorage.setItem(MIND_KEY(id), JSON.stringify(data)); return true; } catch { toast('Could not save here: this browser blocks storage.'); return false; } }
-const queueReport = async (to, text) => keep({ v: 1, kind: 'report', time: new Date().toISOString(), person: ui.person, state: { ...ui.ship }, report: { to, text: String(text).slice(0, 6000) } });
+// topic says what the message is, so the ground can route it: 'letter-to-psychologist' or 'talk-request' (MIND-05;
+// src/security.js takes a short id of lower-case letters, digits and hyphens).
+const queueReport = async (to, text, topic = null) => keep({ v: 1, kind: 'report', time: new Date().toISOString(), person: ui.person, state: { ...ui.ship }, report: { to, text: String(text).slice(0, 6000), ...(topic ? { topic } : {}) } });
 
 function openMindSupport() {
   const p = personById[ui.person];
@@ -1456,7 +1917,7 @@ function openJournal() {
     onSave: (entry) => { const d = loadMind(p.id); d.journal = [entry, ...d.journal.filter((e) => e.id !== entry.id)]; if (!saveMind(p.id, d)) throw new Error('storage'); ctl && ctl.update(d.journal, { link: ui.ship.linkToEarth }); },
     onToggleTalk: (id, on) => { const d = loadMind(p.id); d.journal = d.journal.map((e) => (e.id === id ? { ...e, talk: on } : e)); saveMind(p.id, d); ctl && ctl.update(d.journal, { link: ui.ship.linkToEarth }); },
     onDelete: (id) => { const d = loadMind(p.id); d.journal = d.journal.filter((e) => e.id !== id); saveMind(p.id, d); ctl && ctl.update(d.journal, { link: ui.ship.linkToEarth }); },
-    onSendLetter: async (text) => { const res = await queueReport('doctor-earth', text); if (!res.ok) throw new Error('not saved'); toast(sentText('doctor-earth', res, 'Your letter')); },
+    onSendLetter: async (text) => { const res = await queueReport('doctor-earth', text, 'letter-to-psychologist'); if (!res.ok) throw new Error('not saved'); toast(sentText('doctor-earth', res, 'Your letter')); },
   });
   openPanel('Mind support', [backToMind(), host]);
 }
@@ -1467,7 +1928,7 @@ function openPlan() {
   renderPlan(host, {
     plan: data.plan, example: ui.example && !p.real, link: ui.ship.linkToEarth, doctorOnBoard: ui.ship.doctorOnBoard,
     onSave: (plan) => { const d = loadMind(p.id); d.plan = plan; if (!saveMind(p.id, d)) throw new Error('storage'); toast('Your plan is saved in this browser only.'); },
-    onTalkNow: async (kind) => { if (kind === 'ground') { const res = await queueReport('doctor-earth', TALK_REQUEST_TEXT); if (!res.ok) throw new Error('not saved'); toast(sentText('doctor-earth', res, 'Your request for a private call')); } },
+    onTalkNow: async (kind) => { if (kind === 'ground') { const res = await queueReport('doctor-earth', TALK_REQUEST_TEXT, 'talk-request'); if (!res.ok) throw new Error('not saved'); toast(sentText('doctor-earth', res, 'Your request for a private call')); } },
   });
   openPanel('Mind support', [backToMind(), host]);
 }
@@ -1491,9 +1952,10 @@ function openReactionTest(mode) {
   runReactionTest({ mode, earlier: earlierRuns(p), onDone: async (result) => {
     if (result.median === null || result.median === undefined) { toast('Not enough presses to give a result.'); return; }
     const detail = Object.fromEntries(['median', 'lapses', 'falseStarts', 'count', 'durationS', 'mode', 'score'].filter((k) => result[k] !== undefined).map((k) => [k, result[k]]));
-    await addReading('reaction', Math.round(result.median), { source: { id: 'reaction-test', indicator: 'reaction' }, detail });
+    const r = await addReading('reaction', Math.round(result.median), { source: { id: 'reaction-test', indicator: 'reaction' }, detail, quiet: true });
+    if (!r.ok) { toast(`Your result was not saved: ${shortReason(r.why)}.`); return; }
     const cmp = compareToOwn(result, earlierRuns(p));
-    toast(cmp && cmp.text ? cmp.text : 'Saved.');
+    toast(`${r.waiting ? `${savedWord(r)}. ` : ''}${cmp && cmp.text ? cmp.text : 'Saved.'}`);
   }, onCancel: () => {} });
 }
 
@@ -1544,7 +2006,7 @@ function openProcedure(x) {
     const current = x.steps.findIndex((_, i) => !done.has(i));
     list.replaceChildren(...x.steps.map((s, i) => h('li', { class: `step ${done.has(i) ? 'done' : ''} ${i === current ? 'current' : ''}` },
       h('span', { class: 'n' }, String(i + 1)),
-      h('p', {}, s),
+      typeof s === 'string' ? h('p', {}, s) : h('p', {}, s.text, s.link ? [' ', h('a', { href: s.link.url, target: '_blank', rel: 'noopener' }, s.link.name)] : null),
       h('input', { type: 'checkbox', 'aria-label': `Step ${i + 1} done`, checked: done.has(i) ? true : null, onchange: (e) => { if (e.target.checked) done.add(i); else done.delete(i); draw(); } }))));
   };
   draw();
@@ -1562,7 +2024,10 @@ function openDoctor(a, kind, indicator = null) {
   const toText = to === 'doctor-onboard' ? 'the doctor on board' : 'the doctor on Earth';
   const area = h('textarea', { id: 'doc-text', 'aria-label': 'Message text' });
   area.value = summaryFor(a, kind, indicator) || 'Please look at my data.';
-  const status = to === 'doctor-earth' ? `${ui.ship.linkToEarth ? 'The message is saved in the outbox and goes to the ground with the next downlink.' : 'There is no link to Earth: the message waits in the outbox and goes when the link is back.'} ${profile().name}: ${profile().reply}.` : 'The message goes to the doctor on board.';
+  // What will really happen to it, said before Send: the same cases as sentText() after it (FS-02).
+  const status = serverDown ? 'The station server is not answering: the message is kept in this browser and goes to the station computer, and from there to the doctor, when it answers again.'
+    : store && store.kind !== 'server' ? 'This copy runs without the station server: the message is saved on this computer only, and nothing is sent.'
+      : to === 'doctor-earth' ? `${ui.ship.linkToEarth ? 'The message is saved in the outbox and goes to the ground with the next downlink.' : 'There is no link to Earth: the message waits in the outbox and goes when the link is back.'} ${profile().name}: ${profile().reply}.` : 'The message goes to the doctor on board.';
   openPanel(`Message ${toText}`, [h('p', {}, status), area, h('p', { class: 'note' }, 'The automation drafted this text from your data; you can change it.')], [
     btn('primary', 'Send', async () => {
       const event = { v: 1, kind: 'report', time: new Date().toISOString(), person: ui.person, state: { ...ui.ship }, report: { to, text: area.value.slice(0, 4000) } };
@@ -1577,10 +2042,18 @@ function openDoctor(a, kind, indicator = null) {
 
 // ---------- alert sounds ----------
 // NASA-STD-3001 Vol 2: alerts are heard as well as seen, each level with its own sound (10114, 10175); the first
-// sound is quieter, as a pre-alert (10176). Attention stays silent. "Silence all sounds" acknowledges the sounds
-// of the alerts active now; a new alert sounds again. Only the Settings switch turns sound off altogether.
+// sound is quieter, as a pre-alert (10176); the warning tone repeats until the crew acknowledges it (10175, Figure
+// 10.3-1). Attention stays silent. Needs action sounds once. Urgent, the person's own or a crewmate's line, repeats
+// every ALARM_RULES.repeatSeconds until acknowledged: Mark as read, the Messages key, Silence on the banner or
+// "Silence all sounds". "Sound off" in Settings mutes only the needs-action tone and the spoken question, never an
+// urgent alarm (FS-03, HF-02).
 let audio = null;
-const sounded = new Set();
+const pending = new Set(); // every tone and voice still to come, so Silence stops them all, also the louder repeat
+const later = (fn, ms) => { const t = setTimeout(() => { pending.delete(t); fn(); }, ms); pending.add(t); return t; };
+const toneDone = new Set(); // needs-action alerts that played their tone
+const acked = new Set(); // urgent alerts of this person acknowledged in this sign-in
+let currentLines = []; // the crewmates' lines on the banner now
+const ring = { on: false, count: 0, title: '' };
 function tone(freqs, seconds, gain, type = 'sine') {
   try {
     audio = audio || new (window.AudioContext || window.webkitAudioContext)();
@@ -1600,35 +2073,67 @@ function tone(freqs, seconds, gain, type = 'sine') {
     });
   } catch { /* no sound device: the screen still shows the alert */ }
 }
-function soundAlerts(list) {
-  if (ui.muted) return;
-  const fresh = list.filter((x) => x.level >= LEVEL.ACTION && !sounded.has(x.id) && !ui.seen.has(x.id));
-  if (!fresh.length) return;
-  for (const x of fresh) sounded.add(x.id);
-  const top = Math.max(...fresh.map((x) => x.level));
-  playLevel(top, fresh.find((x) => x.level === top).title);
-}
+const say = (text) => { try { const s = new SpeechSynthesisUtterance(text); s.lang = 'en-US'; speechSynthesis.speak(s); } catch { /* no voice: the screen still shows it */ } };
 // Warning: 400 and 1,024 Hz alternating square wave at 2.5 Hz. Caution: 512 Hz triangle wave, 1 s on, 1 s off.
 // The first repetition is 10 dB quieter (gain 0.1 then 0.32). Source: NASA-STD-3001 Vol 2 Rev F, Table 10.3-1, 10176.
-function playLevel(level, title = '') {
-  if (level >= LEVEL.URGENT) {
-    tone([400, 1024, 400, 1024, 400, 1024], 0.2, 0.10, 'square');
-    setTimeout(() => tone([400, 1024, 400, 1024, 400, 1024], 0.2, 0.32, 'square'), 1400);
-    try { const say = new SpeechSynthesisUtterance(`Warning. ${title}`); say.lang = 'en-US'; speechSynthesis.speak(say); } catch { /* no voice */ }
-  } else if (level >= LEVEL.ACTION) {
-    tone([512, 0], 1, 0.10, 'triangle');
-    setTimeout(() => tone([512, 0], 1, 0.32, 'triangle'), 2000);
-  }
+const warning = (gain) => tone([400, 1024, 400, 1024, 400, 1024], 0.2, gain, 'square');
+function caution() { tone([512, 0], 1, 0.10, 'triangle'); later(() => tone([512, 0], 1, 0.32, 'triangle'), 2000); }
+
+// What sounds now: the person's own urgent alerts not read or acknowledged, and the crewmates' lines not silenced.
+function ringingNow(list) {
+  const own = list.filter((x) => x.level >= LEVEL.URGENT && !ui.seen.has(x.id) && !acked.has(x.id));
+  const mates = currentLines.filter((l) => !ui.seen.has(l.id));
+  return { any: own.length > 0 || mates.length > 0, title: own.length ? own[0].title : mates.length ? mates[0].voice || mates[0].text : '' };
 }
-function silenceNow(list) {
-  for (const x of list) sounded.add(x.id);
+function soundAlerts(list) {
+  const fresh = list.filter((x) => x.level === LEVEL.ACTION && !toneDone.has(x.id) && !ui.seen.has(x.id));
+  for (const x of fresh) toneDone.add(x.id);
+  const r = ringingNow(list);
+  ring.title = r.title;
+  if (r.any && !ring.on) startRinging();
+  else if (!r.any && ring.on) stopRinging();
+  if (fresh.length && !ui.muted && !ring.on) caution();
+}
+// One cycle: the warning tone (the very first one quieter), the spoken line every few cycles, then again.
+function startRinging() {
+  ring.on = true;
+  ring.count = 0;
+  cycleRing();
+}
+function cycleRing() {
+  if (!ring.on) return;
+  const first = ring.count === 0;
+  warning(first ? 0.10 : 0.32);
+  if (first) later(() => warning(0.32), 1400);
+  if (ring.count % ALARM_RULES.voiceEvery === 0) later(() => { if (ring.on) say(`Warning. ${ring.title}`); }, first ? 2800 : 1400);
+  ring.count += 1;
+  later(cycleRing, ALARM_RULES.repeatSeconds * 1000 + (first ? 1400 : 0));
+}
+function stopRinging() {
+  ring.on = false;
+  for (const t of pending) clearTimeout(t);
+  pending.clear();
   try { speechSynthesis.cancel(); } catch { /* none */ }
+}
+// Acknowledge every sound now (the Messages key, Silence on the banner, "Silence all sounds"). What is on the
+// screen stays; a new alert sounds again.
+function ackAll() {
+  const p = ui.person ? personById[ui.person] : null;
+  for (const x of p && !p.real ? alertsFor(p.id) : []) { acked.add(x.id); toneDone.add(x.id); }
+  let changed = false;
+  for (const l of currentLines) if (!ui.seen.has(l.id)) { ui.seen.add(l.id); changed = true; }
+  if (changed) savePrefs();
+  stopRinging();
   try { if (audio) { audio.close(); audio = null; } } catch { /* none */ }
 }
+const silenceNow = ackAll;
 
 // ---------- the Help key ----------
 // NASA-STD-3001 Vol 2 (10178): the crew can start the emergency response by hand. Holding the key for 2 s avoids a
-// press by accident; it records "I need help" through the same path as the camera question.
+// press by accident; it records "I need help" through the same path as the camera question. A plain press with no
+// pointer and no key held, as a screen reader, a switch or voice control sends it (event.detail 0), asks "Call for
+// help now?" first, so a call is still two deliberate actions (HF-04). On the sign-in screen it raises help for this
+// computer (FS-06).
 const HELP_HOLD_MS = 2000;
 function setupHelpKey() {
   const key = byId('help-btn');
@@ -1639,22 +2144,91 @@ function setupHelpKey() {
   const start = (e) => {
     if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
     if (e.type === 'keydown') e.preventDefault();
-    if (timer || !ui.person || personById[ui.person].real) return;
+    if (timer || (ui.person && personById[ui.person].real)) return;
     started = Date.now();
     key.classList.add('holding');
     const step = () => { if (!timer) return; if (bar) bar.style.width = `${Math.min(100, ((Date.now() - started) / HELP_HOLD_MS) * 100)}%`; requestAnimationFrame(step); };
-    timer = setTimeout(async () => {
-      reset();
-      await addReading('camera', 'chest_grab_help', { source: { id: 'help-key', indicator: 'camera' } });
-      playLevel(LEVEL.URGENT, 'Help requested');
-      toast(`Help is called: the crew on board and the doctor ${ui.ship.doctorOnBoard ? 'on board' : ui.ship.linkToEarth ? 'on Earth' : 'when the link is back'}.`);
-      setScreen('alerts');
-    }, HELP_HOLD_MS);
+    timer = setTimeout(() => { reset(); callForHelp(); }, HELP_HOLD_MS);
     requestAnimationFrame(step);
   };
   key.addEventListener('pointerdown', start);
   key.addEventListener('keydown', start);
   for (const ev of ['pointerup', 'pointerleave', 'pointercancel', 'keyup', 'blur']) key.addEventListener(ev, () => { if (timer) { reset(); toast('Hold the Help key for 2 seconds to call for help.'); } });
+  key.addEventListener('click', (e) => { if (e.detail === 0 && !timer) openHelpConfirm(); });
+}
+function openHelpConfirm() {
+  if (ui.person && personById[ui.person].real) return;
+  openPanel('Call for help now?', [
+    h('p', {}, ui.person
+      ? 'This raises an urgent alarm on every crew screen and sends a message to the doctor, the same as holding the Help key for 2 seconds.'
+      : `Nobody is signed in here. This raises an urgent alarm on every crew screen, "${SIGN_IN_HELP_TEXT}", and sends a message to the doctor.`),
+  ], [btn('primary', 'Yes, call for help', () => { closePanel(); callForHelp(); }, 'octagon-alert')], { closeLabel: 'Cancel' });
+}
+
+// A call for help: the reading, the crew line and the message to the doctor. What the person is told follows what
+// really happened to each part; a part that did not reach the station computer stays on the banner, "Help was NOT
+// sent: tell the crew in person now", and is tried again until it does (QA-01).
+let helpCall = null; // { person, events, local }
+async function callForHelp() {
+  if (!ui.person) { await helpFromSignIn(); return; }
+  const p = personById[ui.person];
+  if (!p || p.real) return;
+  const r = await addReading('camera', 'chest_grab_help', { source: HELP_SOURCE, quiet: true, retry: true, force: true });
+  afterAlarm(p.id, r);
+  setScreen('alerts');
+}
+// Nobody is signed in: a crew line for "this computer", which every screen shows, and a message to the doctor.
+async function helpFromSignIn() {
+  if (!store) { try { store = await openStore({ person: SHIP.id }); } catch { store = null; } }
+  serverDown = Boolean(store) && ownServer() && store.kind !== 'server';
+  const time = new Date().toISOString();
+  const line = { v: 1, kind: 'alarm', time, person: SHIP.id, alarm: { text: SIGN_IN_HELP_TEXT } };
+  const lineRes = await keep(line, { quiet: true, retry: true });
+  const report = { v: 1, kind: 'report', time, person: SHIP.id, state: { ...ui.ship }, report: { to: ui.ship.doctorOnBoard ? 'doctor-onboard' : 'doctor-earth', text: alarmReportText({ name: 'a crew member', gmt: gmtDOY(time), what: [`The Help key was held at a station computer where nobody was signed in, GMT ${gmtDOY(time)}.`], crew: crewSentence(statusOf(line), false) }), topic: 'alarm' } };
+  const reportRes = await keep(report, { quiet: true, retry: true });
+  afterAlarm(SHIP.id, { ok: true, shared: { line, lineRes, report, reportRes } });
+  render();
+}
+// What a call for help became, in words, for the toast and the banner.
+function helpWords(call) {
+  const [line, report] = call.events;
+  const ls = line ? statusOf(line) : 'unsent';
+  const rs = report ? statusOf(report) : 'unsent';
+  const doc = doctorWords(rs, ui.ship);
+  if (ls === 'shared') return { done: !['unsent', 'waiting'].includes(rs), bold: 'Help is called.', rest: `${crewWords('shared')} ${doc}` };
+  if (ls === 'local') return { done: true, bold: 'Help is noted on this computer only.', rest: 'This copy runs without the station server, so no other screen and no doctor gets it. Tell the crew in person now.' };
+  if (ls === 'waiting') return { done: false, bold: 'Help was NOT sent: tell the crew in person now.', rest: serverDown ? 'The station server is not answering; this screen keeps trying and sends it when the server is back.' : 'The station computer did not take it yet; this screen keeps trying.' };
+  return { done: false, bold: 'Help was NOT sent: tell the crew in person now.', rest: 'The station computer did not take it. Hold the Help key again.' };
+}
+function afterAlarm(personId, r) {
+  if (!r.ok || !r.shared) {
+    helpCall = { person: personId, events: [] };
+    toast(`Help was NOT sent: tell the crew in person now. ${r.why ? `(${shortReason(r.why)}) ` : ''}Hold the Help key again.`);
+    renderBar();
+    return;
+  }
+  helpCall = { person: personId, events: [r.shared.line, r.shared.report] };
+  const w = helpWords(helpCall);
+  toast(`${w.bold} ${w.rest}`);
+  if (w.done && statusOf(r.shared.line) === 'shared') helpCall = null;
+  renderBar();
+}
+// The banner notice of a call for help that has not reached everyone yet, or null.
+function helpNotice() {
+  if (!helpCall) return null;
+  if (!helpCall.events.length) return { icon: 'octagon-alert', bold: 'Help was NOT sent: tell the crew in person now.', rest: 'Hold the Help key again.' };
+  const w = helpWords(helpCall);
+  return w.done && statusOf(helpCall.events[0]) === 'shared' ? null : { icon: 'octagon-alert', bold: w.bold, rest: w.rest };
+}
+// After a look at the station computer: a call that has now reached it is said once, and leaves the banner.
+function checkHelpCall() {
+  if (!helpCall || !helpCall.events.length) return;
+  const w = helpWords(helpCall);
+  if (w.done && statusOf(helpCall.events[0]) === 'shared') {
+    helpCall = null;
+    toast(`Your call for help is saved now. ${w.rest}`);
+    renderBar();
+  }
 }
 
 // ---------- camera: the team's question "Are you okay?" ----------
@@ -1671,15 +2245,15 @@ function askAreYouOk(person) {
     asking = null;
     if (dlg.open) dlg.close();
     try { speechSynthesis.cancel(); } catch { /* no voice */ }
-    await addReading('camera', value, { person });
-    if (value !== 'chest_grab_ok') toast(`The automation called the doctor ${ui.ship.doctorOnBoard ? 'on board' : 'on Earth'}.`);
+    const alarm = value !== 'chest_grab_ok';
+    const r = await addReading('camera', value, { person, quiet: alarm, retry: alarm, force: alarm });
+    if (alarm) afterAlarm(person, r);
   };
-  const where = ui.ship.doctorOnBoard ? 'on board' : 'on Earth';
   byId('ask-yes').replaceChildren(icon('check', { size: 24 }), 'I am okay');
   byId('ask-no').replaceChildren(icon('stethoscope', { size: 24 }), 'I need help');
   const tick = () => {
     const left = Math.max(0, ASK_SECONDS - (Date.now() - started) / 1000);
-    byId('ask-timer').textContent = left > 0 ? `No answer in ${Math.ceil(left)} s: the doctor ${where} will be called.` : `Calling the doctor ${where}.`;
+    byId('ask-timer').textContent = askTimerText(left, ui.ship);
     byId('ask-bar').style.width = `${(left / ASK_SECONDS) * 100}%`;
     if (left <= 0) finish('chest_grab_no_answer');
   };
@@ -1771,14 +2345,19 @@ async function connectKind(kind) {
   }
   ui.conn.busy[kind] = true;
   drawConnections();
+  // The device belongs to the person who connected it: a reading that arrives after a sign-out is never filed for
+  // the next person (QA-02); signing out also disconnects every device.
+  const owner = p.id;
   try {
     const handle = await connectHealthDevice(kind, (r) => {
+      if (ui.person !== owner) { try { if (devices[kind]) devices[kind].disconnect(); } catch { /* already gone */ } return; }
       const ex = r.indicator === 'pulse' && exercisingNow();
-      addReading(r.indicator, r.value, { source: { id: r.source, indicator: r.indicator }, context: ex ? 'exercise' : null, time: r.time });
+      addReading(r.indicator, r.value, { source: { id: r.source, indicator: r.indicator }, context: ex ? 'exercise' : null, time: r.time, person: owner });
     }, {
       onLive: (parsed, readings, skipped) => { ui.conn.live[liveRow(kind)] = liveText(kind, parsed, readings, skipped); drawConnections(); },
       onDisconnect: () => { delete devices[kind]; ui.conn.connected[kind] = false; drawConnections(); },
     });
+    if (handle && ui.person !== owner) { try { handle.disconnect(); } catch { /* already gone */ } return; }
     if (handle) { devices[kind] = handle; ui.conn.connected[kind] = true; toast(`Connected: ${handle.name}.`); }
   } catch (err) {
     toast(err && err.name === 'NoBluetooth' ? err.message : `The device did not connect: ${(err && err.message) || err}`);
@@ -1800,9 +2379,10 @@ async function readFeed(id) {
     const r = await readCabinAir({ skip: ['cabinO2'] });
     if (!r.ok) { ui.conn.live[id] = `No answer from ISSLive: ${r.error}`; drawConnections(); return; }
     const fresh = onlyNew(r.readings, stored, SHIP.id);
-    for (const e of toEvents(fresh, { person: SHIP.id, state: ui.ship })) await keep(e);
+    let saved = 0;
+    for (const e of toEvents(fresh, { person: SHIP.id, state: ui.ship })) if ((await keep(e, { quiet: true })).ok) saved += 1;
     if (fresh.length) rebuild();
-    ui.conn.live[id] = issText(r, fresh.length);
+    ui.conn.live[id] = `${issText(r, saved)}${fresh.length > saved ? ` Not saved: ${fresh.length - saved}.` : ''}`;
     render();
   } else if (id === 'spaceweather') {
     const r = await readSpaceWeather();
@@ -1823,13 +2403,24 @@ async function toggleFeed(id, on) {
 }
 
 // A CSV file from a wearable's export (Hexoskin, Astroskin, Actiware, Svantek) or any table with chosen columns.
+// Only the readings that were really saved are counted; the others leave the screen, so the same file can be brought in
+// again for them (QA-07). A reading past an urgent limit raises the crew alarm like any other.
 async function saveImported(readings, rejected, what, notes) {
   const fresh = onlyNew(readings || [], stored, ui.person).slice(0, 5000);
-  for (const e of toEvents(fresh, { person: ui.person, state: ui.ship })) await keep(e);
+  let saved = 0;
+  let held = 0;
+  let why = '';
+  for (const e of toEvents(fresh, { person: ui.person, state: ui.ship })) {
+    const r = await keep(e, { quiet: true });
+    if (r.ok) { saved += 1; if (r.waiting) held += 1; } else why = why || r.why;
+  }
   rebuild();
+  if (saved) await shareCrewAlarm(ui.person);
   render();
+  const lost = fresh.length - saved;
   openPanel('Import from a file', [
-    h('p', {}, `${cap(what)}: ${fresh.length} new ${fresh.length === 1 ? 'reading' : 'readings'} saved${(rejected || []).length ? `; ${rejected.length} left out` : ''}.`),
+    h('p', {}, `${cap(what)}: ${saved} new ${saved === 1 ? 'reading' : 'readings'} saved${held ? ` (${held} kept in this browser until the station server answers)` : ''}${(rejected || []).length ? `; ${rejected.length} left out` : ''}.`),
+    lost ? h('p', { class: 'note' }, `Not saved: ${lost} ${lost === 1 ? 'reading' : 'readings'} (${shortReason(why)}). Bring the file in again to try them again.`) : null,
     ...(notes || []).map((n) => h('p', { class: 'note' }, String(n))),
   ]);
 }
@@ -1902,28 +2493,36 @@ function exportMine() {
   a.remove();
   toast(mine.length ? `Saved ${mine.length} events.` : 'Nothing of yours is saved yet: the example flight is made up and is not part of your data.');
 }
+// Each line is checked first with the server's own rules (src/security.js, also no time from the future), and only
+// the lines the station computer really took count as brought back; the refused ones are listed with their reason.
+// Messages and crew alarm lines stay out: an old message is never sealed into the outbox again, an old alarm never
+// reaches the crew again (QA-10).
 async function restoreMine(file) {
   if (!file) return;
-  const have = new Set(stored.map((e) => `${e.kind}|${e.person}|${e.time}|${JSON.stringify(e.reading || e.report || {})}`));
+  let text;
+  try { text = await file.text(); } catch { toast('Could not read the file.'); return; }
+  const plan = restorePlan(text, { person: ui.person, ship: SHIP.id, have: stored });
   let added = 0;
-  let bad = 0;
-  let other = 0;
-  for (const line of (await file.text()).split(/\r?\n/)) {
-    if (!line.trim()) continue;
-    try {
-      const e = JSON.parse(line);
-      if (!e || !e.kind || !e.person || !e.time) { bad += 1; continue; }
-      if (e.person !== ui.person && e.person !== SHIP.id) { other += 1; continue; }
-      const k = `${e.kind}|${e.person}|${e.time}|${JSON.stringify(e.reading || e.report || {})}`;
-      if (have.has(k)) continue;
-      have.add(k);
-      await keep(e);
-      added += 1;
-    } catch { bad += 1; }
+  let held = 0;
+  const refused = [...plan.refused];
+  for (const e of plan.add) {
+    const r = await keep(e, { quiet: true });
+    if (r.ok) { added += 1; if (r.waiting) held += 1; } else refused.push({ line: null, why: shortReason(r.why) });
   }
   rebuild();
   render();
-  toast(`Brought back ${added} events${bad ? `; ${bad} lines could not be read` : ''}${other ? `; ${other} belonged to someone else and were left out` : ''}.`);
+  const left = [
+    plan.known ? `${plan.known} already here` : null,
+    plan.messages ? `${plan.messages} ${plan.messages === 1 ? 'message' : 'messages'} to a doctor, so ${plan.messages === 1 ? 'it is' : 'they are'} not sent again` : null,
+    plan.alarms ? `${plan.alarms} crew alarm ${plan.alarms === 1 ? 'line' : 'lines'}, so no old alarm reaches the crew again` : null,
+    plan.others ? `${plan.others} of someone else` : null,
+    plan.unreadable ? `${plan.unreadable} that could not be read` : null,
+  ].filter(Boolean);
+  openPanel('Bring back a copy', [
+    h('p', {}, `Brought back ${added} ${added === 1 ? 'event' : 'events'}${held ? ` (${held} kept in this browser until the station server answers)` : ''}.`),
+    left.length ? h('p', {}, `Left out: ${left.join('; ')}.`) : null,
+    refused.length ? h('div', {}, h('p', {}, `Refused by the checks: ${refused.length}.`), h('ul', { class: 'links' }, ...refused.slice(0, 12).map((x) => h('li', {}, `${x.line ? `Line ${x.line}: ` : ''}${x.why}`)))) : null,
+  ]);
 }
 
 // Log a reading by hand on a measure page: the challenge asks for keyboard input, and NASA's own planned flow has
@@ -1934,25 +2533,36 @@ function logReadingForm(cell, owner, onDone) {
   const isBp = ind === 'bp';
   const range = PLAUSIBLE[ind];
   if (!isBp && !range) return null;
-  const inp = (id, label, hint) => h('label', { class: 'log-field' }, h('span', {}, label), h('input', { id, type: 'number', inputmode: 'decimal', step: 'any', 'aria-describedby': `${id}-hint` }), h('small', { id: `${id}-hint` }, hint));
+  // A text field with the decimal keypad: a number field would drop a decimal comma without a word, so "2,8" became 28
+  // (QA-05). The value is read by typedNumber(): an empty field saves nothing (QA-04).
+  const inp = (id, label, hint) => h('label', { class: 'log-field' }, h('span', {}, label), h('input', { id, type: 'text', inputmode: 'decimal', autocomplete: 'off', spellcheck: 'false', 'aria-describedby': `${id}-hint` }), h('small', { id: `${id}-hint` }, hint));
   const fields = isBp
     ? [inp('log-sys', 'Systolic (mmHg)', 'For example 118'), inp('log-dia', 'Diastolic (mmHg)', 'For example 76')]
-    : [inp('log-val', `${shortLabel(cell)}${cell.unit ? ` (${unitShort(cell)})` : ''}`, `Between ${range[0]} and ${range[1]}`)];
+    : [inp('log-val', `${shortLabel(cell)}${cell.unit ? ` (${unitShort(cell)})` : ''}`, `Between ${range[0]} and ${range[1]}. A decimal point or a comma both work.`)];
   const save = async () => {
-    const num = (id) => Number(String(byId(id).value).replace(',', '.'));
+    const raw = (id) => String(byId(id).value || '').trim();
+    const ids = isBp ? ['log-sys', 'log-dia'] : ['log-val'];
+    const empty = ids.find((id) => !raw(id));
+    if (empty) { toast('Type a number first.'); byId(empty).focus(); return; }
+    const bad = ids.find((id) => typedNumber(raw(id)) === null);
+    if (bad) { toast('Type a plain number, such as 2.8 or 2,8: digits with one decimal point or comma.'); byId(bad).focus(); return; }
     let value;
+    let shown;
     if (isBp) {
-      const sys = num('log-sys');
-      const dia = num('log-dia');
+      const sys = typedNumber(raw('log-sys'));
+      const dia = typedNumber(raw('log-dia'));
       if (!(sys >= 50 && sys <= 300 && dia >= 20 && dia <= 200 && sys > dia)) { toast('Check the numbers: systolic 50 to 300, diastolic 20 to 200, systolic higher.'); return; }
       value = { sys, dia };
+      shown = `${sys}/${dia} mmHg`;
     } else {
-      const v = num('log-val');
-      if (!Number.isFinite(v) || v < range[0] || v > range[1]) { toast(`That does not look like a reading: use a number between ${range[0]} and ${range[1]}.`); return; }
+      const v = typedNumber(raw('log-val'));
+      if (v < range[0] || v > range[1]) { toast(`That does not look like a reading: use a number between ${range[0]} and ${range[1]}.`); return; }
       value = v;
+      shown = `${String(v)}${cell.unit ? ` ${cell.unit}` : ''}`;
     }
-    await addReading(ind, value, { source: { id: 'manual', indicator: ind }, person: owner.id });
-    toast('Saved, typed in by hand.');
+    const r = await addReading(ind, value, { source: { id: 'manual', indicator: ind }, person: owner.id, quiet: true });
+    if (!r.ok) { toast(`Not saved: ${shortReason(r.why)}. The number is still in the field: try again.`); return; }
+    toast(r.waiting ? `${shown}: kept in this browser until the station server answers.` : `Saved ${shown}, typed in by hand.`);
     if (onDone) onDone();
   };
   return h('div', { class: 'log-form' }, ...fields, btn('primary small', 'Save the reading', save, 'check'));
@@ -1962,7 +2572,7 @@ function connectionsCard(p) {
   const host = h('div', { id: 'conn-host' });
   drawConnections(host, p);
   return h('section', { class: 'card' }, cornerTip('t:connections', 'connections'), h('h2', {}, 'Connections'),
-    switchRow('st-exercise', 'I am exercising', `Heart rate from a strap or a cuff is then recorded, not judged against the resting range, so a workout raises no alarm. Low limits still count. It turns itself off after ${EXERCISE_HOURS} hours (draft).`, exercisingNow(), (on) => { ui.exercising = on; ui.exerciseUntil = on ? Date.now() + EXERCISE_HOURS * HOUR_MS : 0; }),
+    switchRow('st-exercise', 'I am exercising', `Heart rate from a strap or a cuff is then recorded, not judged against the resting range, so a workout raises no alarm. Low limits still count. It turns itself off after ${EXERCISE_HOURS} hours (draft).`, exercisingNow(), (on) => { ui.exercising = on; ui.exerciseUntil = on ? Date.now() + EXERCISE_HOURS * HOUR_MS : 0; renderBar(); }),
     host);
 }
 function pinCard(p) {
@@ -2002,9 +2612,9 @@ function renderSetup() {
     h('div', { class: 'screen-head' }, h('h1', {}, 'Settings')),
     h('div', { class: 'settings' },
       h('section', { class: 'card' }, cornerTip('t:display', 'the display'), h('h2', {}, 'Sound and display'),
-        switchRow('st-sound', 'Sound and voice', 'Alerts that need action sound a tone; urgent ones also speak. The question "Are you okay?" is spoken too.', !ui.muted, (on) => { ui.muted = !on; if (ui.muted) { try { speechSynthesis.cancel(); } catch { /* none */ } } savePrefs(); renderBar(); }),
+        switchRow('st-sound', 'Sound and voice', `Alerts that need action sound a tone, and the question "Are you okay?" is spoken. Off mutes only these, until the next sign-in: an urgent alarm always sounds: its tone repeats every ${ALARM_RULES.repeatSeconds} seconds and its spoken line every ${ALARM_RULES.repeatSeconds * ALARM_RULES.voiceEvery} seconds until someone acknowledges it (drafts).`, !ui.muted, (on) => { ui.muted = !on; renderBar(); }),
         h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Test the alert sounds'), h('small', {}, 'Plays the needs-action tone, then the urgent tone, so the crew can check them (NASA-STD-3001 Vol 2, 10117).')),
-          btn('secondary small', 'Test', () => { playLevel(LEVEL.ACTION); setTimeout(() => playLevel(LEVEL.URGENT, 'This is a test.'), 4200); toast('Sound test: needs action, then urgent.'); }, 'volume-2')),
+          btn('secondary small', 'Test', () => { caution(); later(() => { warning(0.10); later(() => warning(0.32), 1400); say('Warning. This is a test.'); }, 4200); toast('Sound test: needs action, then urgent.'); }, 'volume-2')),
         h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Display'), h('small', {}, 'Dark suits a dim cabin; light suits a bright one.')),
           h('div', { class: 'seg small', role: 'group', 'aria-label': 'Display' }, ...THEMES.map(([k, label]) => h('button', { type: 'button', 'aria-pressed': String(pick === k), onclick: () => { setTheme(k); renderSetup(); } }, pick === k ? icon('check', { size: 14 }) : null, label))))),
       h('section', { class: 'card' }, cornerTip('t:mission', 'the mission profile'), h('h2', {}, 'Mission'),
@@ -2087,8 +2697,8 @@ byId('keynums-tip').replaceWith(tipButton('t:keynums', 'key numbers'));
 byId('measures-tip').replaceWith(tipButton('t:measures', 'all measures'));
 byId('checkin-tip').replaceWith(tipButton('t:checkin', 'the daily check-in'));
 byId('comingup-tip').replaceWith(tipButton('t:comingup', 'what is coming up'));
-byId('who-btn').addEventListener('click', () => { if (camStop) { camStop(); camStop = null; } closePanel(); ui.person = null; render(); });
-byId('alerts-btn').addEventListener('click', () => setScreen('alerts'));
+byId('who-btn').addEventListener('click', () => signOut());
+byId('alerts-btn').addEventListener('click', () => { ackAll(); setScreen('alerts'); });
 byId('ci-send').addEventListener('click', sendCheckin);
 byId('ci-cancel').addEventListener('click', () => { ui.checkinOpen = false; ui.checkin = { mood: null, attitude: null, sleepQuality: null, weighing: [] }; renderHome(); });
 byId('see-all').addEventListener('click', () => setScreen('measures'));
@@ -2117,3 +2727,5 @@ window.addEventListener('resize', () => { cancelAnimationFrame(resizeFrame); res
 stored = [];
 rebuild();
 render();
+// Something from an earlier visit still waits for the station server: it is sent as soon as the server answers.
+schedulePoll(ALARM_RULES.retrySeconds);
