@@ -1,10 +1,10 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:7b5079eb-988a-4d22-b25b-7adce51f5924",
+  "serialNumber": "urn:uuid:d81d2caa-960e-4abe-ac0b-eecca24919c0",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-11-15T17:43:13.893Z",
+    "timestamp": "2026-11-15T17:50:27.110Z",
     "authors": [
       {
         "name": "Claude (Anthropic), an AI system, for team Just For Fun"
@@ -26,7 +26,7 @@
         "name": "Team Just For Fun (NASA Space Apps Challenge 2026)"
       },
       "name": "just-for-fun-health-skeleton",
-      "version": "1.3.0",
+      "version": "1.4.0",
       "description": "Crew Health Console",
       "licenses": [
         {

@@ -79,10 +79,15 @@ export async function modelSource(fetchFn = globalThis.fetch) {
   // A model already in this browser's storage starts from there, whichever place filled it, with no request at all.
   if (await isStored(onBoard)) return (st.source = onBoard);
   if (await isStored(publicHost)) return (st.source = publicHost);
-  try {
-    const r = await fetchFn(`${local}mlc-chat-config.json`, { method: 'HEAD', cache: 'no-store' });
-    if (r.ok) return (st.source = onBoard);
-  } catch { /* not there */ }
+  // The program's own folder exists only where its own server runs (http or this computer). A static public copy
+  // (GitHub Pages, https) has no such folder, so it is not asked there: the probe would only log a 404.
+  const ownServer = typeof location === 'undefined' || location.protocol === 'http:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  if (ownServer) {
+    try {
+      const r = await fetchFn(`${local}mlc-chat-config.json`, { method: 'HEAD', cache: 'no-store' });
+      if (r.ok) return (st.source = onBoard);
+    } catch { /* not there */ }
+  }
   return (st.source = publicHost);
 }
 
