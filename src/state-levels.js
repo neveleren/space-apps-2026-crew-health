@@ -10,7 +10,9 @@
 // - one reading past a published red limit (config.js, "red") raises its level at once, with no streak;
 // - a change that flight studies call common in flight, inside the band its study supports, is information
 //   on the measure's page and never raises the headline; a fever is never explained away that way;
-// - a daily vital just outside the norm (inside its red limits) needs a few readings in a row before "attention";
+// - a daily vital just outside the norm (inside its red limits) needs a few readings in a row before "attention",
+//   unless its run holds a reading past a red limit, or two or more vital signs are outside the norm at once;
+// - a reading taken during exercise that is only recorded never changes the judgement of the person at rest;
 // - the straight-line forecast alerts only for slow measures, or when the line clearly outruns the daily scatter;
 // - with no fresh data the message does not say "excellent";
 // - a cabin value past the ship's own limit reaches the person's message as a ship alarm.
@@ -54,6 +56,9 @@ export const EXPECTED_EVERY_DAYS = { pulse: 1, bp: 1, temp: 1, sleep: 1, resp: 1
 // 15 Nov 2026). Daily vitals scatter from day to day, and a straight line through them misleads.
 export const SLOW_MEASURES = ['vo2max', 'strength', 'bodyMass', 'radiation', 'hearing'];
 
+// The vital signs that NEWS2 scores (RCP, 2017): breathing rate, blood oxygen, systolic pressure, pulse, temperature.
+export const VITAL_SIGNS = ['resp', 'spo2', 'bp', 'pulse', 'temp'];
+
 // Placeholder thresholds (Claude's), shown on the page as such.
 export const RULES = {
   outStreakForAttention: 3, // draft: a daily vital outside the norm, inside its red limits: this many readings in a row for "attention"
@@ -62,6 +67,8 @@ export const RULES = {
   staleAfter: 2, // a measure is stale after this many times its expected interval without a reading
   trendOverNoise: 1, // draft: for a daily vital, the line must move more in one day than the readings scatter around it
   trendMinDays: 7, // draft: ... and needs in-flight readings on at least this many days, since a few points can look steep
+  vitalsTogether: 2, // draft: this many vital signs outside the norm at the same time count at once, with no repeat
+  togetherHours: 24, // draft: ... "at the same time": the last reading of each within this many hours of now
   psycheDays: 14, // the self-reports of this many last days are looked at
   badDaysForAttention: 6, // draft: bad mood or low energy on this many of those days: "attention" (was 3, which fired on 39 to 56% of days for people with no mood problem)
   badDaysForAction: 8, // draft: ... on this many, more than half of the days: "needs action" (was 6)
@@ -71,12 +78,16 @@ export const RULES = {
 // Why the draft rules above exist, for the page. The red limits carry their own sources (config.js, "red").
 export const RULE_NOTES = {
   outStreakForAttention: {
-    text: 'A daily vital just outside the norm becomes "attention" only when it stays outside: in hospitals 85 to 99% of alarm signals need no clinical action, often because the limits are not adjusted to the person. One reading past a red limit still counts at once.',
+    text: 'A daily vital just outside the norm becomes "attention" only when it stays outside: in hospitals an estimated 85 to 99% of alarm signals need no clinical intervention, for example when the default limits are not adjusted to the person. One reading past a red limit still counts at once, and a run outside the norm that holds one is never waited on.',
     source: 'The Joint Commission, Sentinel Event Alert 50, 2013', url: 'https://digitalassets.jointcommission.org/api/public/content/f65e5c9df2b94000a99445e0a7877007', draft: true,
   },
   staleAfter: {
     text: 'Stale or missing data must be shown as such, so with no fresh data the message never says "excellent".',
     source: 'NASA-STD-3001 Vol 2 Rev F [V2 10020]', url: 'https://standards.nasa.gov/system/files/tmp/NASA-STD-3001%20Vol%202%20Rev%20F.pdf', draft: true,
+  },
+  vitalsTogether: {
+    text: 'Two or more vital signs outside the norm at the same time count at once, without waiting for a repeat: NEWS2 notes that a disturbance of one measure rarely comes alone, and that several disturbed together are a more robust sign of acute illness than any single one.',
+    source: 'RCP NEWS2, 2017 (PDF page 38)', url: 'https://www.rcp.ac.uk/media/a4ibkkbf/news2-final-report_0_0.pdf', draft: true,
   },
   trendOverNoise: {
     text: 'A straight line through readings that scatter from day to day misleads: a daily vital gets a forecast alert only when its line moves more in one day than the readings scatter around it, over a week or more. Slow measures always can.',
@@ -132,23 +143,33 @@ function scatter(points, line, mission) {
 // One measure of one person: the latest reading, how long it has been outside the norm, the forecast.
 // streak counts the readings in a row outside the norm, back from the last one, leaving out a reading that is
 // only a change common in flight (it is not a problem, so it neither starts nor lengthens a run).
+// A reading taken during exercise that the machine only recorded (engine.js) says nothing about the person at
+// rest, so the judgement, the run and the forecast leave it out; the age of the data still counts every reading.
+// redInRun: the current run outside the norm holds a reading past a red limit. runFrom: when the run began.
 export function measureState({ machine, person, cell, mission, now }) {
   const list = machine.history(person.id, cell.indicator);
-  const last = list[list.length - 1] || null;
+  const judged = list.filter((x) => !(x.context === 'exercise' && x.status === STATUS.RECORDED));
+  const latest = list[list.length - 1] || null;
+  const last = judged[judged.length - 1] || null;
   const norm = normOf(cell, person);
   let streak = 0;
-  for (let i = list.length - 1; i >= 0 && list[i].status === STATUS.OUT && !commonInFlight(cell, list[i], norm, mission); i -= 1) streak += 1;
+  let redInRun = false;
+  for (let i = judged.length - 1; i >= 0 && judged[i].status === STATUS.OUT && !commonInFlight(cell, judged[i], norm, mission); i -= 1) {
+    streak += 1;
+    if (judged[i].red) redInRun = true;
+  }
+  const runFrom = streak ? judged[judged.length - streak].time : null;
   const side = last && last.status === STATUS.OUT ? (last.side || (cell.normType === 'below-both' ? 'above' : null)) : null;
-  const points = list.map((x) => ({ time: x.time, value: valueOf(cell, x.value) }));
+  const points = judged.map((x) => ({ time: x.time, value: valueOf(cell, x.value) }));
   const fc = norm && cell.kind === 'number'
     ? forecast(points, { norm, flatPerDay: 0, now: mission.today, landing: mission.landing, window: { from: mission.launch, to: mission.landing } })
     : null;
   const every = EXPECTED_EVERY_DAYS[cell.indicator];
-  const stale = Boolean(every && last && ms(now) - ms(last.time) > RULES.staleAfter * every * DAY);
+  const stale = Boolean(every && latest && ms(now) - ms(latest.time) > RULES.staleAfter * every * DAY);
   // The line "clearly" moves when it changes more in one day than the readings scatter around it, over a week or more.
   const noise = fc && fc.line ? scatter(points, fc.line, mission) : null;
   const clearTrend = Boolean(fc && fc.line && noise !== null && fc.days >= RULES.trendMinDays && Math.abs(fc.line.perDay) > RULES.trendOverNoise * noise);
-  return { cell, list, last, norm, streak, side, forecast: fc, stale, noise, clearTrend };
+  return { cell, list, last, norm, streak, redInRun, runFrom, side, forecast: fc, stale, noise, clearTrend };
 }
 
 // A forecast alert: only for a slow measure, or for a line that clearly outruns the daily scatter.
@@ -167,7 +188,8 @@ function judge(cell, m, mission) {
   if (cell.normType === 'baseline-percent' || cell.indicator === 'radiation') return { kind: 'standard', level: LEVEL.ACTION, cell, m };
   if (commonInFlight(cell, last, m.norm, mission)) return { kind: 'expected', level: LEVEL.FINE, cell, m, expected: EXPECTED[cell.indicator] };
   const daily = EXPECTED_EVERY_DAYS[cell.indicator] === 1;
-  if (daily && m.streak < RULES.outStreakForAttention) return { kind: 'watch', level: LEVEL.FINE, cell, m, needed: RULES.outStreakForAttention };
+  // A run that holds a reading past a red limit is not "just outside the norm": it is never waited on.
+  if (daily && m.streak < RULES.outStreakForAttention && !m.redInRun) return { kind: 'watch', level: LEVEL.FINE, cell, m, needed: RULES.outStreakForAttention };
   const forAction = daily ? RULES.outStreakForActionDaily : RULES.outStreakForAction;
   return { kind: 'out', level: m.streak >= forAction ? LEVEL.ACTION : LEVEL.ATTENTION, cell, m };
 }
@@ -201,7 +223,8 @@ function freshness({ machine, person, cells, now }) {
 const top = (items) => items.reduce((lv, x) => Math.max(lv, x.level), LEVEL.FINE);
 
 // Everything the front side needs for one person today.
-// body, psyche: the levels and items of the headline. info: level-fine notes for the measures' pages
+// body, psyche: the levels and items of the headline; an item counted at once because several vital signs are
+// outside the norm together carries `together` (their indicators). info: level-fine notes for the measures' pages
 // ('stale', 'expected' = common in flight, 'watch' = outside the norm once, waiting for a repeat).
 // fresh: whether there is fresh data to judge the body and the mind. ship: cabin values past the ship's own
 // limits, which reach every person. doctorReachable: a doctor on board, or a link to Earth.
@@ -209,13 +232,24 @@ export function assess({ machine, person, cells, mission, now, ship = SHIP_DEFAU
   const body = [];
   const psyche = [];
   const info = [];
+  const judged = [];
   for (const cell of cells) {
     if (cell.section === 'env' || cell.kind !== 'number' || cell.onlyOnEarth) continue;
     const m = measureState({ machine, person, cell, mission, now });
     if (!m.last) continue;
     if (m.stale) info.push({ kind: 'stale', level: LEVEL.FINE, cell, m });
     const it = judge(cell, m, mission);
-    if (it) (it.level > LEVEL.FINE ? body : info).push(it);
+    if (it) judged.push(it);
+  }
+  // Several vital signs outside the norm at the same time are not waited on (draft, RULE_NOTES.vitalsTogether):
+  // a watched one counts at once, as "attention".
+  const outNow = judged.filter((x) => VITAL_SIGNS.includes(x.cell.indicator) && ['watch', 'out', 'red'].includes(x.kind)
+    && ms(now) - ms(x.m.last.time) <= RULES.togetherHours * 60 * 60 * 1000);
+  const together = [...new Set(outNow.map((x) => x.cell.indicator))];
+  for (const x of judged) {
+    const it = x.kind === 'watch' && together.length >= RULES.vitalsTogether && together.includes(x.cell.indicator)
+      ? { kind: 'out', level: LEVEL.ATTENTION, cell: x.cell, m: x.m, together } : x;
+    (it.level > LEVEL.FINE ? body : info).push(it);
   }
 
   // Camera: an alarm after the question "Are you okay?" makes the body "urgent".

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { createMachine } from '../src/engine.js';
 import { CELLS, CREW, SHIP } from '../src/config.js';
 import { exampleFlight, MISSION } from '../src/demo-crew.js';
-import { assess, assessShip, headline, headlineFor, topLevel, LEVEL, RULES, SLOW_MEASURES, EXPECTED } from '../src/state-levels.js';
+import { assess, assessShip, headline, headlineFor, topLevel, LEVEL, RULES, RULE_NOTES, SLOW_MEASURES, EXPECTED } from '../src/state-levels.js';
 
 function flightMachine(extra = []) {
   const machine = createMachine({ cells: CELLS, crew: [...CREW, SHIP], state: { aiWorks: true, doctorOnBoard: false, linkToEarth: true } });
@@ -249,4 +249,74 @@ test('example flight: most days calm, the real problems still flagged', () => {
   for (; i < events.length; i += 1) { const ev = events[i]; if (ev.kind === 'reading') machine.receive({ ...ev.reading, person: ev.person, time: ev.time }); }
   assert.equal(assess({ machine, person: person('crew-4'), cells: CELLS, mission: MISSION, now }).psyche.level, LEVEL.ACTION, "member 4's mood slide");
   assert.ok(assess({ machine, person: person('crew-2'), cells: CELLS, mission: MISSION, now }).body.items.some((x) => x.kind === 'forecast' && x.cell.indicator === 'vo2max'), "Elly's endurance");
+});
+
+// ---------- reviewer's fixes (drafts): nothing really wrong may read "excellent" ----------
+const minutesAfter = (n, hour, min) => new Date(Date.parse(at(n, hour)) + min * 60 * 1000).toISOString();
+
+test('a reading past a red limit, then a repeat still outside the norm: never "excellent"', () => {
+  for (const [indicator, crisis, repeat] of [['bp', { sys: 200, dia: 125 }, { sys: 175, dia: 115 }], ['pulse', 180, 125], ['resp', 32, 23], ['temp', 34.6, 35.4]]) {
+    const m = fresh();
+    ordinaryDays(m, 110, 120);
+    put(m, 120, indicator, crisis, 'crew-1', { time: at(120, 9) });
+    put(m, 120, indicator, repeat, 'crew-1', { time: minutesAfter(120, 9, 5) });
+    const a = judgeOn(m, 120);
+    const it = itemOf(a, indicator);
+    assert.equal(it.kind, 'out', indicator);
+    assert.ok(it.m.redInRun, `${indicator}: the run holds the red reading`);
+    assert.equal(a.body.level, LEVEL.ATTENTION, indicator);
+    assert.doesNotMatch(headlineFor('1 May 2026', a), /excellent\. Keep it up/, indicator);
+  }
+  // Back inside the norm, the run is over.
+  const m = fresh();
+  ordinaryDays(m, 110, 120);
+  put(m, 120, 'bp', { sys: 200, dia: 125 }, 'crew-1', { time: at(120, 9) });
+  put(m, 120, 'bp', { sys: 175, dia: 115 }, 'crew-1', { time: minutesAfter(120, 9, 5) });
+  put(m, 120, 'bp', { sys: 118, dia: 76 }, 'crew-1', { time: at(120, 10) });
+  assert.equal(judgeOn(m, 120).body.level, LEVEL.FINE);
+});
+
+test('two or more vital signs outside the norm at the same time count at once (NEWS2), other measures do not', () => {
+  const together = (extra, day = 40) => {
+    const m = fresh();
+    ordinaryDays(m, 30, day);
+    for (const [indicator, value, time] of extra) put(m, day, indicator, value, 'crew-1', { time: time || at(day, 9) });
+    return judgeOn(m, day);
+  };
+  const two = together([['pulse', 125], ['resp', 24]]);
+  assert.equal(two.body.level, LEVEL.ATTENTION);
+  for (const ind of ['pulse', 'resp']) {
+    const it = itemOf(two, ind);
+    assert.equal(it.kind, 'out', ind);
+    assert.deepEqual([...it.together].sort(), ['pulse', 'resp']);
+  }
+  assert.equal(RULE_NOTES.vitalsTogether.draft, true);
+  assert.match(RULE_NOTES.vitalsTogether.url, /^https:\/\/www\.rcp\.ac\.uk\//);
+  // One vital sign alone still waits for a repeat; sleep is not a vital sign.
+  assert.equal(together([['pulse', 125]]).body.level, LEVEL.FINE);
+  assert.equal(together([['pulse', 125], ['sleep', 4.5]]).body.level, LEVEL.FINE);
+  // Not at the same time: the breathing reading is more than a day older than the pulse reading.
+  const apart = fresh();
+  ordinaryDays(apart, 30, 39);
+  put(apart, 39, 'resp', 24, 'crew-1', { time: at(39, 9) });
+  put(apart, 40, 'pulse', 125, 'crew-1', { time: at(40, 10) });
+  assert.equal(assess({ machine: apart, person: person('crew-1'), cells: CELLS, mission: MIS, now: new Date(at(40, 11)) }).body.level, LEVEL.FINE);
+});
+
+test('exercise: a reading that is only recorded never changes the judgement of the person at rest', () => {
+  const m = fresh();
+  ordinaryDays(m, 100, 115);
+  for (let n = 116; n <= 120; n += 1) {
+    for (const [ind, v] of [['bp', { sys: 112, dia: 72 }], ['temp', 36.7], ['sleep', 7.2], ['resp', 14], ['fluid', 2700], ['radiation', 140], ['mood', 'good'], ['attitude', 'energetic']]) put(m, n, ind, v);
+    put(m, n, 'pulse', 120); // at rest, outside the norm, inside the red limits, five mornings in a row
+  }
+  assert.equal(judgeOn(m, 120).body.level, LEVEL.ATTENTION);
+  put(m, 120, 'pulse', 150, 'crew-1', { time: at(120, 10), context: 'exercise' });
+  const a = judgeOn(m, 120);
+  assert.equal(a.body.level, LEVEL.ATTENTION, 'the exercise reading does not clear the run at rest');
+  const it = itemOf(a, 'pulse');
+  assert.equal(it.m.last.value, 120);
+  assert.equal(it.m.streak, 5);
+  assert.equal(new Date(it.m.runFrom).toISOString(), at(116));
+  assert.equal(it.m.list[it.m.list.length - 1].context, 'exercise', 'the screen still gets every reading');
 });
