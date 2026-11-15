@@ -22,6 +22,7 @@ function missionNow() {
   try { own = readMission(JSON.parse(localStorage.getItem('jff-crew-ui-v1') || '{}').mission); } catch { own = null; }
   return own ? missionTimes(own) : null;
 }
+import { studyRows, subjectRows, toCsv, ALERT_COLUMNS, SUBJECT_COLUMNS } from './alert-log.js';
 
 const PEOPLE = [...CREW, SHIP, ...realPeople(INSPIRATION4.subjects)];
 const personById = Object.fromEntries(PEOPLE.map((p) => [p.id, p]));
@@ -647,7 +648,8 @@ function renderStoreNote() {
     browser: 'Saved in the browser on this computer.',
     memory: 'Not saved: everything is lost when the page reloads.',
   };
-  byId('store-note').textContent = store ? where[store.kind] : '';
+  const drills = stored.filter((e) => e.drill && (e.kind === 'reading' || e.kind === 'review')).length;
+  byId('store-note').textContent = store ? `${where[store.kind]}${drills ? ` ${drills} ${drills === 1 ? 'reading' : 'readings'} of a drill ${drills === 1 ? 'is' : 'are'} left out of this view, as ${drills === 1 ? 'it is' : 'they are'} left out of every judgement.` : ''}` : '';
 }
 
 function renderLog() {
@@ -740,8 +742,11 @@ function rebuild() {
   lastByCell = {};
   lastByDest = {};
   const flight = byId('sw-example').checked ? exampleFlight(CREW) : [];
-  const paths = stored.length === 0 ? mainPathsExample(new Set(flight.filter((e) => e.reading).map((e) => e.reading.source))) : [];
-  const all = [...flight, ...stored, ...paths].sort((a, b) => new Date(a.time) - new Date(b.time));
+  // Looking at the crew screen writes steps of the alert log (src/alert-log.js), which are not records of the machine:
+  // they keep the example paths, as an empty record does.
+  const paths = stored.every((e) => e.kind === 'alert') ? mainPathsExample(new Set(flight.filter((e) => e.reading).map((e) => e.reading.source))) : [];
+  // A drill's events never count in any judgement (src/drill.js): this view leaves them out too, and says so.
+  const all = [...flight, ...stored.filter((e) => !e.drill), ...paths].sort((a, b) => new Date(a.time) - new Date(b.time));
   replaying = true;
   try {
     for (const ev of all) {
@@ -760,6 +765,22 @@ function rebuild() {
 store = await openStore();
 stored = [...store.events];
 rebuild();
+
+// The study export of an analog test (src/alert-log.js): the alert log of everyone this view reads, by id only.
+// The command line does the same from the data folder: node tools/study-export.mjs.
+function studyExport(which) {
+  const rows = studyRows(stored);
+  const day = new Date().toISOString().slice(0, 10);
+  const text = which === 'alerts' ? toCsv(rows, ALERT_COLUMNS) : toCsv(subjectRows(rows, stored), SUBJECT_COLUMNS);
+  const a = h('a', { href: URL.createObjectURL(new Blob([text], { type: 'text/csv' })), download: `study-${which}-${day}.csv` });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  const people = new Set(rows.map((r) => r.subject)).size;
+  byId('study-count').textContent = `${rows.length} alert ${rows.length === 1 ? 'row' : 'rows'} of ${people} ${people === 1 ? 'person' : 'people'}, from the events this view reads (${store.kind === 'server' ? 'the station server' : 'this browser'}).`;
+}
+byId('study-alerts').addEventListener('click', () => studyExport('alerts'));
+byId('study-subjects').addEventListener('click', () => studyExport('subjects'));
 byId('sw-example').addEventListener('change', rebuild);
 byId('hist-indicator').addEventListener('change', renderHistory);
 let histFrame = 0;

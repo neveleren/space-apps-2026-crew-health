@@ -43,6 +43,11 @@ import { co2Around, co2Short, co2Words, co2Link, headacheToday, headacheList, ma
 import { exampleTasks, calendarItems, tasksFor, upcomingTasks, nextTask, readinessDue, readiness, readinessMessage, startsIn } from './readiness.js';
 import { missionPhase, landingPrep, recovery, recoveryLine } from './landing.js';
 import { cardHost, hideCard, renderReadinessCard, renderLandingCard, renderRecoveryCard, renderNoMission, taskFields, phaseTip, comingUpItem } from './mission-cards.js';
+// The analog test (HERA): the alert log, the drill and the workload rating (src/alert-log.js, src/drill.js, src/analog-view.js).
+import { ownFacts, lineFacts, logEvent, logState, readAndAcked, shownAndCleared, ackDue, readDue, newOwnLog, asksWorkload } from './alert-log.js';
+import { isDrill, startDrill, drillOver, minutesLeft, markFor, drillLine, drillReport, lineDrill, DRILL_WORDS } from './drill.js';
+import { ANALOG_TIPS, drillTag, analogCard, ackText, workloadForm } from './analog-view.js';
+import { supIcon } from './support.js';
 
 // One icon per measure, so a list can be read at a glance.
 const ICON_FOR = { pulse: 'heart-pulse', bp: 'activity', glucose: 'droplet', temp: 'thermometer', spo2: 'droplets', sleep: 'moon', resp: 'wind', fluid: 'glass-water', bodyMass: 'scale', eyePressure: 'eye', hearing: 'ear', radiation: 'radiation', vo2max: 'heart', strength: 'dumbbell', bone: 'bone', camera: 'camera', mood: 'smile', attitude: 'battery', sleepQuality: 'bed', cognition: 'brain', reaction: 'zap', cycle: 'calendar-heart', xray: 'scan-line', ecg: 'chart-line', ultrasound: 'waves', exercise: 'flame', visionCheck: 'eye', octChange: 'eye', octScan: 'scan-line', symptoms: 'stethoscope', medicines: 'pill', co2: 'cloud-fog', cabinTemp: 'thermometer', cabinO2: 'orbit', cabinPressure: 'gauge', noise: 'volume-2', blood: 'test-tube' };
@@ -170,15 +175,18 @@ const ui = {
   conn: { on: { isslive: false, spaceweather: false }, connected: {}, busy: {}, live: {} },
   exercising: false,
   exerciseUntil: 0,
+  drill: null, // the drill in progress (src/drill.js): never kept, off at every sign-in
 };
 let store = null;
 let stored = [];
 let machine = null;
+let drillMachine = null; // while a drill runs: the record plus that drill's readings, used only for the drill's alarms
 let camStop = null;
 
 // The time the screen lives in: with the example flight on, the example's "today" or later saved readings.
 function nowTime() {
-  const latest = Math.max(0, ...stored.map((e) => msOf(e.time)).filter(Number.isFinite));
+  // The steps of the alert log are not readings: looking at an alert never moves the screen's time (src/alert-log.js).
+  const latest = Math.max(0, ...stored.filter((e) => e.kind !== 'alert').map((e) => msOf(e.time)).filter(Number.isFinite));
   return ui.example ? new Date(Math.max(msOf(MISSION.today), latest)) : new Date();
 }
 
@@ -195,18 +203,32 @@ function flightDayNow(now = nowTime()) {
   return ui.mission ? flightDay(ui.mission, now) : null;
 }
 
-function rebuild() {
+function replay(events) {
   // The mission tells the machine which readings are pre-flight (hearing is judged against the pre-flight test).
-  machine = createMachine({ cells: CELLS, crew: PEOPLE, state: ui.ship, mission: ui.example || ui.mission ? mission() : null });
+  const m = createMachine({ cells: CELLS, crew: PEOPLE, state: ui.ship, mission: ui.example || ui.mission ? mission() : null });
+  for (const ev of events) {
+    if (ev.state) m.setState(ev.state);
+    if (ev.kind === 'reading') m.receive({ ...ev.reading, person: ev.person, time: ev.time, example: Boolean(ev.example) });
+    else m.review(ev.person, ev.time);
+  }
+  m.setState(ui.ship);
+  return m;
+}
+// The machine the screen judges the person by never sees a drill's events (src/drill.js): they never count in the
+// levels, the measures, the medical record or the summaries for the doctor. While a drill runs, a second machine adds
+// that drill's readings, for the drill's own alarms only (alertsFor, shareCrewAlarm).
+function rebuild() {
   const flight = ui.example ? exampleFlight(CREW) : [];
   // Elly's made-up cycle days (flow and symptoms) come on top of the example flight's start and end marks.
   const all = [...flight, ...exampleCycleDays(flight), ...stored].filter((e) => e.kind === 'reading' || e.kind === 'review').sort((a, b) => msOf(a.time) - msOf(b.time));
-  for (const ev of all) {
-    if (ev.state) machine.setState(ev.state);
-    if (ev.kind === 'reading') machine.receive({ ...ev.reading, person: ev.person, time: ev.time, example: Boolean(ev.example) });
-    else machine.review(ev.person, ev.time);
-  }
-  machine.setState(ui.ship);
+  machine = replay(all.filter((e) => !isDrill(e)));
+  drillMachine = ui.drill ? replay(all.filter((e) => !isDrill(e) || e.drill === ui.drill.id)) : null;
+}
+// Runs fn with the drill's machine in place of the record's (both are plain objects; fn runs at once).
+function withMachine(m, fn) {
+  const record = machine;
+  machine = m;
+  try { return fn(); } finally { machine = record; }
 }
 
 // ---------- saving ----------
@@ -270,7 +292,11 @@ function statusOf(event) {
 // event that was not saved leaves the screen again, so the screen never shows more than the record holds (QA-06,
 // QA-07). retry: a passing refusal of the station computer (a 5xx answer other than "no outbox key") is tried again
 // too, for the parts of a call for help (QA-01).
-async function keep(event, { quiet = false, retry = false } = {}) {
+async function keep(event, { quiet = false, retry = false, mark = true } = {}) {
+  // While a drill runs, every new event carries its mark; a step of the alert log carries its alert's own, and a crew
+  // line and its message the one shareCrewAlarm chose (mark: false), so a real alarm is never marked (src/drill.js).
+  const drillMark = !mark || event.kind === 'alert' || event.drill ? null : markFor(ui.drill, event.time);
+  if (drillMark) event.drill = drillMark;
   stored.push(event);
   if (serverDown && ownServer()) { holdForServer(event); return note(event, { ok: true, waiting: true, answer: null }); }
   if (!store) { forget(event); return failed(event, 'nothing is open to save into', quiet); }
@@ -361,11 +387,14 @@ async function pollOnce() {
     if (ui.person !== person || !Array.isArray(events)) return;
     if (serverDown || !store || store.kind !== 'server') { await reconnect(person); return; }
     const fresh = newShared(events, stored, { ship: SHIP.id });
+    // Steps of this person's alert log written on another screen: the same alerts read and acknowledged here too.
+    const logged = newOwnLog(events, stored, person, eventKey);
+    if (logged.length) { stored.push(...logged); applyLog(); }
     if (fresh.length) {
       stored.push(...fresh);
       if (fresh.some((e) => e.kind === 'reading')) rebuild();
-      redrawShared();
     }
+    if (fresh.length || logged.length) redrawShared();
     checkHelpCall();
   } catch {
     // no answer this time: the next look tries again
@@ -393,6 +422,7 @@ async function reconnect(person) {
   serverDown = false;
   stored = withWaiting([...s.events, ...sent.events, ...late.events], person);
   await readOutbox();
+  applyLog(); // steps of the alert log written on the person's other screens meanwhile
   rebuild();
   render();
   checkHelpCall();
@@ -459,36 +489,53 @@ const crewSentence = (st, clear) => ({
   unsent: 'The crew line was not saved.',
 })[st] || '';
 
-async function shareCrewAlarm(personId, { force = false, falseAlarm = false } = {}) {
+async function shareCrewAlarm(personId, { force = false, falseAlarm = false, drillEnd = null } = {}) {
   const p = personById[personId];
   if (!p || p.real || personId === SHIP.id) return null;
-  const u = urgentSigns(p);
+  // While a drill runs, its readings count for the alarm (src/drill.js); a real urgent sign is never marked as a drill.
+  // While a real urgent sign is present the line is the real one, made from the record's signs only, so a drill's
+  // value never reaches the crew or the doctor inside a real alarm (the drill's alarm still sounds on this screen).
+  const real = drillMachine ? urgentSigns(p) : null;
+  const u = drillMachine && !real.tokens.length ? withMachine(drillMachine, () => urgentSigns(p)) : real || urgentSigns(p);
   const last = latestLine(stored, personId);
   if (!force && !needsNewLine(last, u.tokens, SIGN_TOKENS)) return null;
   const time = new Date().toISOString();
   const clear = !u.tokens.length;
-  const named = last && !last.alarm.clear ? valuesNamedIn(p, last.alarm.text) : [];
-  const text = clear ? (falseAlarm ? falseAlarmText(p.name) : allClearText(p.name, named.join('; '))) : alarmText(p.name, { helpKey: u.helpKey, signs: u.signs });
-  const line = { v: 1, kind: 'alarm', time, person: personId, alarm: clear ? { text, clear: true } : { text } };
-  const lineRes = await keep(line, { quiet: true, retry: true });
+  const drill = lineDrill({ drill: drillMachine ? ui.drill : null, ended: drillEnd, realSigns: real ? real.tokens.length : 0, clear, lastWasDrill: Boolean(last && isDrill(last)) });
+  // The all clear that ends a drill's line says so: the record's own values say nothing about the drill's.
+  const drillDone = Boolean(drillEnd && drill && clear);
+  const named = last && !last.alarm.clear && !drillDone ? valuesNamedIn(p, last.alarm.text) : [];
+  const plain = clear ? (falseAlarm ? falseAlarmText(p.name) : allClearText(p.name, drillDone ? 'the drill is over' : named.join('; '))) : alarmText(p.name, { helpKey: u.helpKey, signs: u.signs });
+  const text = drill ? drillLine(plain) : plain;
+  const line = { v: 1, kind: 'alarm', time, person: personId, ...(drill ? { drill } : {}), alarm: clear ? { text, clear: true } : { text } };
+  const lineRes = await keep(line, { quiet: true, retry: true, mark: false });
   const gone = falseAlarm ? [`${p.name} pressed "I am okay: false alarm" at GMT ${gmtDOY(time)}.`] : [];
-  const what = clear ? [...gone, falseAlarm ? '' : `No reading is past an urgent limit now${named.length ? `: ${named.join('; ')}` : ''}.`, last && !last.alarm.clear ? `The crew line of GMT ${gmtDOY(last.time)} is over.` : ''] : [...gone, ...u.what];
+  const what = clear ? [...gone, falseAlarm ? '' : drillDone ? 'The drill is over.' : `No reading is past an urgent limit now${named.length ? `: ${named.join('; ')}` : ''}.`, last && !last.alarm.clear ? `The crew line of GMT ${gmtDOY(last.time)} is over.` : ''] : [...gone, ...u.what];
+  const body = alarmReportText({ name: p.name, gmt: gmtDOY(time), what, clear, crew: crewSentence(statusOf(line), clear) });
   const report = {
-    v: 1, kind: 'report', time, person: personId, state: { ...ui.ship },
-    report: { to: ui.ship.doctorOnBoard ? 'doctor-onboard' : 'doctor-earth', text: alarmReportText({ name: p.name, gmt: gmtDOY(time), what, clear, crew: crewSentence(statusOf(line), clear) }), topic: clear ? 'alarm-clear' : 'alarm' },
+    v: 1, kind: 'report', time, person: personId, state: { ...ui.ship }, ...(drill ? { drill } : {}),
+    report: { to: ui.ship.doctorOnBoard ? 'doctor-onboard' : 'doctor-earth', text: drill ? drillReport(body) : body, topic: clear ? 'alarm-clear' : 'alarm' },
   };
-  const reportRes = await keep(report, { quiet: true, retry: true });
+  const reportRes = await keep(report, { quiet: true, retry: true, mark: false });
   return { line, lineRes, report, reportRes, clear };
 }
 
 // Every new reading goes through the machine and is saved, exactly like on the technical page. A reading that was
 // not saved leaves the screen again. share: false skips the crew alarm (the false alarm writes its own line).
-async function addReading(indicator, value, { source = null, person = ui.person, context = null, time = null, detail = null, quiet = false, retry = false, share = true, force = false } = {}) {
+// real: a reading that answers a real alarm during a drill ("I am okay: false alarm" on it) is the record's, never the
+// drill's, so the real alarm is called off in the record and does not ring again when the drill ends.
+async function addReading(indicator, value, { source = null, person = ui.person, context = null, time = null, detail = null, quiet = false, retry = false, share = true, force = false, real = false } = {}) {
   const src = source || sourceFor(indicator);
   const event = { v: 1, kind: 'reading', time: time || new Date().toISOString(), person, state: { ...ui.ship }, reading: { source: src.id, indicator, value, ...(context ? { context } : {}), ...(detail ? { detail } : {}) } };
-  machine.setState(event.state);
-  const entry = machine.receive({ ...event.reading, person, time: event.time });
-  const res = await keep(event, { quiet, retry });
+  // A drill's reading goes into the drill's machine only, never into the record's (src/drill.js).
+  const drill = real ? null : markFor(ui.drill, event.time);
+  if (drill && drillMachine) event.drill = drill;
+  const m = event.drill ? drillMachine : machine;
+  m.setState(event.state);
+  const entry = m.receive({ ...event.reading, person, time: event.time });
+  // The drill's machine holds the record too, so a reading of the record reaches both.
+  if (!event.drill && drillMachine) { drillMachine.setState(event.state); drillMachine.receive({ ...event.reading, person, time: event.time }); }
+  const res = await keep(event, { quiet, retry, mark: !real });
   // Not saved: the machine forgets it again; the screen was not redrawn with it, so a form keeps what was typed.
   if (!res.ok) { rebuild(); renderBar(); return { entry, ok: false, why: res.why }; }
   const shared = share ? await shareCrewAlarm(person, { force }) : null;
@@ -752,7 +799,7 @@ function tipContent(key) {
   if (kind === 'c') return connectionTip(a1);
   if (kind === 'm') return measureTip(a1, a2);
   if (kind === 'b') return bloodTip(a1, a2);
-  const t = TIPS[a1];
+  const t = TIPS[a1] || ANALOG_TIPS[a1];
   if (kind !== 't' || !t) return null;
   return h('div', {}, h('p', { class: 'tp-title' }, t.title), ...t.lines.map((l) => h('p', {}, l)));
 }
@@ -807,7 +854,7 @@ function crewAlerts(now) {
   }
   for (const e of crewLines(stored, { viewer: ui.person, now: Date.now() })) {
     if (seen.has(e.person)) continue;
-    out.push({ id: `line|${ui.person}|${e.person}|${e.time}`, person: e.person, text: `${e.alarm.text.replace(/\.$/, '')}, GMT ${gmtDOY(e.time)}.`, voice: e.alarm.text });
+    out.push({ id: `line|${ui.person}|${e.person}|${e.time}`, person: e.person, text: `${e.alarm.text.replace(/\.$/, '')}, GMT ${gmtDOY(e.time)}.`, voice: e.alarm.text, drill: e.drill || null });
     seen.add(e.person);
   }
   return out;
@@ -817,6 +864,7 @@ function crewAlerts(now) {
 // station server that does not answer (QA-08).
 function systemNotices() {
   const out = [];
+  if (ui.drill && ui.person) out.push({ icon: 'flag', bold: DRILL_WORDS.bannerBold, rest: DRILL_WORDS.bannerRest(`GMT ${gmtDOY(ui.drill.until)}`) });
   const help = helpNotice();
   if (help) out.push(help);
   if (serverDown && ui.person) {
@@ -849,6 +897,7 @@ function renderBar() {
   const tags = [];
   // The tags that can take the keyboard also open their card on a tap or a click (data-tip-press, src/explain.js),
   // because a touch screen cannot point at them.
+  if (p && !p.real && ui.drill) tags.push(drillTag());
   if (p && !p.real && ui.example) tags.push(h('span', { class: 'tag example', 'data-tip': 't:example', 'data-tip-press': '', 'data-fk': 'tag:example', tabindex: '0' }, 'Example', h('span', { class: 'tag-long' }, ' data')));
   if (p) tags.push(h('span', { class: 'tag plain systems', 'data-tip': 's:systems', 'data-tip-press': '', 'data-fk': 'tag:systems', tabindex: '0', role: 'img', 'aria-label': 'Systems: automation, AI, link, doctor, saving, sound' }, icon('cpu', { size: 18 })));
   // On a phone two or more of these fold into one tag ("3 off"), so the status line stays short; a tap on it opens
@@ -872,6 +921,7 @@ function renderBar() {
   const box = byId('alerts-btn');
   box.hidden = !p || p.real;
   const list = p && !p.real ? alertsFor(p.id) : [];
+  logLook(list, lines);
   soundAlerts(list);
   if (p && !p.real) {
     const unseen = list.filter((x) => !ui.seen.has(x.id)).length;
@@ -890,9 +940,11 @@ function renderBar() {
   if (banner.dataset.sig !== sig) {
     banner.dataset.sig = sig;
     fill(banner,
-      ...notes.map((n) => h('p', {}, icon(n.icon, { size: 18 }), h('b', {}, n.bold), n.rest ? ` ${n.rest}` : '')),
+      ...notes.map((n) => h('p', {}, supIcon(n.icon, { size: 18 }), h('b', {}, n.bold), n.rest ? ` ${n.rest}` : '')),
       ...lines.map((l) => h('p', {}, icon('octagon-alert', { size: 18 }), h('b', {}, l.text), h('span', { class: 'then' }, l.person === SHIP.id ? ' Nobody was signed in there; the crew medical officer has the steps.' : ' Go to them; the crew medical officer has the steps.'))),
-      sounding || lines.length ? h('p', {}, sounding ? btn('secondary small', 'Silence', () => { ackAll(); renderBar(); }, 'volume-x') : null, lines.length ? tipButton('t:crewalarm', 'crew alarms') : null) : null);
+      sounding || lines.length || ui.drill ? h('p', {}, sounding ? btn('secondary small', 'Silence', () => { ackAll('banner-silence'); renderBar(); }, 'volume-x') : null,
+        ui.drill && ui.person ? btn('secondary small', 'End the drill', () => endDrill('hand'), 'x', { 'data-fk': 'drill:end' }) : null,
+        lines.length ? tipButton('t:crewalarm', 'crew alarms') : null) : null);
   }
   banner.hidden = !notes.length && !lines.length;
   renderNav();
@@ -954,6 +1006,7 @@ async function enterAs(id) {
   stored = withWaiting(store ? [...store.events, ...flushed.events] : [], id);
   await readOutbox();
   if (ui.person !== id) return;
+  applyLog(); // what the record says was read and acknowledged, also on the person's other screens
   rebuild();
   render();
   window.scrollTo(0, 0);
@@ -1015,6 +1068,11 @@ function clearPerson() {
   acked.clear();
   toneDone.clear();
   currentLines = [];
+  // A drill never passes to the next person; the drill's crew line was ended by signOut (endDrill) before this.
+  ui.drill = null;
+  drillMachine = null;
+  lastLook = null;
+  logTried.clear();
   helpCall = null;
   unsent = [];
   savedAs.clear();
@@ -1034,8 +1092,11 @@ function clearPerson() {
   if (tipCard) tipCard.replaceChildren();
   rebuild();
 }
-function signOut() {
+async function signOut() {
   const was = ui.person;
+  // A drill ends with its person: its crew line gets its all clear before the person leaves (src/drill.js).
+  if (ui.drill) await endDrill('signout');
+  if (ui.person !== was) return;
   clearPerson();
   // Drafts stay with their person only while that person is signed in, so the next person never sees them.
   const mine = [...drafts.keys()].filter((k) => k.startsWith(`${was}|`));
@@ -1124,8 +1185,10 @@ function renderHome() {
   // Mind: the team's AI psychologist offers to talk; the choice stays with the person.
   byId('today-advice').replaceChildren(...(a.psyche.level > LEVEL.FINE ? [mindChoice(p, a, a.body.level === LEVEL.FINE)] : []));
   byId('today-advice').hidden = a.psyche.level === LEVEL.FINE;
-  byId('today-note').textContent = '';
-  byId('today-note').hidden = true;
+  // A drill's alarms are in Messages; they never change the sentence above (src/drill.js).
+  const drills = ui.drill ? alertsFor(p.id).filter((x) => x.drill).length : 0;
+  byId('today-note').textContent = drills ? DRILL_WORDS.todayNote(drills) : '';
+  byId('today-note').hidden = !drills;
 
   renderCheckin(p, now, top);
   renderComingUp(p, now);
@@ -1269,7 +1332,8 @@ function goToMission() {
 
 // A one-page summary of the last 7 days for the private medical conference; the person edits it and decides.
 function pmcSummary(p, now) {
-  const flagged = alertsFor(p.id).filter((x) => x.system !== 'Ship').map((x) => `${x.title} (${LEVEL_WORD[x.level]})`);
+  // The record's alerts only, never a drill's (src/drill.js).
+  const flagged = machineAlerts(p.id).filter((x) => x.system !== 'Ship').map((x) => `${x.title} (${LEVEL_WORD[x.level]})`);
   return pmcDraft({ ...summaryInput(p, now), flagged });
 }
 function openPmc(p) {
@@ -1972,7 +2036,24 @@ function episodeStart(personId, it) {
   return new Date(it.m.runFrom || it.m.last.time).toISOString().slice(0, 10);
 }
 
+// Whether an alert comes from the made-up example flight, for the alert log: by the reading behind it; a mind alert
+// counts days of check-ins, so it follows the example switch.
+function madeUp(it, personId) {
+  if (it.m && it.m.last) return Boolean(it.m.last.example);
+  if (Array.isArray(it.entries) && it.entries.length) return it.entries.some((x) => x.example);
+  if (it.kind === 'camera') { const c = machine.history(personId, 'camera').filter((x) => x.status === STATUS.OUT).slice(-1)[0]; return Boolean(c && c.example); }
+  return ui.example;
+}
+// The alerts of one person: those of the record, then those a drill in progress adds, each marked as the drill's.
 function alertsFor(personId) {
+  const own = machineAlerts(personId);
+  if (!drillMachine || !ui.drill) return own;
+  const known = new Set(own.map((x) => x.id));
+  const drill = withMachine(drillMachine, () => machineAlerts(personId)).filter((x) => !known.has(x.id))
+    .map((x) => ({ ...x, id: `drill|${x.id}`, title: `Drill: ${x.title}`, drill: ui.drill.id }));
+  return [...own, ...drill].sort((x, y) => y.level - x.level || y.time - x.time);
+}
+function machineAlerts(personId) {
   const p = personById[personId];
   const now = nowTime();
   const a = assess({ machine, person: p, cells: CELLS, mission: mission(), now });
@@ -1981,12 +2062,12 @@ function alertsFor(personId) {
   for (const it of [...a.body.items, ...a.psyche.items]) {
     const tx = itemText(it, p);
     const stamp = it.m && it.m.last ? msOf(it.m.last.time) : it.time ? msOf(it.time) : msOf(now);
-    out.push({ id: `${personId}|${it.kind}|${it.cell ? it.cell.indicator : ''}|${it.level}|${episodeStart(personId, it)}`, level: it.level, title: tx.title, text: tx.text, time: stamp, steps: procedureFor(it, personId), indicator: it.cell ? it.cell.indicator : it.kind === 'mood' ? 'mood' : null, system: it.kind === 'camera' ? (isHelpKeyItem(it, personId) ? 'Help key' : 'Camera') : it.kind === 'mood' ? 'Mind' : 'Body', camera: it.kind === 'camera' });
+    out.push({ id: `${personId}|${it.kind}|${it.cell ? it.cell.indicator : ''}|${it.level}|${episodeStart(personId, it)}`, level: it.level, title: tx.title, text: tx.text, time: stamp, steps: procedureFor(it, personId), indicator: it.cell ? it.cell.indicator : it.kind === 'mood' ? 'mood' : null, system: it.kind === 'camera' ? (isHelpKeyItem(it, personId) ? 'Help key' : 'Camera') : it.kind === 'mood' ? 'Mind' : 'Body', camera: it.kind === 'camera', example: madeUp(it, personId) });
   }
   for (const it of s.items) {
     const last = it.m.last;
     const tx = it.kind === 'red' ? itemText(it, SHIP) : { title: `Ship: ${lower(it.cell.label)}`, text: `${valueText(it.cell.indicator, last.value)} ${it.cell.unit}: outside the normal range (${rangeText(it.cell, SHIP)}).` };
-    out.push({ id: `ship|${it.cell.indicator}|${it.level}|${new Date(msOf(last.time)).toISOString().slice(0, 10)}`, level: it.level, title: tx.title, text: tx.text, time: msOf(last.time), steps: it.kind === 'red' ? procedureFor(it) : ["Check the ship system's readings.", 'The crew and mission control decide.'], indicator: it.cell.indicator, system: 'Ship' });
+    out.push({ id: `ship|${it.cell.indicator}|${it.level}|${new Date(msOf(last.time)).toISOString().slice(0, 10)}`, level: it.level, title: tx.title, text: tx.text, time: msOf(last.time), steps: it.kind === 'red' ? procedureFor(it) : ["Check the ship system's readings.", 'The crew and mission control decide.'], indicator: it.cell.indicator, system: 'Ship', example: Boolean(last.example) });
   }
   return out.sort((x, y) => y.level - x.level || y.time - x.time);
 }
@@ -2012,7 +2093,7 @@ function sentRow(r, status, why = '') {
     render();
   }, 'send') : null;
   return h('li', { class: 'card msg' },
-    h('div', { class: 'msg-top' }, h('b', {}, sentTitle(r)), h('span', { class: CHIP_TONE[c.tone] || 'chip neutral' }, icon(c.icon, { size: 16 }), c.text), h('span', { class: 'when' }, `GMT ${gmtDOY(r.time)}`)),
+    h('div', { class: 'msg-top' }, h('b', {}, sentTitle(r)), h('span', { class: CHIP_TONE[c.tone] || 'chip neutral' }, icon(c.icon, { size: 16 }), c.text), isDrill(r) ? h('span', { class: 'tag example drill', 'data-tip': 't:drill' }, supIcon('flag', { size: 16 }), 'Drill') : null, h('span', { class: 'when' }, `GMT ${gmtDOY(r.time)}`)),
     status === 'unsent' ? h('p', { class: 'note' }, `Not saved: ${shortReason(why)}. Nothing was sent.`) : null,
     h('p', { style: 'white-space: pre-line' }, r.report.text),
     again ? h('div', { class: 'actions' }, again) : null);
@@ -2027,24 +2108,27 @@ function renderAlerts() {
   const unseen = list.filter((x) => !ui.seen.has(x.id));
   const cell = (lv, label) => { const n = count(lv); return h('div', { class: n ? 'on' : '' }, h('span', { class: n ? `lvc${lv}` : '' }, icon(LEVEL_ICON[lv], { size: 16 }), label), h('b', { class: n ? `lvc${lv}` : '' }, String(n))); };
   // The pressed button goes away once a message is read, so the keyboard moves to that message's "What to do".
-  const markRead = (x) => { ui.seen.add(x.id); acked.add(x.id); savePrefs(); render(); const next = document.querySelector(`[data-fk="todo:${CSS.escape(x.id)}"]`); if (next) next.focus(); };
+  const markRead = (x) => { ui.seen.add(x.id); acked.add(x.id); savePrefs(); logRead([x], 'mark-read'); render(); const next = document.querySelector(`[data-fk="todo:${CSS.escape(x.id)}"]`); if (next) next.focus(); };
+  const logs = logOf(); // the alert log: when each message was acknowledged, and its workload rating
   fill(host,
     h('div', { class: 'screen-head' }, h('h1', {}, 'Messages'), h('p', {}, list.length ? `${unseen.length ? `${unseen.length} new. ` : ''}The most important first. The levels and their thresholds are drafts; the team decides.` : 'You will see a message here only when something needs you.')),
     h('div', { class: 'count-strip' }, cell(LEVEL.URGENT, 'Urgent'), cell(LEVEL.ACTION, 'Needs action'), cell(LEVEL.ATTENTION, 'Attention')),
     h('div', { class: 'actions' },
-      unseen.length ? btn('secondary small', 'Mark all as read', () => { for (const x of list) { ui.seen.add(x.id); acked.add(x.id); } savePrefs(); render(); const next = document.querySelector('[data-fk="silence"]'); if (next) next.focus(); }, 'check') : null,
+      unseen.length ? btn('secondary small', 'Mark all as read', () => { for (const x of list) { ui.seen.add(x.id); acked.add(x.id); } savePrefs(); logRead(list, 'mark-all-read'); render(); const next = document.querySelector('[data-fk="silence"]'); if (next) next.focus(); }, 'check') : null,
       btn('secondary small', 'Silence all sounds', () => { silenceNow(); renderBar(); toast('Silenced. A new alert will sound again. Settings can turn off the needs-action tone; urgent alarms always sound.'); }, 'bell-off', { 'data-fk': 'silence' })),
     list.length ? h('ul', { class: 'msgs' }, ...list.map((x) => {
       const read = ui.seen.has(x.id);
       return h('li', { class: `card msg ${read ? 'read' : LV_CLASS[x.level]}` },
-        h('div', { class: 'msg-top' }, chip(x.level, LEVEL_TITLE[x.level]), read ? h('span', { class: 'read-tag' }, 'Read') : h('span', { class: 'new-tag' }, 'New'), h('span', { class: 'when' }, `GMT ${gmtDOY(x.time)}`)),
+        h('div', { class: 'msg-top' }, chip(x.level, LEVEL_TITLE[x.level]), read ? h('span', { class: 'read-tag' }, 'Read') : h('span', { class: 'new-tag' }, 'New'), x.drill ? h('span', { class: 'tag example drill', 'data-tip': 't:drill' }, supIcon('flag', { size: 16 }), 'Drill') : null, h('span', { class: 'when' }, `GMT ${gmtDOY(x.time)}`)),
         h('h3', {}, x.title),
         h('p', {}, x.text, h('span', { class: 'muted' }, ` · ${x.system}`)),
+        h('p', { class: 'note ack-state' }, ackText(logs.get(x.id))),
         h('div', { class: 'actions' },
           btn('proc small', 'What to do', () => openProcedure(x), 'list-checks', { 'data-fk': `todo:${x.id}` }),
           x.camera ? btn('secondary small', 'I am okay: false alarm', () => falseAlarm(x), 'check', { 'data-tip': 't:falsealarm' }) : null,
-          x.indicator ? btn('secondary small', 'Chart', () => openDetail(x.indicator), 'chart-line') : null,
-          read ? null : btn('secondary small', 'Mark as read', () => markRead(x), 'check')));
+          x.indicator && !x.drill ? btn('secondary small', 'Chart', () => openDetail(x.indicator), 'chart-line') : null, // a drill's readings are never charted
+          read ? null : btn('secondary small', 'Mark as read', () => markRead(x), 'check'),
+          asksWorkload(x, logs) ? btn('secondary small', 'Rate the workload', () => openWorkload(x), 'gauge', { 'data-tip': 't:workload', 'data-fk': `wl:open:${x.id}` }) : null));
     })) : h('div', { class: 'card' }, h('p', {}, h('b', {}, 'No messages.')), h('p', { class: 'muted' }, 'You will see a message here only when something needs you.')),
     reports.length ? pinNote(personById[ui.person], 'read your sent messages below') : null,
     h('h2', { class: 'section-title' }, 'Sent messages'),
@@ -2059,8 +2143,10 @@ function renderAlerts() {
 async function falseAlarm(x) {
   const p = personById[ui.person];
   if (!p || p.real) return;
-  const r = await addReading('camera', 'chest_grab_ok', { source: { id: 'false-alarm', indicator: 'camera' }, quiet: true, share: false });
+  // On a real alarm during a drill the answer is real too: only a drill's own alarm is called off inside the drill.
+  const r = await addReading('camera', 'chest_grab_ok', { source: { id: 'false-alarm', indicator: 'camera' }, quiet: true, share: false, real: !x.drill });
   if (!r.ok) { toast(`Not saved: ${shortReason(r.why)}. The alarm still stands: try again.`); return; }
+  logStep(factsOf(x), 'false-alarm');
   const s = await shareCrewAlarm(p.id, { force: true, falseAlarm: true });
   // A call for help of this person that is still on its way is called off too: the banner stops saying "Help was NOT
   // sent: tell the crew in person now", and no "Your call for help is saved now" follows when it arrives.
@@ -2424,7 +2510,8 @@ function openEarthBreak() {
   runEarthBreak({ onDone: (r) => { const d = loadMind(p.id); d.breaks = [r, ...d.breaks].slice(0, 50); saveMind(p.id, d); toast(r.feeling ? `Noted privately: ${r.feeling}.` : 'Break done.'); }, onCancel: () => {} });
 }
 function earlierRuns(p) {
-  const mine = stored.filter((e) => e.person === p.id && e.reading && e.reading.indicator === 'reaction' && e.reading.detail).map((e) => ({ ...e.reading.detail, time: e.time }));
+  // A drill's runs never count as the person's own earlier runs (src/drill.js).
+  const mine = stored.filter((e) => e.person === p.id && !isDrill(e) && e.reading && e.reading.indicator === 'reaction' && e.reading.detail).map((e) => ({ ...e.reading.detail, time: e.time }));
   return ui.example && !p.real ? [...exampleEarlierRuns(MISSION.launch), ...mine] : mine;
 }
 function openReactionTest(mode) {
@@ -2630,16 +2717,108 @@ function stopRinging() {
 }
 // Acknowledge every sound now (the Messages key, Silence on the banner, "Silence all sounds"). What is on the
 // screen stays; a new alert sounds again.
-function ackAll() {
+// how: the way it was acknowledged, for the alert log (src/alert-log.js ACK_WAYS).
+function ackAll(how = 'messages-key') {
   const p = ui.person ? personById[ui.person] : null;
-  for (const x of p && !p.real ? alertsFor(p.id) : []) { acked.add(x.id); toneDone.add(x.id); }
+  const list = p && !p.real ? alertsFor(p.id) : [];
+  for (const x of list) { acked.add(x.id); toneDone.add(x.id); }
   let changed = false;
   for (const l of currentLines) if (!ui.seen.has(l.id)) { ui.seen.add(l.id); changed = true; }
   if (changed) savePrefs();
+  logAck([...list, ...currentLines], how);
   stopRinging();
   try { if (audio) { audio.close(); audio = null; } } catch { /* none */ }
 }
-const silenceNow = ackAll;
+const silenceNow = () => ackAll('silence-all');
+
+// ---------- the alert log (src/alert-log.js) ----------
+// Each step of an alert on this screen is saved in the person's own record, one entry per alert and step: shown,
+// acknowledged, read, cleared, false alarm, workload rating. The person's other screens read them at their next look
+// at the station computer, so they show the same read and acknowledged state and an acknowledged alarm does not sound
+// there again (NASA-STD-3001 Vol 2 Rev F: alert events are still logged, 10177; operational data recorded, 10163).
+const logTried = new Set(); // person|alert|step tried in this sign-in: a refused step is never sent again and again
+let lastLook = null; // { person, example, ids } of the alerts and crew lines at the last look, for "cleared"
+const logOf = () => logState(stored, ui.person);
+const factsOf = (x) => (x.level === undefined ? lineFacts(x) : ownFacts(x, { example: x.example }));
+// Resolves with what keep() says, or null when the step was already tried in this sign-in.
+function logStep(facts, step, extra = {}) {
+  const person = ui.person;
+  if (!person || !facts || personById[person].real) return Promise.resolve(null);
+  const key = `${person}|${facts.id}|${step}`;
+  if (logTried.has(key)) return Promise.resolve(null);
+  logTried.add(key);
+  return keep(logEvent(facts, step, { person, ...extra }), { quiet: true });
+}
+// What the record says on this screen: read alerts no longer count as new, acknowledged ones do not sound again.
+function applyLog() {
+  if (!ui.person) return;
+  const { read, acked: done } = readAndAcked(logOf());
+  for (const id of read) ui.seen.add(id);
+  for (const id of done) { acked.add(id); toneDone.add(id); if (/^(line|example)\|/.test(id)) ui.seen.add(id); }
+}
+// At every look (renderBar): new alerts and crew lines are logged as shown, those gone since the last look as cleared.
+// Switching the example flight hides alerts without clearing them, so that look starts afresh.
+function logLook(list, lines) {
+  const p = ui.person ? personById[ui.person] : null;
+  if (!p || p.real) { lastLook = null; return; }
+  const current = new Map([...list, ...lines].map(factsOf).filter(Boolean).map((f) => [f.id, f]));
+  const previous = lastLook && lastLook.person === p.id && lastLook.example === ui.example ? lastLook.ids : null;
+  for (const [f, step] of shownAndCleared({ current, previous, state: logOf() })) logStep(f, step);
+  lastLook = { person: p.id, example: ui.example, ids: current };
+}
+function logAck(items, how) { for (const f of ackDue(items.map(factsOf), logOf())) logStep(f, 'acknowledged', { how }); }
+function logRead(items, how) { for (const f of readDue(items.map(factsOf), logOf())) logStep(f, 'read', { how }); }
+
+// The workload of an urgent alarm on the Bedford scale ([V2 5007]), asked once it was acknowledged (a draft rule).
+function openWorkload(x) {
+  const facts = factsOf(x);
+  const person = ui.person;
+  openPanel('Workload of this alarm', [workloadForm({ onSave: async (n) => {
+    const res = await logStep(facts, 'rated', { rating: n });
+    // A rating that was not saved can be given again (logStep tries each step once per sign-in), so "Try again later"
+    // holds and the next try is never answered with "already rated".
+    if (res && !res.ok) logTried.delete(`${person}|${facts.id}|rated`);
+    closePanel();
+    toast(!res ? 'This alarm was already rated.' : res.ok ? `${savedWord(res, 'Saved in your record')}: workload ${n} of 10.` : `Not saved: ${shortReason(res.why)}. Try again later.`);
+    render();
+    // The rating button leaves with the rating, so the keyboard goes to that message's "What to do", as after Mark as read.
+    if (!document.activeElement || document.activeElement === document.body) { const next = document.querySelector(`[data-fk="todo:${CSS.escape(x.id)}"]`); if (next) next.focus(); }
+  } })], [], { key: `workload:${x.id}` });
+}
+
+// ---------- the drill (src/drill.js) ----------
+// Settings turns it on; "End the drill" on the banner, the same switch, sign-out or its time limit turn it off.
+function setDrill(on) {
+  if (on && !ui.drill && ui.person && !personById[ui.person].real) {
+    ui.drill = startDrill();
+    rebuild();
+    render();
+    toast(DRILL_WORDS.started);
+  } else if (!on && ui.drill) endDrill('hand');
+}
+// The drill's open crew line ends with an all clear marked as the drill's (or, if a real urgent sign is present, a
+// real line takes its place), with its note to the doctor, so no crewmate keeps a drill alarm.
+async function endDrill(why = 'hand') {
+  const ended = ui.drill;
+  if (!ended) return;
+  ui.drill = null;
+  rebuild();
+  const person = ui.person;
+  if (person && !personById[person].real) logLook(alertsFor(person), currentLines); // the drill's alerts are cleared now
+  const last = person ? latestLine(stored, person) : null;
+  if (person && !personById[person].real) await shareCrewAlarm(person, { drillEnd: ended.id, force: Boolean(last && isDrill(last) && !last.alarm.clear) });
+  if (ui.person !== person || why === 'signout') return;
+  render();
+  // "End the drill" leaves with the banner: the keyboard goes to the drill switch when it is on the screen, else to the
+  // Messages key, where the drill's alarms were (WCAG 2.4.3).
+  if (!document.activeElement || document.activeElement === document.body) {
+    const sw = byId('st-drill');
+    (sw && sw.getClientRects().length ? sw : byId('alerts-btn')).focus();
+  }
+  toast(DRILL_WORDS.ended(why));
+}
+// The time limit, checked with the clock (a draft: DRILL_RULES.maxMinutes).
+setInterval(() => { if (ui.drill && drillOver(ui.drill)) endDrill('time'); }, 5000);
 
 // ---------- the Help key ----------
 // NASA-STD-3001 Vol 2 (10178): the crew can start the emergency response by hand. Holding the key for 2 s avoids a
@@ -3243,6 +3422,7 @@ function renderSetup() {
         h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Bring back a copy'), h('small', {}, 'Adds the events of a saved copy that are not here yet.')),
           h('label', { class: 'btn secondary small', tabindex: '0', role: 'button' }, icon('send', { size: 18 }), 'Choose a file', h('input', { type: 'file', accept: '.jsonl,.json,application/json', hidden: true, onchange: (e) => restoreMine(e.target.files[0]) })))),
       pinCard(p),
+      p && !p.real ? analogCard({ drill: ui.drill, left: minutesLeft(ui.drill), onDrill: setDrill, switchRow, cornerTip }) : null,
       h('section', { class: 'card' }, cornerTip('t:onboard', 'the simulation switches'), h('h2', {}, 'Simulation, for the demonstration'),
         switchRow('st-ai', 'AI is working', 'With the AI off, only the automation works.', ui.ship.aiWorks, ship('aiWorks')),
         switchRow('st-doc', 'Doctor on board', 'Messages go to the doctor on board instead of Earth.', ui.ship.doctorOnBoard, ship('doctorOnBoard')),

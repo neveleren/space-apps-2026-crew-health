@@ -7,6 +7,7 @@ Written by Claude (Anthropic), an AI system, for team Just For Fun. The idea, th
 ## In one minute
 
 - Every reading, periodic review, message to a doctor and crew alarm line becomes an **event**: one JSON object with a kind, a time, a person and, on all but alarm lines, the position of the simulation switches. The private journal, the plan for hard days and the PIN are not events: they stay in the browser.
+- **For an analog test** such as NASA's HERA, each step in the life of an alert on a person's screens (shown, acknowledged, read, cleared, false alarm, a Bedford workload rating) is an event of kind `alert` in that person's own record (`src/alert-log.js`), and a **drill** marks every new event with the time it started (`src/drill.js`): its alarms sound and reach the crew and the doctor as usual, but its readings never reach the machine the screen judges the person by.
 - **The machine runs in the browser** (`src/engine.js`). It puts each reading in its **cell** (`src/config.js`), compares the value with the cell's norm and red limits, and records who gets it. No AI model is connected in this version: "the AI takes it" is a route the machine records, not a call to a model.
 - **The levels** (`src/state-levels.js`) turn one person's history into today's sentence: fine, attention, needs action or urgent, plus notes such as stale data.
 - **Two screens** draw from the machine: the crew screen (`index.html`, `src/crew.js`), which also uses the levels, and the technical view (`machine.html`, `src/ui.js`), which shows the machine's own routes and the straight-line forecast (`src/trend.js`) but not the levels.
@@ -19,12 +20,12 @@ Written by Claude (Anthropic), an AI system, for team Just For Fun. The idea, th
 |---|---|---|---|
 | Crew screen | `index.html`, `src/crew.js`, `support.css` | browser | The astronaut's own screen: Today, all measures, messages, settings |
 | Crew alarm | `src/crew-alarm.js` | browser; Node in the tests | The rules and words of the crew alarm: which line is new, the all clear, what a save became, the automatic message to the doctor, the timings (`ALARM_RULES`, drafts) |
-| Find, mission, fatigue scale | `src/find.js`, `src/mission.js`, `src/fatigue.js` | browser; Node in the tests | Find a measure by the name on its row; the crew's own mission dates and the flight day; the seven statements of the energy question and its low-day rule |
+| Find, mission, fatigue scale | `src/find.js`, `src/mission.js`, `src/fatigue.js` | browser; Node in the tests | Find a measure by the name on its row; the crew's own mission dates, its critical tasks and the flight day; the seven statements of the energy question and its low-day rule |
 | Medical record | `src/medrecord.js`, `src/record-view.js` | browser; Node in the tests (`src/medrecord.js`) | Everything about the signed-in person in one place, read only: `buildRecord()` turns the machine's history of the person, the saved events and today's levels into sections, newest first, each item linked to where it came from; `drawRecord()` draws them. Nothing is saved or sent, and nobody else's events are used |
 | Cycle log | `src/cycle-log.js`, `src/cycle.js`, `src/cycle-view.js`, `cycle.css` | browser; the value check also in the server; Node in the tests | The private menstrual cycle log: a day's bleeding and symptoms, its checks and the periods found in it (`cycle-log.js`); the summary, its flags and plain averages (`cycle.js`); the month calendar, the day editor and the history (`cycle-view.js`) |
 | Doctor's drafts, NASA rules | `src/doctor-summary.js`, `src/nasa-rules.js` | browser; Node in the tests | The weekly private medical conference summary and the sections of "Message the doctor" (`pmcDraft`, `doctorSections`); the cabin CO2 before a headache and its 7-day average, body mass against its loss levels, hearing against the pre-flight test, in words and chart lines |
-| Find, mission, fatigue scale | `src/find.js`, `src/mission.js`, `src/fatigue.js` | browser; Node in the tests | Find a measure by the name on its row; the crew's own mission dates, its critical tasks and the flight day; the seven statements of the energy question and its low-day rule |
 | Readiness and landing | `src/readiness.js`, `src/landing.js`, `src/mission-cards.js` | browser; Node in the tests (not `mission-cards.js`, which draws) | The critical tasks of the mission (the example's made-up ones or the crew's own) and the readiness card in the 24 hours before one; the mission's phase; getting ready for landing from 30 days before it; recovery against the pre-flight level after it (R+). All windows and limits are drafts (`READINESS_RULES`, `LANDING_RULES`) |
+| Analog test | `src/alert-log.js`, `src/drill.js`, `src/analog-view.js`, `tools/study-export.mjs` | browser; Node for the export and the tests | The alert log (one event per alert and step), the read and acknowledged state every screen of a person shares, the time to acknowledge, the drill switch and its mark, the Bedford workload rating, and the study export of all subjects by id only |
 | Technical view | `machine.html`, `src/ui.js` | browser | Simulated devices, the cells, who gets each reading, the log, history and forecast |
 | The machine | `src/engine.js` | browser; its value checks also run in the server; Node in the tests | Cell, norm, red limit, route, history per person |
 | Cells and norms | `src/config.js` | everywhere | Every measure with its norms, sources and red limits; the people; the simulated sources; the team's open questions |
@@ -74,6 +75,8 @@ The technical view opens the store for everyone (`openStore()`, which reads `/ap
 3. If a reading leaves the person with an urgent item (a red limit, or a camera or Help key alarm), `shareCrewAlarm()` saves one `alarm` event with a single line, "<name> needs help now: <measure> <value> <unit>." (for the Help key: "<name> pressed the Help key."), and a `report` to the doctor with the topic `alarm`, written by the program: to the doctor on board, or sealed in the outbox for Earth. A new line is written only when the set of urgent signs changes (`needsNewLine` in `src/crew-alarm.js`). When the last sign ends, or the person presses "I am okay: false alarm", it saves an all clear, `{ text, clear: true }`, and a report with the topic `alarm-clear`. Never for the ship or a real Inspiration4 participant. A CSV import shares alarm lines too.
 4. While someone is signed in, the screen asks the server for that person's events every 15 s (`ALARM_RULES.pollSeconds`, a draft). New crew lines and ship readings redraw the banner, the Messages key and Today, and a new crewmate line sounds. An urgent alarm repeats its tone every 4 s and its spoken line every 16 s until someone acknowledges it.
 5. A save the server refused leaves the screen again, and the screen says so. When the server does not answer, what was entered waits in this browser (`jff-crew-waiting-v1`) and is sent when it answers again.
+   - The same look at the server brings the steps of the person's alert log written on their other screens (`newOwnLog` in `src/alert-log.js`): what one screen acknowledged stops sounding on the others within 15 s, and what it marked as read no longer counts as new there.
+   - While a drill runs (`ui.drill`), `addReading()` puts the reading into a second machine, `drillMachine` (the record plus that drill's readings), never into `machine`; `alertsFor()` adds the alerts only the drill machine has, as "Drill: ..." with their own ids, and `shareCrewAlarm()` writes the line "DRILL: ..." and a message "DRILL. ..." from it. A line is never marked as a drill while a real urgent sign from before the drill is present, and while one is, the line is made from the record's signs only, so a drill's value never reaches the crew or the doctor inside a real alarm; "I am okay: false alarm" on a real alarm is saved unmarked, into both machines (`addReading` with `real`), and its all clear stays real. Ending the drill (the switch, "End the drill", sign-out or 60 minutes, a draft) writes the drill line's all clear.
 6. The screen redraws.
 
 ### Routes in the machine (`src/engine.js`)
@@ -117,15 +120,16 @@ The server accepts an event only when it looks exactly like what the screens sen
 | Field | Needed | Rule |
 |---|---|---|
 | `v` | yes | the number 1 |
-| `kind` | yes | `reading`, `review`, `report` or `alarm` |
+| `kind` | yes | `reading`, `review`, `report`, `alarm` or `alert` |
 | `time` | yes | UTC in the form `Date.prototype.toISOString()` writes, the milliseconds optional, for example `2026-11-15T01:45:00.000Z`; when saved, at most 5 minutes ahead of the server's clock (draft) |
 | `person` | yes | an id of lower-case letters, digits and hyphens, at most 32 characters, starting with a letter or digit; the program uses `crew-1` to `crew-4`, `ship` and `i4-c001` to `i4-c004` |
 | `state` | no | `{ aiWorks, doctorOnBoard, linkToEarth }`, each true or false: the simulation switches at that moment |
 | `example` | no | true or false; true marks made-up example data |
+| `drill` | no | the ISO time the drill it belongs to started (`src/drill.js`), never after the event's own time; an event without it is not part of a drill |
 
 No other field is accepted; only extra switches inside `state` (from an older saved screen setting) are dropped instead of refused. A request body may be at most 64 KB.
 
-### The four kinds
+### The five kinds
 
 | Kind | Own field | Rules |
 |---|---|---|
@@ -133,6 +137,7 @@ No other field is accepted; only extra switches inside `state` (from an older sa
 | `review` | none | the periodic review of one person's self-reports |
 | `report` | `report: { to, text, topic? }` | `to`: `"doctor-onboard"` or `"doctor-earth"`. `text`: at most 6,000 characters. `topic`: optional, a short id (a lower-case letter, then letters, digits or hyphens, at most 32 characters). The crew screen sends `pmc` (the weekly conference summary), `alarm` and `alarm-clear` (written by the program), `letter-to-psychologist`, `talk-request`, `mind-checkins` and `readiness` (the readiness card's message before a critical task, drafted by the program and edited by the person). |
 | `alarm` | `alarm: { text, clear? }` | one line of 1 to 200 characters, shown to every crewmate; `clear: true` marks an all clear, which takes that person's earlier line away. Each screen shows only a person's latest line, for at most 24 hours |
+| `alert` | `alert: { id, step, level, system, private?, how?, rating? }` | one step of the alert log, kept in the person's own file and never given to a crewmate. `id`: the screen's id of the alert, of letters, digits and the signs `\|`, `:`, `.`, `_`, `-`, at most 160 characters (for example `crew-1\|red\|spo2\|3\|2026-11-15`, or `line\|crew-2\|crew-1\|<time>` for a crewmate's line). `step`: `shown`, `acknowledged`, `read`, `cleared`, `false-alarm` or `rated`. `level`: 1 to 3. `system`: `body`, `mind`, `camera`, `help-key`, `ship` or `crew`. `private: true` for an alert about the mind or a private measure. `how`, only and always on `acknowledged` and `read`: `mark-read`, `mark-all-read`, `messages-key`, `banner-silence` or `silence-all`. `rating`, only and always on `rated`: a whole Bedford rating from 1 to 10. No text of the alert |
 
 ### Reading values
 
@@ -200,6 +205,7 @@ What is checked on every request, and what is not protected, is in `docs/SECURIT
 |---|---|
 | `data/<person id>.jsonl` | one checked event per line, appended; named by id, with no personal information in the name. Read back line by line; a damaged line, or one filed under another person, is skipped. |
 | `data/outbox/<time>-<random>.json` | one message to a doctor: `v`, `id`, `to`, `person`, `time`, `kid` readable for routing; `status: "queued"`, `queuedAt`, `encrypted: true`; `body` sealed for the flight surgeon's public key (ECDH P-256 with a fresh key per message, HKDF-SHA-256, AES-256-GCM; the readable fields are bound to the seal). Written whole, then renamed, so it is never seen half-written. |
+| `data/study/study-alerts.csv`, `data/study/study-subjects.csv` | written only when someone runs `node tools/study-export.mjs`: the alert steps and a summary per subject, by id only, with no alert about the mind, the cycle, symptoms or medicines; inside the data folder, so the server never serves them |
 
 `DATA_DIR` moves both. This version seals for the DEMO key pair in `demo-keys/`, which is public and not a real key; `node tools/read-outbox.mjs` opens the queue as the ground would. Without a key, a message to the doctor on board is still kept and one to Earth is refused. Nothing sends the outbox yet: the downlink is not part of this program.
 
@@ -207,7 +213,7 @@ What is checked on every request, and what is not protected, is in `docs/SECURIT
 
 | Key | What |
 |---|---|
-| `jff-crew-ui-v1` | screen settings: the switches, messages read, the example flight, the mission profile, the crew's own mission with its critical tasks (the technical view reads the mission from here too). "Sound off" is not kept: it is on again at every sign-in |
+| `jff-crew-ui-v1` | screen settings: the switches, messages read on this computer, the example flight, the mission profile, the crew's own mission with its critical tasks (the technical view reads the mission from here too). "Sound off" and the drill are not kept: sound is on and the drill off at every sign-in. What was read and acknowledged is also in the person's record (`alert` events), which every screen of the person reads |
 | `jff-crew-waiting-v1` | records entered while the station server did not answer; sent when it answers again |
 | `jff-theme` | dark, light, or follow the device |
 | `jff-pin-v1:<id>` | the optional PIN, only as a salted PBKDF2-HMAC-SHA256 hash (600,000 iterations, 16-byte salt) |
@@ -283,6 +289,10 @@ What is checked on every request, and what is not protected, is in `docs/SECURIT
 | `src/tips.js` | The explanation texts, and where each measure comes from on the ISS (`PROVENANCE`) |
 | `src/icons.js` | Lucide icons as path data (ISC License) |
 | `tools/read-outbox.mjs` | Opens the outbox with the DEMO private key, as the ground would |
+| `src/alert-log.js` | The alert log: its events, the state read back (first time of each step, time to acknowledge), the Bedford scale, and the study tables and CSV |
+| `src/drill.js` | The drill: its mark, its time limit (a draft), what counts for the record, the DRILL words |
+| `src/analog-view.js` | The crew screen's parts of the analog test: the Settings card, the DRILL tag, the acknowledge line of a message, the workload sheet, their "?" cards |
+| `tools/study-export.mjs` | Writes `study-alerts.csv` and `study-subjects.csv` from every person's file, by id only, into `data/study/` (or `--out`); `--real-only` leaves the example flight out |
 | `tools/sbom.mjs` | Writes or checks `SBOM.json` and `SHA256SUMS` |
 | `tools/build_inspiration4.py` | Builds `src/inspiration4.js` from downloaded OSDR files |
 | `presentation/` | The seven demo slides (also as PDF) and the demo video |
@@ -330,6 +340,9 @@ These stay open. Where the code needs an answer to run, it carries a draft marke
 | The readiness card before a critical task | `READINESS_RULES` in `src/readiness.js`, drafts: from 24 hours before the start, a short night of 6 hours or less, the kit list's sleep medicines and those with its sedation note, never more than attention |
 | The landing card and the time after landing | `LANDING_RULES` in `src/landing.js`, drafts: from 30 days before landing, the last 4 weeks of exercise; after landing, recovery is information and raises no level |
 | Whose critical tasks | the example's tasks name who does them; the crew's own tasks are the whole crew's, on this device |
+| How long a drill may run, and whether one screen's drill should reach every crew screen | it ends by itself after 60 minutes (`DRILL_RULES.maxMinutes`, a draft with no public source), at sign-out and by hand; it is turned on per screen |
+| Which alarms ask for a workload rating, and which Bedford limit applies to answering one | urgent ones, once acknowledged (`WORKLOAD_RULES`, a draft); the export counts ratings above 3 and above 6 ([V2 5007]: 3 or less for nominal tasks, 6 or less under degraded system conditions) |
+| What counts as acknowledging an alert | the first of Mark as read, Mark all as read, the Messages key, Silence and "Silence all sounds", or "I am okay: false alarm"; the Messages key acknowledges every alert listed |
 
 ## Related pages
 
