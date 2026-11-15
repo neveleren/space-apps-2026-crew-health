@@ -206,4 +206,22 @@ html.sup-noscroll, html.sup-noscroll body { overflow: hidden; }
   .sup .sup-eb-credit { font-size: 13px; }
   .sup .sup-rt-result b { font-size: 48px; }
 }
+/* A short window (a phone held sideways, a small laptop): everything in the Earth break a little smaller, so the
+   title, the controls, the pacer and the credit never cover each other. */
+@media (max-height: 500px) {
+  .sup .sup-eb-head { gap: 4px; top: max(8px, env(safe-area-inset-top, 0px)); }
+  .sup .sup-eb-top { padding: 6px 12px; }
+  .sup .sup-eb-top h2 { font-size: 16px; }
+  .sup .sup-eb-top p { font-size: 13px; }
+  .sup .sup-eb-top .btn.small, .sup .sup-eb-mute.btn.small { min-height: 32px; }
+  .sup .sup-eb-controls { padding: 6px 10px; gap: 6px; }
+  .sup .sup-eb-chip { min-height: 32px; padding: 0 10px 0 8px; font-size: 14px; }
+  .sup .sup-eb-volume { min-height: 24px; }
+  .sup .sup-eb-pacer { bottom: max(46px, calc(env(safe-area-inset-bottom, 0px) + 40px)); gap: 4px; padding: 8px 12px; }
+  .sup .sup-eb-circle { width: 56px; height: 56px; }
+  .sup .sup-eb-word { font-size: 18px; }
+  .sup .sup-eb-count { font-size: 32px; }
+  .sup .sup-eb-how { font-size: 13px; }
+  .sup .sup-eb-credit { bottom: max(8px, env(safe-area-inset-bottom, 0px)); font-size: 12px; }
+}
 @media (prefers-reduced-motion: reduce) { .sup .sup-eb-video { transition: none; } }
