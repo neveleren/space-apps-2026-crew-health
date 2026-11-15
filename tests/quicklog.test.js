@@ -108,6 +108,8 @@ test('plain lines for the screen and the doctor', () => {
   assert.equal(logText('visionCheck', 'no change'), 'No change: I see as before, and all grid lines look straight');
   assert.equal(logText('pulse', 72), null, 'other measures are left to the screen');
   assert.equal(logText('symptoms', 'junk'), 'Unreadable symptom entry');
+  assert.equal(logText('symptoms', { symptom: 'headache' }), 'Unreadable symptom entry', 'never "undefined of 10"');
+  assert.equal(logText('medicines', { medicine: 'melatonin', name: 'Melatonin', strength: '3 mg' }), 'Unreadable medicine entry', 'never "undefined tablets"');
 });
 
 // ---------- the symptom form ----------

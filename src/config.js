@@ -440,12 +440,12 @@ export const CELLS = [
   {
     id: null, section: 'body', indicator: 'medicines', effort: 'light', label: 'Medicines taken', kind: KIND.SELF, reviewByAi: false, private: true,
     unit: 'tablets of the kit strength', normType: 'record',
-    normText: 'the person picks a medicine from the kit, how much and when; it is recorded, never judged. When ISS crew logged their medicines in an app (Dose Tracker), the use they logged was more than ten times what the medical records showed; on the ISS the commonest uses were for sleep, pain, congestion and allergy',
+    normText: 'the person picks a medicine from the kit, how much and when; it is recorded, never judged. When ISS crew logged their medicines in an app (Dose Tracker, a conference abstract, not peer reviewed), the use they logged was more than ten times what the medical records showed; on the ISS the commonest uses were for sleep, pain, congestion and allergy',
     src: L2.doseTracker, src2: L2.wotring2015,
     availability: "NASA relies on crew self-reporting to keep track of the ISS medical kit (NASA, 2024); ESA's EveryWear app, used daily by all ISS crew, logs medication intake (ESA, 2026).",
     availabilitySrc: [L2.inventory2024, L2.everyWear],
-    // A short list from NASA's ISS medical kit list of 9 Apr 2015, the latest public one (the kit flying now may
-    // differ): the commonest uses on the ISS, and the medicines NASA's brief names for the first days of flight.
+    // A short list from NASA's ISS medical kit list of 9 Apr 2015, released under FOIA in March 2016 (the kit flying
+    // now may differ): the commonest uses on the ISS, and the medicines NASA's brief names for the first days of flight.
     // Strength and unit as printed on the kit list; kitNote is the kit list's own comment. The amounts a person can
     // pick are a log of what was taken, not dosing advice. Draft: the flight surgeons own the real list.
     kitSrc: L2.kit2015, kitSrc2: L2.sas2025, kitDraft: true,
@@ -520,7 +520,7 @@ export const CELLS = [
   {
     id: null, section: 'complex', indicator: 'octScan', effort: 'high', label: 'Eye images (OCT)', kind: KIND.COMPLEX, unit: 'image', group: 'Eyes (SANS)',
     normText: 'an image of the retina: the AI or a doctor reads it; the thickness change measured from it goes to "Eyes (SANS): retinal thickness change (OCT)"',
-    availability: 'On the ISS, crew of the US segment are scanned on flight day 30, flight day 90 and 30 days before return (NASA, 2018); in 2023 NASA reported all its SANS eye hardware on board, the OCT included, working normally.',
+    availability: "On the ISS, crew of the US segment are scanned on flight day 30, flight day 90 and 30 days before return (NASA, 2018); NASA's SANS clinical update for 2023, written in September 2022, reported all its SANS eye hardware on board, the OCT included, working normally.",
     availabilitySrc: [L.nasaEyes2018, L2.sans2023],
   },
 ];

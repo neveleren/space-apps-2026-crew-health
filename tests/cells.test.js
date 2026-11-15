@@ -137,6 +137,48 @@ test("eyes: the self-check is recorded; the OCT change leaves the draft norm at 
   assert.equal(m.receive(r('octScan', ' ')).status, STATUS.UNKNOWN);
 });
 
+test('the machine refuses what the lists cannot hold: a typo for an eye answer, an unknown symptom, a medicine without a name or amount, minus minutes', () => {
+  const m = make();
+  const refused = [
+    ['visionCheck', 'Grid changed'], ['visionCheck', 'banana'], ['visionCheck', 3],
+    ['symptoms', 'junk text'], ['symptoms', { symptom: 'nope', severity: 3 }], ['symptoms', { symptom: 'headache', severity: 11 }],
+    ['symptoms', { symptom: 'headache', severity: 4.5 }], ['symptoms', { symptom: 'headache', severity: '4' }], ['symptoms', { symptom: 'headache' }], ['symptoms', []],
+    ['medicines', 'zolpidem'], ['medicines', { medicine: 'melatonin', amount: 0 }], ['medicines', { medicine: 'melatonin', amount: '1' }],
+    ['medicines', { medicine: 'other', amount: 1 }], ['medicines', { medicine: 'other', name: '  ', amount: 1 }], ['medicines', { medicine: 'aspirin-x', amount: 1 }],
+    ['exercise', -5], ['exercise', '-1'],
+  ];
+  for (const [ind, value] of refused) {
+    const e = m.receive(r(ind, value));
+    assert.equal(e.status, STATUS.UNKNOWN, `${ind} ${JSON.stringify(value)}`);
+    assert.deepEqual(codes(e), ['bad-value']);
+  }
+  for (const ind of ['visionCheck', 'symptoms', 'medicines', 'exercise']) assert.equal(m.history(TOM, ind).length, 0, ind);
+  assert.equal(m.receive(r('octChange', -4)).status, STATUS.OK, 'the OCT change may still be below zero');
+});
+
+test('everything the two quick logs and the eye answers can produce, the machine records', () => {
+  const m = make();
+  const sym = cell('symptoms');
+  for (const s of sym.symptoms) {
+    for (let n = sym.severity.min; n <= sym.severity.max; n += 1) {
+      const v = symptomValue({ symptom: s.key, severity: n, note: s.needsNote ? 'sore throat' : undefined });
+      assert.equal(m.receive(r('symptoms', v)).status, STATUS.RECORDED, `${s.key} ${n}`);
+    }
+  }
+  const med = cell('medicines');
+  const takenAt = new Date(fixedNow().getTime() - 2 * 3600e3).toISOString();
+  for (const k of [...med.kit.map((x) => x.key), 'other']) {
+    for (const amount of med.amounts) {
+      const v = medicineValue({ medicine: k, amount, name: 'Eye drops', takenAt }, { now: fixedNow() });
+      assert.equal(m.receive(r('medicines', v)).status, STATUS.RECORDED, `${k} ${amount}`);
+    }
+  }
+  for (const a of cell('visionCheck').answers) assert.equal(m.receive(r('visionCheck', a.value)).status, STATUS.RECORDED, a.value);
+  // And every example log is read, none refused.
+  const ex = make();
+  for (const e of logs) assert.notEqual(ex.receive({ ...e.reading, person: e.person, time: e.time }).status, STATUS.UNKNOWN, `${e.person} ${e.reading.indicator}`);
+});
+
 // ---------- the example data ----------
 test('example logs: made up, marked so, never past today, and every value is one the logs accept', () => {
   assert.ok(logs.length > 500);
@@ -162,6 +204,9 @@ test('example logs: blood oxygen once a week in the norm, a thinking test once a
     const think = of(p.id, 'cognition');
     assert.ok(think.length >= 5, p.id);
     for (let i = 1; i < think.length; i += 1) assert.equal(flightDay(think[i]) - flightDay(think[i - 1]), 30);
+    // On the days of the crew screen's "Coming up" example schedule (crew.js: every(30, 11)), flight day 19, 49 and
+    // so on counted from 1, so the last test shown and the next one announced are 30 days apart.
+    assert.ok(think.every((e) => (flightDay(e) + 1) % 30 === 19), p.id);
   }
 });
 
