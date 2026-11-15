@@ -2010,7 +2010,10 @@ function openDoctor(a, kind, indicator = null) {
   const toText = to === 'doctor-onboard' ? 'the doctor on board' : 'the doctor on Earth';
   const area = h('textarea', { id: 'doc-text', 'aria-label': 'Message text' });
   area.value = summaryFor(a, kind, indicator) || 'Please look at my data.';
-  const status = to === 'doctor-earth' ? `${ui.ship.linkToEarth ? 'The message is saved in the outbox and goes to the ground with the next downlink.' : 'There is no link to Earth: the message waits in the outbox and goes when the link is back.'} ${profile().name}: ${profile().reply}.` : 'The message goes to the doctor on board.';
+  // What will really happen to it, said before Send: the same cases as sentText() after it (FS-02).
+  const status = serverDown ? 'The station server is not answering: the message is kept in this browser and goes to the station computer, and from there to the doctor, when it answers again.'
+    : store && store.kind !== 'server' ? 'This copy runs without the station server: the message is saved on this computer only, and nothing is sent.'
+      : to === 'doctor-earth' ? `${ui.ship.linkToEarth ? 'The message is saved in the outbox and goes to the ground with the next downlink.' : 'There is no link to Earth: the message waits in the outbox and goes when the link is back.'} ${profile().name}: ${profile().reply}.` : 'The message goes to the doctor on board.';
   openPanel(`Message ${toText}`, [h('p', {}, status), area, h('p', { class: 'note' }, 'The automation drafted this text from your data; you can change it.')], [
     btn('primary', 'Send', async () => {
       const event = { v: 1, kind: 'report', time: new Date().toISOString(), person: ui.person, state: { ...ui.ship }, report: { to, text: area.value.slice(0, 4000) } };
