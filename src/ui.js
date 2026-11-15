@@ -622,7 +622,7 @@ function renderStoreNote() {
     memory: 'Not saved: everything is lost when the page reloads.',
   };
   const drills = stored.filter((e) => e.drill && (e.kind === 'reading' || e.kind === 'review')).length;
-  byId('store-note').textContent = store ? `${where[store.kind]}${drills ? ` ${drills} ${drills === 1 ? 'reading' : 'readings'} of a drill ${drills === 1 ? 'is' : 'are'} left out of this view, as of every judgement.` : ''}` : '';
+  byId('store-note').textContent = store ? `${where[store.kind]}${drills ? ` ${drills} ${drills === 1 ? 'reading' : 'readings'} of a drill ${drills === 1 ? 'is' : 'are'} left out of this view, as ${drills === 1 ? 'it is' : 'they are'} left out of every judgement.` : ''}` : '';
 }
 
 function renderLog() {
@@ -715,7 +715,9 @@ function rebuild() {
   lastByCell = {};
   lastByDest = {};
   const flight = byId('sw-example').checked ? exampleFlight(CREW) : [];
-  const paths = stored.length === 0 ? mainPathsExample(new Set(flight.filter((e) => e.reading).map((e) => e.reading.source))) : [];
+  // Looking at the crew screen writes steps of the alert log (src/alert-log.js), which are not records of the machine:
+  // they keep the example paths, as an empty record does.
+  const paths = stored.every((e) => e.kind === 'alert') ? mainPathsExample(new Set(flight.filter((e) => e.reading).map((e) => e.reading.source))) : [];
   // A drill's events never count in any judgement (src/drill.js): this view leaves them out too, and says so.
   const all = [...flight, ...stored.filter((e) => !e.drill), ...paths].sort((a, b) => new Date(a.time) - new Date(b.time));
   replaying = true;
