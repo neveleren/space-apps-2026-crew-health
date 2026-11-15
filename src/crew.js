@@ -36,7 +36,7 @@ import {
 import { shortLabel, WORDS, normalFind, findText, findHit } from './find.js';
 import { readMission, missionProblem, missionTimes, flightDay, missionDay, MISSION_RULES } from './mission.js';
 import { buildRecord } from './medrecord.js';
-import { drawRecord, printRecord, resetRecordView } from './record-view.js';
+import { drawRecord, printRecord, resetRecordView, recordReturnKey } from './record-view.js';
 
 // One icon per measure, so a list can be read at a glance.
 const ICON_FOR = { pulse: 'heart-pulse', bp: 'activity', glucose: 'droplet', temp: 'thermometer', spo2: 'droplets', sleep: 'moon', resp: 'wind', fluid: 'glass-water', bodyMass: 'scale', eyePressure: 'eye', hearing: 'ear', radiation: 'radiation', vo2max: 'heart', strength: 'dumbbell', bone: 'bone', camera: 'camera', mood: 'smile', attitude: 'battery', sleepQuality: 'bed', cognition: 'brain', reaction: 'zap', cycle: 'calendar-heart', xray: 'scan-line', ecg: 'chart-line', ultrasound: 'waves', exercise: 'flame', visionCheck: 'eye', octChange: 'eye', octScan: 'scan-line', symptoms: 'stethoscope', medicines: 'pill', co2: 'cloud-fog', cabinTemp: 'thermometer', cabinO2: 'orbit', cabinPressure: 'gauge', noise: 'volume-2', blood: 'test-tube' };
@@ -1562,7 +1562,10 @@ const backButton = () => btn('secondary small back', BACK_LABEL[ui.backTo] || 'A
   const to = ui.backTo || 'measures';
   setScreen(to);
   const screen = byId(`screen-${to}`);
-  const row = screen && [...screen.querySelectorAll('.row[data-ind], .rec-item[data-ind]')].find((r) => r.dataset.ind === String(from) && r.getClientRects().length);
+  // On the medical record several items open the same page: the one that was pressed (src/record-view.js).
+  const key = to === 'record' ? recordReturnKey() : null;
+  const pressed = key && screen ? [...screen.querySelectorAll(`[data-fk="${CSS.escape(key)}"]`)].find((r) => r.dataset.ind === String(from) && r.getClientRects().length) : null;
+  const row = pressed || (screen && [...screen.querySelectorAll('.row[data-ind], .rec-item[data-ind]')].find((r) => r.dataset.ind === String(from) && r.getClientRects().length));
   if (row) { row.focus(); return; }
   const head = screen && screen.querySelector('h1');
   if (head) { head.setAttribute('tabindex', '-1'); head.focus(); }
@@ -2191,7 +2194,7 @@ function pinNote(p, what = 'open these tools and read what you wrote') {
   if (pinIsSet(p)) return h('p', { class: 'note' }, 'Your screen opens only with your PIN on this computer.');
   return h('div', { class: 'sheet-note' },
     h('p', {}, `Anyone who opens your screen on this computer can ${what}, unless you set a PIN.`),
-    pinAvailable() ? h('div', { class: 'actions' }, btn('secondary small', 'Set a PIN', () => goToPin(), 'shield')) : h('p', { class: 'note' }, 'A PIN needs a secure page: open the program on this computer (127.0.0.1) or over https.'));
+    pinAvailable() ? h('div', { class: 'actions' }, btn('secondary small', 'Set a PIN', () => goToPin(), 'shield', { 'data-fk': 'pin:set' })) : h('p', { class: 'note' }, 'A PIN needs a secure page: open the program on this computer (127.0.0.1) or over https.'));
 }
 
 function openMindSupport() {
