@@ -11,7 +11,7 @@ import {
   withEntry, markSent, matchesRisk, plainText, RISK_RULE, TALK_REQUEST_TEXT, TALK_REQUEST_TOPIC, LETTER_TOPIC, isTalkRequest, isLetter,
 } from '../src/support.js';
 import { RT_RULES, scoreRun, createSession, compareToOwn, median, exampleEarlierRuns } from '../src/reaction-test.js';
-import { breathAt, sceneAt, sceneFor, chooseScene, nextSceneAt, clampVolume, soundLevel, volumeText, loopBounds, creditText, BREAK_SCENES, BREAK_RULES } from '../src/earth-break.js';
+import { breathAt, sceneAt, sceneFor, chooseScene, nextSceneAt, clampVolume, soundLevel, volumeText, loopBounds, creditText, problemText, BREAK_SCENES, BREAK_RULES } from '../src/earth-break.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 const NOW = new Date('2026-11-15T09:00:00Z');
@@ -382,6 +382,18 @@ test('every scene names its video and sound makers on the screen and has a descr
     assert.ok(s.alt.length > 20, `${s.id}: a description for screen readers`);
   }
   assert.equal(creditText(null), '');
+});
+
+test('when a file does not load, one quiet line says what is missing and that the break goes on', () => {
+  const rain = BREAK_SCENES[0];
+  assert.equal(problemText(rain, {}), '');
+  assert.equal(problemText(rain, { video: true }), 'The rain video did not load, so its still picture shows instead. The break goes on.');
+  assert.equal(problemText(rain, { video: true, poster: true }), 'The rain video and its still picture did not load. The break goes on.');
+  assert.equal(problemText(rain, { sound: true }), 'The rain sound did not load. The break goes on.');
+  assert.equal(problemText(rain, { video: true, sound: true }), 'The rain video did not load, so its still picture shows instead. The rain sound did not load. The break goes on.');
+  assert.equal(problemText(rain, { poster: true }), '', 'with the video playing, a missing still frame is never seen');
+  assert.equal(problemText(rain, { poster: true }, true), 'The rain picture did not load. The break goes on.', 'reduce motion: the still frame is the picture');
+  assert.equal(problemText(null, { video: true }), '');
 });
 
 // The media files: real footage and recordings, credited, small enough for the installer, and offline.

@@ -4,10 +4,10 @@ Six scenes, each a real video of a place on Earth with a real recording of the s
 
 These files are not under the program's Apache-2.0 license. Each keeps its own license:
 
-- **Videos: the Pexels License**, https://www.pexels.com/license/. Free to use and to modify, attribution not required (given here and on the screen anyway). Not allowed, among others: selling unaltered copies, redistributing the videos on other stock photo or video platforms, showing identifiable people in a bad light, implying endorsement by the people or brands shown. Each video page names the license ("Free to use", linking to the license page) and gives "license": "https://www.pexels.com/license/" in its page data.
+- **Videos: the Pexels License**, https://www.pexels.com/license/. Free to use and to modify, attribution not required (given here and on the screen anyway). The license page says: "All photos and videos on Pexels are free to use", "You can modify the photos and videos from Pexels", "Attribution is not required"; not allowed: "Identifiable people may not appear in a bad light or in a way that is offensive", "Don't sell unaltered copies of a photo or video", "Don't imply endorsement of your product by people or brands on the imagery", "Don't redistribute or sell the photos and videos on other stock photo or wallpaper platforms", "Don't use the photos or videos as part of your trade-mark, design-mark, trade-name, business name or service mark". Each video page shows "License: Free" and names https://www.pexels.com/license/ as its license in the page data.
 - **Sounds: Creative Commons 0 (CC0 1.0), public domain dedication**, https://creativecommons.org/publicdomain/zero/1.0/. Each Freesound page says "Creative Commons 0: You can copy, modify, distribute and perform the sound, even for commercial purposes, all without the need of asking permission".
 
-Each source page was opened on 15 Nov 2026 and the license read on the page itself before the file was used (plain page fetch, then again in a real browser; the wording seen is in the branch notes, `.notes/license-check.txt`). No logo or brand is in focus in any video.
+Each source page, and the Pexels license page, was opened on 15 Nov 2026 and the license read on the page itself before the file was used. No logo or brand is in focus in any video.
 
 ## Videos (Pexels License)
 

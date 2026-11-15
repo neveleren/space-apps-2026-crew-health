@@ -195,7 +195,7 @@ html.sup-noscroll, html.sup-noscroll body { overflow: hidden; }
 .sup .sup-eb-ask .link { justify-self: start; }
 @media (max-width: 640px) {
   .sup .sup-eb-circle { width: 84px; height: 84px; }
-  .sup .sup-eb-pacer { bottom: max(56px, calc(env(safe-area-inset-bottom, 0px) + 48px)); gap: 6px; padding: 12px 12px 10px; }
+  .sup .sup-eb-pacer { bottom: max(70px, calc(env(safe-area-inset-bottom, 0px) + 62px)); gap: 6px; padding: 12px 12px 10px; }
   .sup .sup-eb-word { font-size: 20px; }
   .sup .sup-eb-how { font-size: 14px; }
   .sup .sup-eb-head { gap: 6px; }

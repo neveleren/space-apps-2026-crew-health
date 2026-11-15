@@ -115,14 +115,27 @@ export function creditText(scene) {
   return `${scene.label}. Video: ${scene.by.video} (Pexels). Sound: ${scene.by.sound} (Freesound, CC0).`;
 }
 
+// The quiet line when files of the scene on the screen did not load: what is missing, what shows instead, and
+// that the break goes on. failed: { video, poster, sound } for this scene; still: reduce motion is on (no video).
+export function problemText(scene, failed = {}, still = false) {
+  if (!scene) return '';
+  const name = scene.label.toLowerCase();
+  const parts = [];
+  if (!still && failed.video && failed.poster) parts.push(`The ${name} video and its still picture did not load.`);
+  else if (!still && failed.video) parts.push(`The ${name} video did not load, so its still picture shows instead.`);
+  else if (still && failed.poster) parts.push(`The ${name} picture did not load.`);
+  if (failed.sound) parts.push(`The ${name} sound did not load.`);
+  return parts.length ? `${parts.join(' ')} The break goes on.` : '';
+}
+
 const clock = (ms) => { const s = Math.max(0, Math.ceil(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 const reducedMotion = () => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; } };
 
 // The sound: one looping recording per scene through the Web Audio API, which loops without a gap and fades
 // between scenes. Each file is fetched from this program's own address and decoded once; only the scene playing
-// and the next one are kept. onProblem(file) when a file cannot be fetched or decoded. Returns null when the
-// browser has no Web Audio.
-function createSound({ base, fadeS, onProblem }) {
+// and the next one are kept. onProblem(file) when a file cannot be fetched or decoded, onPlay(file) when it plays.
+// Returns null when the browser has no Web Audio.
+function createSound({ base, fadeS, onProblem, onPlay }) {
   let AC = null;
   try { AC = window.AudioContext || window.webkitAudioContext || null; } catch { AC = null; }
   if (!AC) return null;
@@ -180,6 +193,7 @@ function createSound({ base, fadeS, onProblem }) {
         src.start(now, b ? b.start : 0);
         fadeOut(current);
         current = { src, gain };
+        if (typeof onPlay === 'function') onPlay(file);
       }).catch(() => {
         if (closed || t !== token) return;
         fadeOut(current);
@@ -212,7 +226,7 @@ function createSound({ base, fadeS, onProblem }) {
 
 // Opens the break at once. onDone({ feeling: 'better' | 'same' | 'worse' | null, completed, seconds, time })
 // after the question (null when the person skips it); onCancel({ seconds }) when Esc closes it. base: where the
-// media files are. sound: false leaves the sound out (the automatic checks). Returns { close }.
+// media files are. sound: false leaves the sound out. Returns { close, state }: state() says what shows and what failed.
 export function runEarthBreak({ onDone, onCancel, durationS = BREAK_RULES.durationS, base = './assets/breathe/', scenes = BREAK_SCENES, sound: withSound = true } = {}) {
   const still = reducedMotion();
   const dur = Math.max(10, Number(durationS) || BREAK_RULES.durationS) * 1000;
@@ -235,19 +249,23 @@ export function runEarthBreak({ onDone, onCancel, durationS = BREAK_RULES.durati
   let prefetched = -1;
   const failed = { video: new Set(), poster: new Set(), sound: new Set() };
 
+  // One quiet line for what did not load, for the scene on the screen only (role status: read out once, politely).
   const statusLine = h('p', { class: 'sup-status sup-eb-status', role: 'status', 'aria-live': 'polite' });
-  const say = (text) => { statusLine.textContent = text; };
-  const sceneOf = (file, key) => list.find((s) => s[key] === file);
+  let general = '';
+  const refreshStatus = () => {
+    const s = list[shown];
+    const text = [general, s ? problemText(s, { video: failed.video.has(s.id), poster: failed.poster.has(s.id), sound: failed.sound.has(s.id) }, still) : ''].filter(Boolean).join(' ');
+    if (statusLine.textContent !== text) statusLine.textContent = text;
+  };
+  const sceneOf = (file, key) => list.find((s) => s[key] === String(file || '').split('/').pop());
+  const mark = (kind, file, key, bad) => { const s = sceneOf(file, key); if (!s) return; if (bad) failed[kind].add(s.id); else failed[kind].delete(s.id); refreshStatus(); };
   const sound = withSound ? createSound({
     base,
     fadeS: BREAK_RULES.fadeS,
-    onProblem: (file) => {
-      const s = sceneOf(file, 'sound');
-      if (s) failed.sound.add(s.id);
-      say(`The ${s ? `${s.label.toLowerCase()} ` : ''}sound did not load. The break goes on without it.`);
-    },
+    onProblem: (file) => mark('sound', file, 'sound', true),
+    onPlay: (file) => mark('sound', file, 'sound', false),
   }) : null;
-  if (withSound && !sound) say('Sound cannot play in this browser. The break goes on without it.');
+  if (withSound && !sound) general = 'Sound cannot play in this browser. The break goes on without it.';
 
   const stopMedia = () => {
     for (const v of vids) { try { v.pause(); v.removeAttribute('src'); v.load(); } catch { /* nothing to stop */ } }
@@ -341,13 +359,12 @@ export function runEarthBreak({ onDone, onCancel, durationS = BREAK_RULES.durati
   }
 
   poster.addEventListener('error', () => {
-    const s = list[shown];
-    if (s) failed.poster.add(s.id);
+    if (!poster.getAttribute('src')) return;
     poster.classList.add('failed');
     if (!vids.some((v) => v.classList.contains('shown'))) sceneBox.classList.add('missing');
-    if (still && s) say(`The ${s.label.toLowerCase()} picture did not load. The break goes on.`);
+    mark('poster', poster.getAttribute('src'), 'poster', true);
   });
-  poster.addEventListener('load', () => { poster.classList.remove('failed'); sceneBox.classList.remove('missing'); });
+  poster.addEventListener('load', () => { poster.classList.remove('failed'); sceneBox.classList.remove('missing'); mark('poster', poster.getAttribute('src'), 'poster', false); });
 
   const playVideo = (s) => {
     const token = (videoToken += 1);
@@ -359,6 +376,7 @@ export function runEarthBreak({ onDone, onCancel, durationS = BREAK_RULES.durati
       prev.classList.remove('shown');
       front = 1 - front;
       sceneBox.classList.remove('missing');
+      if (failed.video.delete(s.id)) refreshStatus();
       setTimeout(() => { if (token === videoToken && !closed) { try { prev.pause(); prev.removeAttribute('src'); prev.load(); } catch { /* nothing to stop */ } } }, fadeMs + 200);
     };
     const fail = () => {
@@ -366,7 +384,7 @@ export function runEarthBreak({ onDone, onCancel, durationS = BREAK_RULES.durati
       failed.video.add(s.id);
       for (const v of vids) { v.classList.remove('shown'); try { v.pause(); } catch { /* nothing to stop */ } }
       if (poster.classList.contains('failed')) sceneBox.classList.add('missing');
-      say(`The ${s.label.toLowerCase()} video did not load, so its still picture shows instead. The break goes on.`);
+      refreshStatus();
     };
     next.onplaying = () => { next.onplaying = null; ready(); };
     next.onerror = () => { next.onerror = null; fail(); };
@@ -384,6 +402,7 @@ export function runEarthBreak({ onDone, onCancel, durationS = BREAK_RULES.durati
     sceneBox.setAttribute('aria-label', s.alt);
     credit.textContent = creditText(s);
     paintScenes();
+    refreshStatus();
     if (!still) playVideo(s);
     if (sound && s.sound) {
       const nxt = pick.mode === 'mix' ? list[i + 1] : null;
