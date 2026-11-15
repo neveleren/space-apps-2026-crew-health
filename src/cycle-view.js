@@ -13,6 +13,11 @@ import { FLOWS, CYCLE_SYMPTOMS, LOG_RULES, LOG_SOURCES, WEEKDAYS, MONTHS, dayOf,
 // draft (unsaved choices for day), status, all (the whole history), ctx (the latest drawing's inputs) }.
 const views = new Map();
 export function resetCycleView() { views.clear(); }
+// A message that answers a press with no save behind it: shown under the editor and said in the screen's live region.
+function tell(st, text) {
+  st.status = text;
+  if (text && typeof st.ctx.announce === 'function') st.ctx.announce(text);
+}
 
 const SHORT_WORD = { spotting: 'Spot', light: 'Light', medium: 'Medium', heavy: 'Heavy' };
 const HISTORY_ROWS = 6;
@@ -40,8 +45,10 @@ const monthShort = (month) => MONTHS[Number(month.slice(5)) - 1].slice(0, 3);
 
 // host: the element to draw into. person: { id }. summary: cycleSummary(...) of the person's log. now: the screen's
 // time. onSave(value) saves one day and resolves to { ok, waiting }; it may throw. icon(name, opts): optional, the
-// crew screen's icons. Returns { redraw }.
-export function drawCycleLog(host, { person, summary, now, onSave, icon = null }) {
+// crew screen's icons. announce(text): optional, the screen's own live region (the crew screen's notice): the
+// messages that answer a press without a save behind it are said there too, so a screen reader hears them; the
+// screen itself already says whether a save worked. Returns { redraw }.
+export function drawCycleLog(host, { person, summary, now, onSave, icon = null, announce = null }) {
   if (typeof onSave !== 'function') throw new TypeError('drawCycleLog needs onSave');
   const w = editWindow(now);
   let st = views.get(person.id);
@@ -49,7 +56,7 @@ export function drawCycleLog(host, { person, summary, now, onSave, icon = null }
     st = { month: monthOf(w.today), day: w.today, focus: w.today, draft: null, status: '', all: false, sourcesOpen: false };
     views.set(person.id, st);
   }
-  st.ctx = { host, summary, now, onSave, icon };
+  st.ctx = { host, summary, now, onSave, icon, announce };
   const redraw = (focusKey = null) => draw(st, focusKey);
   st.redraw = redraw;
   draw(st);
@@ -183,7 +190,8 @@ function keyMove(st, e, day, w, range) {
 function choose(st, day) {
   if (day === st.day) return;
   const dirty = st.draft && st.draft.day === st.day && changed(st, st.ctx.summary);
-  st.status = dirty ? `Your choice for ${dayWords(st.day)} was not saved.` : '';
+  st.status = '';
+  if (dirty) tell(st, `Your choice for ${dayWords(st.day)} was not saved.`);
   st.day = day;
   st.focus = day;
   st.draft = null;
@@ -234,9 +242,9 @@ function editor(doc, st, summary, now) {
     : null;
   const save = async () => {
     const value = cycleValue({ day, flow: c.flow, symptoms: c.symptoms }, new Date());
-    if (c.flow === null) { st.status = 'Choose how much you bled first, or "No bleeding".'; st.redraw('cyc:save'); return; }
-    if (!value) { st.status = 'This day can no longer be logged.'; st.redraw('cyc:save'); return; }
-    if (!changed(st, summary)) { st.status = `Nothing changed for ${dayWords(day)}.`; st.redraw('cyc:save'); return; }
+    if (c.flow === null) { tell(st, 'Choose how much you bled first, or "No bleeding".'); st.redraw('cyc:save'); return; }
+    if (!value) { tell(st, 'This day can no longer be logged.'); st.redraw('cyc:save'); return; }
+    if (!changed(st, summary)) { tell(st, `Nothing changed for ${dayWords(day)}.`); st.redraw('cyc:save'); return; }
     await send(st, value, `Saved ${dayWords(day)}: ${entryWords(value, { suppressed })}.`);
   };
   const clear = async () => { await send(st, { day, flow: 'none', symptoms: [] }, `Cleared ${dayWords(day)}: nothing logged for it now.`); };

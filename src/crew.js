@@ -1344,7 +1344,7 @@ function cycleCard(p, now) {
   if (p.sex !== 'F') return null;
   const s = cycleSummary(machine.history(p.id, 'cycle'), now);
   const log = h('div', { class: 'cyc' });
-  drawCycleLog(log, { person: p, summary: s, now, icon, onSave: async (value) => {
+  drawCycleLog(log, { person: p, summary: s, now, icon, announce: toast, onSave: async (value) => {
     const r = await addReading('cycle', value);
     if (r.ok) toast(r.waiting ? 'Kept in this browser until the station server answers. Private: not sent to anyone.' : 'Saved in your private cycle log. Not sent to anyone.');
     return r;
