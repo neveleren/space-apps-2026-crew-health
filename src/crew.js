@@ -92,6 +92,7 @@ const ui = {
   find: '',
   backTo: 'measures',
   stepsDone: {},
+  openGroups: new Set(),
 };
 let store = null;
 let stored = [];
@@ -281,7 +282,20 @@ function bloodTip(code, personId) {
     pv.iss && pv.iss.length ? tipLine('On the ISS', ...linkList(pv.iss)) : null,
     tipLine('This value', `A real, de-identified lab result of an Inspiration4 crew member from NASA OSDR (OSD-575)${x ? `, lab range ${x.min === null ? '' : x.min} to ${x.max === null ? '' : x.max} ${x.units}` : ''}.`));
 }
+function systemsTip() {
+  const line = (label, value) => h('p', {}, h('b', {}, `${label}: `), value);
+  const saved = store ? ({ server: 'on this computer, in the program\'s own files', browser: 'in this browser only (a static copy)', memory: 'only until this page closes (storage is blocked)' }[store.kind] || store.kind) : 'not yet';
+  return h('div', {},
+    h('p', { class: 'tp-title' }, 'Systems'),
+    line('Automation', 'on: every reading is checked against its normal range and the team\'s rules, with or without the AI.'),
+    line('AI', ui.ship.aiWorks ? 'the route is on, but no AI model is connected in this version.' : 'off: only the automation works.'),
+    line('Link to Earth', ui.ship.linkToEarth ? 'up: messages to Earth go with the next downlink.' : 'down: messages to Earth wait in the outbox.'),
+    line('Doctor', ui.ship.doctorOnBoard ? 'on board.' : 'on Earth.'),
+    line('Saved', saved),
+    line('Sound', ui.muted ? 'off (Settings).' : 'on: needs action sounds a tone, urgent a tone and a voice.'));
+}
 function tipContent(key) {
+  if (key === 's:systems') return systemsTip();
   const [kind, a1, a2] = String(key).split(':');
   if (kind === 'm') return measureTip(a1, a2);
   if (kind === 'b') return bloodTip(a1, a2);
@@ -333,6 +347,7 @@ function renderBar() {
   // Quiet and dark: a tag appears only when something is off.
   const tags = [];
   if (p && !p.real && ui.example) tags.push(h('span', { class: 'tag example', 'data-tip': 't:example', tabindex: '0' }, 'EXAMPLE DATA'));
+  if (p) tags.push(h('span', { class: 'tag plain systems', 'data-tip': 's:systems', tabindex: '0' }, icon('cpu', { size: 16 }), 'Systems'));
   if (p) {
     if (!ui.ship.linkToEarth) tags.push(h('span', { class: 'tag stale', 'data-tip': 't:nolink' }, icon('unlink', { size: 16 }), 'No link to Earth'));
     if (!ui.ship.aiWorks) tags.push(h('span', { class: 'tag', 'data-tip': 't:aioff' }, icon('ban', { size: 16 }), 'AI off'));
@@ -626,9 +641,24 @@ function renderGroups(p, a, now) {
   const listed = new Set(GROUPS.flatMap((g) => g[2]));
   const others = [...BODY, ...PSYCHE].filter((ind) => !listed.has(ind));
   const rowFor = (ind) => (ind === 'camera' ? cameraRow(p) : COMPLEX_CELLS.includes(ind) ? complexRow(p, ind) : cellBy[ind] ? measureRow(p, ind, a, now) : null);
-  const group = (title, hint, rows) => h('section', { class: 'group' },
-    h('div', { class: 'group-head' }, h('h2', {}, title), hint ? h('p', {}, hint) : null),
-    h('div', { class: 'rows' }, ...rows.filter(Boolean)));
+  const group = (title, hint, rows) => {
+    const real = rows.filter(Boolean);
+    const flaggedHere = real.some((w) => w.querySelector('.row.lv1, .row.lv2, .row.lv3, .row.stale'));
+    const foldable = !flaggedHere;
+    const open = !foldable || ui.openGroups.has(title);
+    const list = h('div', { class: 'rows', hidden: open ? null : true }, ...real);
+    const toggle = foldable ? h('button', { type: 'button', class: 'fold', 'aria-expanded': String(open), onclick: (e) => {
+      const nowOpen = list.hidden;
+      list.hidden = !nowOpen;
+      if (nowOpen) ui.openGroups.add(title); else ui.openGroups.delete(title);
+      e.currentTarget.setAttribute('aria-expanded', String(nowOpen));
+      e.currentTarget.lastChild.textContent = nowOpen ? 'Hide' : `Show ${real.length}`;
+    } }, h('span', { class: 'fold-note' }, icon('circle-check', { size: 16 }), 'Nothing to look at'), h('span', { class: 'fold-act' }, open ? 'Hide' : `Show ${real.length}`)) : null;
+    return h('section', { class: 'group', 'data-foldable': foldable ? '1' : null, 'data-title': title },
+      h('div', { class: 'group-head' }, h('h2', {}, title), toggle || (hint ? h('p', {}, hint) : null)),
+      foldable && hint ? h('p', { class: 'note' }, hint) : null,
+      list);
+  };
   const blocks = GROUPS.flatMap(([title, hint, list]) => [group(title, hint, list.map(rowFor)), title === 'Mind' ? cycleCard(p, now) : null]).filter(Boolean);
   if (others.length) blocks.push(group('Other measures', null, others.map(rowFor)));
   blocks.push(group('Cabin air', 'Shared by the whole crew.', SHIP_CELLS.map((ind) => measureRow(SHIP, ind, shipItems, now))));
@@ -662,6 +692,8 @@ function applyFind() {
     }
     const terms = g.dataset.terms || '';
     g.hidden = Boolean(q) && !inGroup && !(terms && terms.includes(q));
+    const list = g.querySelector(':scope > .rows');
+    if (list && g.dataset.foldable) list.hidden = q ? false : !ui.openGroups.has(g.dataset.title);
     if (!g.hidden) shown += 1;
   }
   let empty = byId('find-empty');
@@ -859,7 +891,7 @@ function renderDetail() {
         norm ? h('p', { class: 'meta' }, `Normal range: ${rangeText(cell, owner)}${cell.unit && cell.kind === KIND.NUMBER && cell.normType !== 'baseline-percent' ? ` ${cell.unit}` : ''}`) : null,
         lastEntry ? h('p', { class: 'meta' }, 'Last reading ', h('span', { class: 'mono' }, stamp(lastEntry.time, now))) : null)),
     alert ? h('div', { class: 'actions' }, btn('proc', 'What to do', () => openProcedure(alert), 'list-checks')) : null,
-    periodBar(renderDetail),
+    periodBar(redrawDetail),
     h('section', { class: 'card chart-card' },
       cornerTip('t:chart', 'the chart'),
       h('h2', {}, `${cell.label}, ${periodName}`),
@@ -868,9 +900,12 @@ function renderDetail() {
       h('div', { class: 'legend', id: 'd-legend' }),
       showTrend ? h('p', { class: 'how' }, 'Forecast: a straight line through the flight readings, not a medical model.') : null),
     h('div', { class: 'prose' }, ...facts.map((x) => h('p', {}, x))),
-    owner === SHIP ? null : h('div', { class: 'actions' },
+    owner === SHIP ? null : cell.section === 'psyche' ? h('div', { class: 'actions' },
+      aiButton('Start an anonymous session with AI', 'psyche', a),
+      btn('secondary', 'Tell the doctor on Earth', () => openDoctor(a, 'psyche'), 'stethoscope', { 'data-tip': 't:tellDoctor' }),
+      btn('secondary', 'Advice and articles', () => openAdvice(), 'list', { 'data-tip': 't:advice' })) : h('div', { class: 'actions' },
       aiButton('Analyse with AI', 'body', a),
-      btn('secondary', 'Message the doctor', () => openDoctor(a, 'body', indicator), 'stethoscope')),
+      btn('secondary', 'Message the doctor', () => openDoctor(a, 'body', indicator), 'stethoscope', { 'data-tip': 't:doctor' })),
     h('div', {},
       more('About this measure',
         cell.effort ? h('p', {}, `Effort to measure: ${cell.effort}, on the team's scale of light, high and extreme.`) : null,
@@ -893,6 +928,13 @@ function renderDetail() {
   if (shownPts.some((pt) => pt.out)) legend.push(h('span', {}, h('span', { class: 'out-key' }), ord ? cap(LOW[indicator]) : 'Outside the normal range'));
   byId('d-legend').replaceChildren(...legend);
   byId('d-legend').hidden = !legend.length;
+}
+
+// Redraw the measure page and keep the sections the person opened.
+function redrawDetail() {
+  const open = [...document.querySelectorAll('#screen-detail details.more[open] > summary')].map((s) => s.textContent);
+  renderDetail();
+  for (const d of document.querySelectorAll('#screen-detail details.more')) if (open.includes(d.querySelector('summary').textContent)) d.open = true;
 }
 
 function renderBloodDetail(host, p, code) {
@@ -1413,7 +1455,7 @@ const clock = () => { const d = new Date(); byId('clock').textContent = `${doy(d
 clock();
 setInterval(clock, 1000);
 let resizeFrame = 0;
-window.addEventListener('resize', () => { cancelAnimationFrame(resizeFrame); resizeFrame = requestAnimationFrame(() => { if (ui.screen === 'detail') renderDetail(); }); });
+window.addEventListener('resize', () => { cancelAnimationFrame(resizeFrame); resizeFrame = requestAnimationFrame(() => { if (ui.screen === 'detail') redrawDetail(); }); });
 
 store = await openStore();
 stored = [...store.events];
