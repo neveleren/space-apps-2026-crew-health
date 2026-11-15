@@ -348,8 +348,8 @@ function renderBar() {
     const unseen = list.filter((x) => !ui.seen.has(x.id)).length;
     const top = list.length ? Math.max(...list.map((x) => x.level)) : LEVEL.FINE;
     box.className = `annunciator ${list.length ? LV_CLASS[top] : ''}`;
-    if (!list.length) box.replaceChildren(icon('bell', { size: 18 }), 'No messages');
-    else box.replaceChildren(icon(LEVEL_ICON[top], { size: 18 }), 'Messages', h('b', {}, unseen ? `${unseen} new` : String(list.length)));
+    if (!list.length) box.replaceChildren(icon('bell', { size: 18 }), h('span', { class: 'ann-word' }, 'No messages'));
+    else box.replaceChildren(icon(LEVEL_ICON[top], { size: 18 }), h('span', { class: 'ann-word' }, 'Messages'), h('b', {}, unseen ? `${unseen} new` : String(list.length)));
     box.setAttribute('aria-label', list.length ? `Messages: ${list.length}, ${unseen} new, highest level ${LEVEL_WORD[top]}` : 'No messages');
   }
   renderNav();
@@ -357,9 +357,10 @@ function renderBar() {
 
 // ---------- rendering: sign-in ----------
 function renderLogin() {
+  const initials = (p) => (p.real ? String(p.code || '').replace(/^C0*/, 'C') : /\d$/.test(p.name) ? `C${p.name.slice(-1)}` : p.name.slice(0, 1));
   const card = (p) => h('button', { type: 'button', class: 'person', onclick: () => choosePerson(p.id) },
-    h('span', { class: 'avatar' }, p.name.slice(0, 1)), h('b', {}, p.name),
-    h('span', {}, p.real ? 'Blood tests before and after flight' : 'Example crew member'));
+    h('span', { class: 'avatar' }, initials(p)), h('b', {}, p.real ? `Participant ${p.code}` : p.name),
+    h('span', {}, p.real ? 'Real blood tests, 2021' : 'Example crew member'));
   byId('people-crew').replaceChildren(...CREW.map(card));
   byId('people-real').replaceChildren(...REAL.map(card));
 }

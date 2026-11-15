@@ -40,4 +40,4 @@ The idea, the structure and the logic come from the team's human member. The cod
 
 ## Licenses
 
-Code: Apache-2.0. Fonts: SIL Open Font License 1.1 (Atkinson Hyperlegible Next and Mono, by the Braille Institute: `fonts/OFL-Atkinson-Hyperlegible-Next.txt`, `fonts/OFL-Atkinson-Hyperlegible-Mono.txt`). Camera models and runtime: Apache-2.0 (`vendor/mediapipe/NOTICE.md`, `vendor/mediapipe/LICENSE-Apache-2.0.txt`). NASA OSDR data: NASA open data.
+Code: Apache-2.0. Fonts: SIL Open Font License 1.1 (Atkinson Hyperlegible Next and Mono, by the Braille Institute: `fonts/OFL-Atkinson-Hyperlegible-Next.txt`, `fonts/OFL-Atkinson-Hyperlegible-Mono.txt`). Camera models and runtime: Apache-2.0 (`vendor/mediapipe/NOTICE.md`, `vendor/mediapipe/LICENSE-Apache-2.0.txt`). Icons: Lucide, ISC License (`vendor/lucide/LICENSE`). NASA OSDR data: NASA open data.
