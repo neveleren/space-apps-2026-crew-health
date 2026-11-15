@@ -489,7 +489,7 @@ function mindChoice(p, a, primaryFirst) {
     btn('secondary', 'Advice and articles', () => openAdvice(), 'list', { 'data-tip': 't:advice' }));
   if (offerDismissed.has(p.id)) return h('div', { class: 'advice' }, choices);
   return h('div', { class: 'advice' },
-    h('p', { class: 'who-says' }, 'AI psychologist · not connected yet'),
+    h('p', { class: 'who-says' }, 'AI support (not a psychologist) · not connected yet'),
     h('blockquote', {}, `Hey ${p.name}, I noticed from your check-ins that the last days have been hard. How about talking anonymously about what is bothering you? Or, if you wish, I can send the results of these check-ins to the doctor.`),
     choices,
     h('div', { class: 'actions' }, btn('secondary small', 'Not now', () => { offerDismissed.add(p.id); renderHome(); })),
@@ -1112,9 +1112,73 @@ function summaryFor(a, kind, indicator) {
   return lines.join('\n');
 }
 
+// ---------- the anonymous session: support that works with the AI off ----------
+// Coping cards: plain steps from proven methods, each with its source line (texts from the night research report).
+const COPING = [
+  { id: 'slow', topic: 'Slow down', title: 'Two minutes to slow down', steps: ['Breathe in through your nose, then breathe out more slowly than you breathed in. Repeat for two minutes.', 'Look around and name a few things you can see and hear.', 'Then pick the next small task.'], src: "CBT and mindfulness self-help; NASA's 2026 research call names CBT and mindfulness; the FDA lists 'skill of the day' coping tools as low risk." },
+  { id: 'sleep', topic: 'Sleep', title: 'Sleep tonight', steps: ['Keep the same wake-up time every day, even after a bad night.', 'Use your sleep station for sleep, not for work or screens.', 'If you lie awake and get frustrated, get up, do something calm in dim light, and go back when sleepy.', 'Avoid caffeine late in your day.'], src: "CBT for insomnia, the method behind the VA's Insomnia Coach; fully automated digital CBT-I reduced insomnia severity in 15 trials (2026)." },
+  { id: 'home', topic: 'Missing home', title: 'Missing home', steps: ['Write down what you want to say at your next family call.', 'Write a short message to send when you can.', 'Look at a photo or a recording from home.', 'Name one thing you look forward to this week.'], src: 'ISS crews have weekly private family video calls (NASA, 2024); NASA calls family contact a key support (2023).' },
+  { id: 'crew', topic: 'Crew tension', title: 'Tension in the crew', steps: ['Wait for a calm moment and ask for a few minutes in private.', 'Say what happened, how it affected you, and what you would like.', 'Listen, and repeat back what you heard.', 'If it keeps coming back, bring it to your private conference.'], src: 'HI-SEAS crews rated the conflict modules of NASA-funded self-help programs as highly acceptable (2016, 2020).' },
+  { id: 'ground', topic: 'Frustrated with the ground', title: 'Frustrated with the ground', steps: ['This is common: in Mars-500, conflicts with mission control were reported five times more often than conflicts within the crew.', 'Write it down first and read it again after sleep.', 'Raise it calmly in a planning conference or your private conference.'], src: 'Mars-500 (PLoS ONE, 2014); ISS weekly questionnaires (Kanas, 2007).' },
+  { id: 'low', topic: 'Low days', title: 'Low days', steps: ['Pick one small, doable thing you used to enjoy, and decide when.', 'Have one real conversation today, even a short one.', 'Check your sleep: in ISS crews, nights under 6 hours went with more stress.', "If low days keep coming, use 'Tell the doctor on Earth'."], src: 'CBT steps; CBT-based chatbots reduced depression symptoms in 29 trials (2026).' },
+];
+// Simple word rules, outside any AI: these words open Help now at once (APA 2025: detect and interrupt; the AI never decides alone).
+const RISK_WORDS = ['suicide', 'suicidal', 'kill myself', 'end my life', 'want to die', 'wish i was dead', 'hurt myself', 'harm myself', 'better off dead', 'no reason to live', 'cannot go on', "can't go on"];
+const matchesRisk = (text) => RISK_WORDS.some((w) => String(text || '').toLowerCase().includes(w));
+const privacyShown = new Set();
+
+function helpNowCard() {
+  return h('div', { class: 'help-now', role: 'group', 'aria-label': 'Help now' },
+    h('p', { class: 'tp-title' }, 'Help now'),
+    h('ol', { class: 'links' },
+      h('li', {}, 'Tell a crewmate now, in person.'),
+      h('li', {}, 'Ask the ground for a private medical conference with your flight surgeon or psychologist.', ui.ship.linkToEarth ? '' : ' There is no link now: the request waits in the outbox, so also tell the crew medical officer on board.'),
+      h('li', {}, 'Use your plan for hard days, written before flight with your psychologist.')),
+    h('div', { class: 'actions' },
+      btn('primary small', 'Ask for a private conference', () => openDoctor({ body: { items: [] }, psyche: { items: [] } }, 'psyche'), 'stethoscope')),
+    h('p', { class: 'note' }, 'Fixed steps, not AI; they work with the AI off. Nothing is sent by itself. Whether anything more should happen in immediate danger is the team\'s decision.'));
+}
+
+function openSupport(a) {
+  const p = personById[ui.person];
+  const body = h('div', { class: 'support' });
+  const helpSlot = h('div', {});
+  const showHelp = () => { helpSlot.replaceChildren(helpNowCard()); helpSlot.scrollIntoView({ block: 'nearest' }); };
+  const cardSlot = h('div', {});
+  const openCard = (cd) => cardSlot.replaceChildren(h('div', { class: 'coping' },
+    h('p', { class: 'tp-title' }, cd.title),
+    h('ol', { class: 'links' }, ...cd.steps.map((s) => h('li', {}, s))),
+    h('p', { class: 'note' }, cd.src)));
+  const box = h('textarea', { 'aria-label': 'Write it out. Not saved.', placeholder: 'Write it out. This is not saved and not sent.', oninput: (e) => { if (matchesRisk(e.target.value)) showHelp(); } });
+  const talk = () => fill(body,
+    h('div', { class: 'actions' }, btn('secondary small', 'Help now', showHelp, 'circle-alert', { 'data-tip': 't:helpnow' })),
+    helpSlot,
+    h('p', {}, h('b', {}, 'What is it about?'), ' ', h('span', { class: 'muted' }, 'Pick one for a few steps that help.')),
+    h('div', { class: 'chips' }, ...COPING.map((cd) => h('button', { type: 'button', class: 'chip neutral topic', onclick: () => openCard(cd) }, cd.topic))),
+    cardSlot,
+    h('label', { class: 'log-field' }, h('span', {}, 'Write it out (not saved)'), box),
+    h('div', { class: 'actions' }, btn('secondary small', 'Forget now', () => { box.value = ''; helpSlot.replaceChildren(); toast('Cleared. Nothing was saved.'); }, 'x')),
+    h('p', {}, h('b', {}, 'Is there one person you could talk to today?'), ' A crewmate, a family call, or your next private talk with your psychologist.'),
+    h('div', { class: 'actions' }, btn('secondary small', 'Tell the doctor on Earth', () => openDoctor(a, 'psyche'), 'stethoscope', { 'data-tip': 't:tellDoctor' })),
+    h('p', { class: 'note' }, `No AI model is connected in this version${ui.ship.aiWorks ? '' : ', and the AI is off'}; everything above works without it. When one is connected it is told it is an AI and says so, gives no diagnosis or medicine advice, uses only the on-board library with sources, and ends every talk by pointing to a person.`));
+  const privacy = () => fill(body,
+    h('div', { class: 'privacy-card' },
+      h('p', { class: 'tp-title' }, 'Before you talk: how private is this?'),
+      h('ul', { class: 'links' },
+        h('li', {}, 'This is AI support: a program, not a person and not a psychologist.'),
+        h('li', {}, 'What you write here is not saved and not sent. Nobody reads it.'),
+        h('li', {}, 'Your daily check-ins are saved, like NASA\'s health monitoring, and go to the doctor only if you choose.'),
+        h('li', {}, 'Help now is always here: fixed steps to reach a person, even with the AI off.'),
+        h('li', {}, 'Whether anything more happens in immediate danger is the team\'s decision; until then nothing is sent by itself.')),
+      h('div', { class: 'actions' }, btn('primary small', 'I understand', () => { privacyShown.add(p.id); talk(); }, 'check'))));
+  if (privacyShown.has(p.id)) talk(); else privacy();
+  openPanel('Anonymous session with AI support', [h('p', { class: 'ai-badge' }, icon('sparkles', { size: 16 }), 'AI support, not a psychologist'), body]);
+}
+
 function openAi(kind, a) {
+  if (kind === 'psyche') { openSupport(a); return; }
   const summary = summaryFor(a, kind);
-  openPanel(kind === 'psyche' ? 'Anonymous session with AI' : 'Analyse with AI', [
+  openPanel('Analyse with AI', [
     h('p', {}, 'No AI is connected to this version yet. Which AI, and what exactly it does, is the team\'s decision.'),
     h('p', {}, "What checked facts say: NASA's crew medical officer assistant (CMO-DA) runs with no link to Earth on a ground copy of the ISS computer and is tested only on Earth so far; open models can run right in a web browser without internet."),
     h('p', { class: 'muted' }, kind === 'psyche' ? 'Anonymous session: these check-ins do not go to the doctor unless you press "Tell the doctor on Earth" yourself.' : 'This is what the AI would get from the automation:'),
@@ -1523,7 +1587,7 @@ function renderSetup() {
         h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Where the crew is'), h('small', {}, `${profile().name}: signal delay ${profile().delay} one way; ${profile().evac}.`)),
           h('div', { class: 'seg small', role: 'group', 'aria-label': 'Mission' }, ...[['iss', 'ISS'], ['moon', 'Moon'], ['mars', 'Mars']].map(([k, label]) => h('button', { type: 'button', 'aria-pressed': String(ui.profile === k), onclick: () => { ui.profile = k; savePrefs(); renderSetup(); renderBar(); } }, ui.profile === k ? icon('check', { size: 14 }) : null, label))))),
       h('section', { class: 'card' }, cornerTip('t:camera', 'the camera'), h('h2', {}, 'Camera'),
-        h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, camOn ? 'The camera is on' : 'The camera is off'), h('small', {}, 'It watches for a hand held to the chest and asks "Are you okay?" first. A sleeping person is ignored. It turns itself off after an hour; not for crew quarters. Video never leaves this computer and is never stored.')),
+        h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, camOn ? 'The camera is on' : 'The camera is off'), h('small', {}, 'It watches for a hand held to the chest and asks "Are you okay?" first. A sleeping person is ignored. It never guesses feelings from your face or voice. It turns itself off after an hour; not for crew quarters. Video never leaves this computer and is never stored.')),
           h('button', { type: 'button', class: camOn ? 'btn secondary' : 'btn primary', id: 'cam-toggle', onclick: toggleCamera }, camOn ? 'Turn the camera off' : 'Turn the camera on')),
         h('div', { class: 'cam-wrap', id: 'cam-wrap', hidden: camOn ? null : true },
           h('div', { class: 'cam-view' }, h('video', { id: 'cam-video', playsinline: true, muted: true }), h('canvas', { id: 'cam-canvas', 'aria-hidden': 'true' }), h('span', { class: 'cam-on-tag' }, 'Camera on')),

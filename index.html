@@ -255,6 +255,13 @@ h1 .tip-btn, h2 .tip-btn, p .tip-btn { width: 30px; height: 30px; margin-left: 2
 .needs .link { min-height: 32px; }
 .link.ink { color: var(--ink); text-decoration-color: var(--axis); }
 .empty-find { margin: 0; color: var(--muted); }
+.support { display: grid; gap: 14px; }
+.support textarea { min-height: 110px; width: 100%; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--axis); background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 16px; font-weight: 400; }
+.support .chips .topic { cursor: pointer; min-height: 40px; }
+.support .chips .topic:hover { border-color: var(--cmd-edge); }
+.coping, .privacy-card, .help-now { display: grid; gap: 8px; padding: 14px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); }
+.help-now { border-color: var(--lv3-stripe); }
+.ai-badge { display: inline-flex; align-items: center; gap: 6px; justify-self: start; padding: 2px 10px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); font-size: 15px; font-weight: 600; }
 .due { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .due li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; }
 .due li .icon { align-self: center; color: var(--muted); }

@@ -2,6 +2,9 @@
 // Plain English, one idea per line. Written by Claude (Anthropic), an AI system, at the team's request.
 
 export const TIPS = {
+  aisession: { title: 'Anonymous session with AI support', lines: ['A private talk with an AI program on this laptop: not a person and not a psychologist. Nothing you write is saved or sent.', 'Help now, coping steps and your plan work with the AI off. No AI model is connected in this version.'] },
+  helpnow: { title: 'Help now', lines: ['Fixed steps, not AI: tell a crewmate, ask the ground for a private medical conference, use your plan for hard days.', 'Shown by simple word rules even when the AI is off. Nothing is sent by itself.'] },
+  noemotion: { title: 'No emotion reading', lines: ['The camera only looks for physical events: a hand held on the chest, sleep.', 'It never guesses feelings from a face or a voice (the EU AI Act bans emotion reading at work since February 2025).'] },
   comingup: { title: 'Coming up', lines: ['What the medical routine of an ISS flight brings next: a private medical conference every week, a private talk with the psychologist every two weeks, a thinking test every month, eye checks on flight days 30 and 90 and 30 days before return.', 'The dates here are an example schedule; on a real flight they come from the crew timeline.'] },
   falsealarm: { title: 'False alarm', lines: ['If the camera got it wrong, say so here: the alarm clears, and the note stays in your record so the doctor sees it.', 'NASA-STD-3001 Vol 2 asks that the crew can safely override automation (10165).'] },
   help: { title: 'Help key', lines: ['Hold it for 2 seconds to call for help by hand, at any time, from any screen.', 'It raises an urgent alert for the crew on board and the doctor, the same way as answering "I need help" to the camera question (NASA-STD-3001 Vol 2, 10178).'] },
@@ -21,7 +24,6 @@ export const TIPS = {
   details: { title: 'Details', lines: ['Opens the first reason: its chart, its normal range, its history and what to do.'] },
   ai: { title: 'Analyse with AI', lines: ['Sends a summary of these readings to an AI on board that works without internet.', 'No AI is connected in this version; the team decides which one.'] },
   doctor: { title: 'Message the doctor', lines: ['Drafts a message with these readings for the doctor on board, or on Earth when the link is up.', 'You can change the text before sending.'] },
-  aisession: { title: 'Anonymous session with AI', lines: ['A private conversation that is not recorded or read (the team\'s idea).', 'No AI is connected in this version.'] },
   tellDoctor: { title: 'Tell the doctor on Earth', lines: ['Sends your recent check-ins to the doctor on Earth, only if you choose to.'] },
   advice: { title: 'Advice and articles', lines: ['Checked reading material: NASA health briefs, NASA evidence reports, MedlinePlus.', 'For people who prefer to read without the AI.'] },
   checkin: { title: 'Daily check-in', lines: ['Three quick questions each day: mood, energy and last night\'s sleep.', 'Your answers build up for a planned review. One bad day never raises an alarm.'] },
