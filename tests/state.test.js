@@ -6,6 +6,7 @@ import { createMachine } from '../src/engine.js';
 import { CELLS, CREW, SHIP } from '../src/config.js';
 import { exampleFlight, MISSION } from '../src/demo-crew.js';
 import { assess, assessShip, headline, headlineFor, topLevel, LEVEL, RULES, RULE_NOTES, SLOW_MEASURES, EXPECTED } from '../src/state-levels.js';
+import { KIT_HOURS, medicineValue } from '../src/quicklog.js';
 
 function flightMachine(extra = []) {
   const machine = createMachine({ cells: CELLS, crew: [...CREW, SHIP], state: { aiWorks: true, doctorOnBoard: false, linkToEarth: true } });
@@ -319,4 +320,171 @@ test('exercise: a reading that is only recorded never changes the judgement of t
   assert.equal(it.m.streak, 5);
   assert.equal(new Date(it.m.runFrom).toISOString(), at(116));
   assert.equal(it.m.list[it.m.list.length - 1].context, 'exercise', 'the screen still gets every reading');
+});
+
+// ---------- final review fixes of 15 Nov 2026 (drafts): an alarm can be called off; own logs can say "tell someone" ----------
+
+test('a temperature of 35.0 °C is the urgent hypothermia limit: NEWS2 scores 35.0 or less red; MedlinePlus stays the first source', () => {
+  const m = fresh();
+  ordinaryDays(m, 110, 120);
+  put(m, 120, 'temp', 35.0, 'crew-1', { time: at(120, 9) });
+  const a = judgeOn(m, 120);
+  const it = itemOf(a, 'temp');
+  assert.equal(it.kind, 'red');
+  assert.equal(it.level, LEVEL.URGENT);
+  assert.deepEqual([it.red.when, it.red.value, it.red.source, it.red.source2, it.red.draft], ['atOrBelow', 35, 'MedlinePlus (NIH)', 'RCP NEWS2, 2017', true]);
+  assert.match(it.red.url2, /^https:\/\/www\.rcp\.ac\.uk\//);
+  assert.equal(headlineFor('1 May 2026', a), 'As of 1 May 2026, your physical condition needs help: a doctor has been called, your mental condition is excellent.');
+  const warmer = fresh();
+  ordinaryDays(warmer, 110, 120);
+  put(warmer, 120, 'temp', 35.1, 'crew-1', { time: at(120, 9) });
+  assert.notEqual(itemOf(judgeOn(warmer, 120), 'temp').kind, 'red', '35.1 is outside the norm, not past the red limit');
+});
+
+const CALM = 'As of 1 May 2026, your physical and mental condition is excellent. Keep it up, well done!';
+
+test('"I am okay" after a camera or Help key alarm calls the alarm off; the alarm stays in the record', () => {
+  const m = fresh();
+  ordinaryDays(m, 110, 120);
+  put(m, 120, 'camera', 'chest_grab_help', 'crew-1', { source: 'help-key', time: at(120, 9) });
+  assert.equal(judgeOn(m, 120).body.level, LEVEL.URGENT);
+  put(m, 120, 'camera', 'chest_grab_ok', 'crew-1', { source: 'false-alarm', time: minutesAfter(120, 9, 5) });
+  const a = judgeOn(m, 120);
+  assert.equal(a.body.level, LEVEL.FINE, 'Today and Messages calm down');
+  assert.ok(!a.body.items.some((x) => x.kind === 'camera'));
+  assert.equal(headlineFor('1 May 2026', a), CALM);
+  const note = a.info.find((x) => x.kind === 'camera-cleared');
+  assert.equal(note.level, LEVEL.FINE);
+  assert.equal(note.source, 'false-alarm');
+  assert.deepEqual([note.alarm.value, note.alarm.source], ['chest_grab_help', 'help-key']);
+  assert.equal(m.history('crew-1', 'camera').length, 2, 'the alarm stays in the record');
+  // A new alarm after the all-clear is urgent again, and "asleep" calls nothing off.
+  put(m, 120, 'camera', 'chest_grab_no_answer', 'crew-1', { source: 'camera', time: at(120, 10) });
+  put(m, 120, 'camera', 'sleeping', 'crew-1', { source: 'camera', time: minutesAfter(120, 10, 30) });
+  const again = judgeOn(m, 120);
+  assert.equal(again.body.level, LEVEL.URGENT);
+  assert.equal(again.body.items[0].value, 'chest_grab_no_answer');
+  assert.ok(!again.info.some((x) => x.kind === 'camera-cleared'));
+  // An "okay" from before the alarm calls nothing off.
+  const early = fresh();
+  ordinaryDays(early, 110, 120);
+  put(early, 120, 'camera', 'chest_grab_ok', 'crew-1', { source: 'camera', time: at(120, 8.5) });
+  put(early, 120, 'camera', 'chest_grab_no_answer', 'crew-1', { source: 'camera', time: at(120, 9) });
+  assert.equal(judgeOn(early, 120).body.level, LEVEL.URGENT);
+});
+
+const hoursBefore = (n, hours) => new Date(Date.parse(at(n, 12)) - hours * 60 * 60 * 1000).toISOString(); // judgeOn looks at 12:00
+const tellOf = (a) => a.body.items.find((x) => x.kind === 'tell');
+const ATTENTION_ONLY = 'As of 1 May 2026, your physical condition needs attention, your mental condition is excellent.';
+
+test('eyes: an answer other than "no change" asks to tell the flight surgeon, until a later "no change" (draft)', () => {
+  const m = fresh();
+  ordinaryDays(m, 100, 120);
+  put(m, 120, 'visionCheck', 'grid changed', 'crew-1', { source: 'eye-self-check', time: at(120, 9) });
+  const check = (a) => {
+    const it = tellOf(a);
+    assert.deepEqual([it.rule, it.level, it.cell.indicator, it.who, it.draft, it.private], ['eye-answer', LEVEL.ATTENTION, 'visionCheck', 'flight surgeon', true, false]);
+    assert.match(it.text, /^"Some grid lines look wavy, broken or missing", your eye self-check answer of GMT \d+\/09:00\. Worth telling your flight surgeon \(a draft rule; who reads these answers between the eye exams is the team's open decision\)/);
+    assert.equal(it.short, 'Grid lines look wrong: tell your flight surgeon');
+    assert.ok(it.steps.length >= 2 && it.steps.every((s) => typeof s === 'string' && s));
+    assert.equal(it.title, 'Eyes (SANS): vision self-check');
+    assert.equal(a.body.level, LEVEL.ATTENTION);
+    assert.equal(headlineFor('1 May 2026', a), ATTENTION_ONLY);
+  };
+  check(judgeOn(m, 120));
+  ordinaryDays(m, 121, 160);
+  check(judgeOn(m, 160)); // forty days on, with no later answer: still there
+  put(m, 160, 'visionCheck', 'vision changed', 'crew-1', { source: 'eye-self-check', time: at(160, 9) });
+  assert.match(tellOf(judgeOn(m, 160)).text, /^"My near or far vision has changed"/);
+  put(m, 160, 'visionCheck', 'no change', 'crew-1', { source: 'eye-self-check', time: at(160, 10) });
+  assert.equal(judgeOn(m, 160).body.level, LEVEL.FINE);
+  assert.equal(headlineFor('1 May 2026', judgeOn(m, 160)), CALM);
+});
+
+test(`symptoms: one rated ${RULES.symptomTellAt} or more of 10 in the last ${RULES.symptomHours} hours asks to tell the crew medical officer (draft); the log stays private`, () => {
+  const logged = (entries) => {
+    const m = fresh();
+    ordinaryDays(m, 110, 120);
+    for (const [value, hours] of entries) put(m, 120, 'symptoms', value, 'crew-1', { source: 'symptom-log', time: hoursBefore(120, hours) });
+    return judgeOn(m, 120);
+  };
+  assert.equal(logged([[{ symptom: 'backPain', severity: RULES.symptomTellAt - 1 }, 1]]).body.level, LEVEL.FINE);
+  const a = logged([[{ symptom: 'headache', severity: 8 }, 5], [{ symptom: 'other', severity: 10, note: 'chest pain and short of breath' }, 1]]);
+  const it = tellOf(a);
+  assert.deepEqual([it.rule, it.level, it.cell.indicator, it.who, it.draft, it.private], ['strong-symptom', LEVEL.ATTENTION, 'symptoms', 'crew medical officer', true, true]);
+  assert.match(it.text, /^Something else, 10 of 10: chest pain and short of breath \(GMT \d+\/11:00\); Headache, 8 of 10 \(GMT \d+\/07:00\)\. A symptom of 8 or more of 10 in the last 24 hours: tell the crew medical officer \(a draft rule; the team decides\)\.$/);
+  assert.equal(it.short, 'Something else, 10 of 10: chest pain and short of breath: tell the crew medical officer');
+  assert.ok(it.steps.some((s) => s.includes('hold the Help key')));
+  assert.ok(it.steps.some((s) => s.includes('sent only if you choose')));
+  assert.deepEqual(it.entries.map((x) => x.value.severity), [10, 8], 'newest first');
+  assert.equal(headlineFor('1 May 2026', a), ATTENTION_ONLY, 'a 10 of 10 is never "excellent"');
+  assert.equal(logged([[{ symptom: 'backPain', severity: RULES.symptomTellAt }, RULES.symptomHours - 1]]).body.level, LEVEL.ATTENTION);
+  assert.equal(logged([[{ symptom: 'backPain', severity: 10 }, RULES.symptomHours + 1]]).body.level, LEVEL.FINE, 'older than a day');
+});
+
+test("medicines: past the kit list's own printed rules, a private attention item quotes the kit list (draft)", () => {
+  const took = (doses) => {
+    const m = fresh();
+    ordinaryDays(m, 110, 120);
+    for (const [medicine, amount, hours] of doses) put(m, 120, 'medicines', medicineValue({ medicine, amount, name: 'Eye drops' }), 'crew-1', { source: 'medicine-log', time: hoursBefore(120, hours) });
+    return judgeOn(m, 120);
+  };
+  // Ibuprofen 400 mg, 2 tablets five times within an hour: 10 tablets, more than "No more than 8 tablets every 24 hours".
+  const ten = took([0.9, 0.7, 0.5, 0.3, 0.1].map((h) => ['ibuprofen', 2, h]));
+  const it = tellOf(ten);
+  assert.deepEqual([it.rule, it.level, it.cell.indicator, it.who, it.draft, it.private], ['kit', LEVEL.ATTENTION, 'medicines', 'crew medical officer', true, true]);
+  assert.equal(it.text, 'Ibuprofen 400 mg: 10 tablets in the last 24 hours. The kit list says: "No more than 8 tablets every 24 hours. Take with food." Tell the crew medical officer, or your flight surgeon (a draft rule from the kit list of 2015; the flight surgeons set the real one).');
+  assert.equal(it.short, "Ibuprofen: 10 tablets in 24 hours, more than the kit list's 8");
+  assert.equal(it.entries.length, 5);
+  assert.match(it.source.url, /governmentattic/);
+  assert.equal(headlineFor('1 May 2026', ten), ATTENTION_ONLY);
+  assert.equal(took([0.9, 0.7, 0.5, 0.3].map((h) => ['ibuprofen', 2, h])).body.level, LEVEL.FINE, '8 tablets is the limit itself');
+  assert.equal(took([30, 20, 10, 5, 1].map((h) => ['ibuprofen', 2, h])).body.level, LEVEL.FINE, `only the last ${KIT_HOURS} hours count`);
+  assert.match(tellOf(took([...[6, 5, 4, 3, 2, 1].map((h) => ['acetaminophen', 2, h]), ['acetaminophen', 0.5, 0.5]])).text, /^Acetaminophen \(paracetamol\) 325 mg: 12\.5 tablets in the last 24 hours\. The kit list says: "No more than 12 tablets every 24 hours\."/);
+  // A sleep medicine and one whose note says "Do not use with sleep meds", in one night: both notes are quoted.
+  const night = tellOf(took([['zolpidem', 1, 3], ['promethazine', 1, 2]]));
+  assert.match(night.text, /^Zolpidem 10 mg \(GMT \d+\/09:00\) and Promethazine 25 mg \(GMT \d+\/10:00\), within 12 hours of each other\. The kit list says of Zolpidem: "Do not use with other sleep meds\." Of Promethazine: "May cause sedation and impair performance\. Do not use with sleep meds\." Tell the crew medical officer/);
+  assert.equal(night.short, 'Zolpidem with Promethazine: the kit list says not together');
+  assert.match(tellOf(took([['melatonin', 1, 5], ['zolpidem', 0.5, 4]])).text, /\. The kit list says: "Do not use with other sleep meds\." Tell/);
+  assert.equal(took([['zolpidem', 1, 30], ['promethazine', 1, 20]]).body.level, LEVEL.ATTENTION, 'the later one was taken in the last 24 hours');
+  for (const [doses, why] of [
+    [[['promethazine', 1, 3], ['meclizine', 1, 2]], 'two anti-nausea medicines: the kit list does not forbid that'],
+    [[['zolpidem', 0.5, 20], ['zolpidem', 0.5, 3]], 'the same medicine twice is not "other sleep meds"'],
+    [[['zolpidem', 1, 16], ['promethazine', 1, 2]], `more than ${RULES.kitNightHours} hours apart`],
+    [[['melatonin', 1, 3], ['ibuprofen', 2, 2], ['other', 10, 1], ['other', 10, 0.5]], 'no rule for these'],
+  ]) assert.equal(took(doses).body.level, LEVEL.FINE, why);
+  // Both rules at once: one item, both findings.
+  const both = tellOf(took([...[0.9, 0.7, 0.5, 0.3, 0.1].map((h) => ['ibuprofen', 2, h]), ['zolpidem', 1, 3], ['promethazine', 1, 2]]));
+  assert.deepEqual(both.findings.map((f) => f.rule), ['max', 'night']);
+  assert.equal(both.short, "Ibuprofen: 10 tablets in 24 hours, more than the kit list's 8; Zolpidem with Promethazine: the kit list says not together");
+});
+
+test("the person's own logs never raise more than attention, so they never become a crew line; the example flight raises none", () => {
+  const m = fresh();
+  ordinaryDays(m, 110, 120);
+  put(m, 120, 'symptoms', { symptom: 'backPain', severity: 10 }, 'crew-1', { source: 'symptom-log', time: hoursBefore(120, 1) });
+  for (const h of [0.9, 0.7, 0.5, 0.3, 0.1]) put(m, 120, 'medicines', medicineValue({ medicine: 'ibuprofen', amount: 2 }), 'crew-1', { source: 'medicine-log', time: hoursBefore(120, h) });
+  put(m, 120, 'visionCheck', 'vision and grid changed', 'crew-1', { source: 'eye-self-check', time: at(120, 9) });
+  const a = judgeOn(m, 120);
+  const tells = a.body.items.filter((x) => x.kind === 'tell');
+  assert.deepEqual(tells.map((x) => x.cell.indicator).sort(), ['medicines', 'symptoms', 'visionCheck']);
+  for (const x of tells) assert.equal(x.level, LEVEL.ATTENTION, x.rule);
+  assert.equal(a.body.level, LEVEL.ATTENTION);
+  assert.ok(!a.body.items.some((x) => x.cell && x.cell.private && ['red', 'camera'].includes(x.kind)), 'crew lines carry only urgent red limits and alarms');
+  assert.ok(a.body.items.every((x, i, all) => i === 0 || all[i - 1].level >= x.level), 'most important first');
+  const flight = flightMachine();
+  for (const p of CREW) assert.ok(!assess({ machine: flight, person: p, cells: CELLS, mission: MISSION, now }).body.items.some((x) => x.kind === 'tell'), p.id);
+});
+
+test('the new rules are drafts with their sources, and the cells say the same numbers', () => {
+  for (const k of ['symptomTellAt', 'kitNightHours', 'eyeAnswer']) {
+    assert.equal(RULE_NOTES[k].draft, true, k);
+    assert.match(RULE_NOTES[k].url, /^https:\/\/[^\s]+$/, k);
+    assert.doesNotMatch(RULE_NOTES[k].text, new RegExp(`[${String.fromCharCode(0x2013, 0x2014)}]`), k);
+  }
+  const cell = (indicator) => CELLS.find((c) => c.indicator === indicator);
+  assert.match(cell('symptoms').normText, new RegExp(`a rating of ${RULES.symptomTellAt} or more in the last ${RULES.symptomHours} hours shows as "attention"`));
+  assert.match(cell('medicines').normText, /kit list's own printed rules/);
+  assert.match(cell('visionCheck').normText, /until a later "No change" \(a draft rule/);
+  assert.equal(KIT_HOURS, 24, 'the kit list says "every 24 hours"');
 });
