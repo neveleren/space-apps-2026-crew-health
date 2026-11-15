@@ -134,7 +134,7 @@ export const CONNECTIONS = [
     id: 'isslive', name: 'ISS cabin air, live (NASA ISSLive)', status: 'working', earthDemo: true,
     what: 'Real ISS cabin pressure and temperature, and the analyzer\'s last CO2 and O2 values with their age, from NASA\'s public feed.',
     how: 'Lightstreamer\'s text protocol TLCP 2.4.0 from push.lightstreamer.com, adapter set ISSLIVE, items USLAB000058, USLAB000059, USLAB000055 and USLAB000053, saved as the ship\'s cabin readings.',
-    note: 'An Earth demo: on board these values come from the station\'s own sensors. The CO2 and O2 items have not changed for days because the station moved to newer sensors that are not in the public feed. Not for operational decisions.',
+    note: 'An Earth demo: on board these values come from the station\'s own sensors. The CO2 and O2 items have not changed since 2 Nov 2026; they come from the older analyzer, and the newer sensors the station has used as its main air monitor since January 2026 are not in the public feed. Not for operational decisions.',
     tested: 'Tonight (15 Nov, GMT) from Node at 00:36, 00:56 and 01:08 and from a browser page at 01:09: cabin pressure 757.95 to 758.05 torr (101.05 kPa), cabin temperature 23.2 to 23.6 °C; CO2 2.44 torr and O2 165.85 torr, both last updated on 2 Nov 2026.',
     action: { type: 'toggle' },
     sources: [S.issLive, S.lsExample, S.tlcp, S.mimic, S.ices2026, S.std2f],
