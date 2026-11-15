@@ -395,6 +395,19 @@ export const PROVENANCE = {
     "how": "Self-report each morning on the 1 to 7 scale that NASA's medical standard suggests (OCHMO-STD-100.1A, requirement 6039), reported weekly at the private medical conference. A wrist actigraph (motion and light) can add an objective measure; the NASA standard names actimetry as another method.",
     "path": "Manual entry on the morning check-in, the same 1 to 7 scale as NASA's standard."
   },
+  "reaction": {
+    "what": "How fast you react, as the median of a 3-minute test; compared only with your own earlier runs, because fatigue and too little sleep slow it down.",
+    "iss": [
+      {
+        "name": "Reaction Self Test (a 3-minute psychomotor vigilance test on the station laptops)",
+        "maker": "NASA and the University of Pennsylvania",
+        "url": "https://ntrs.nasa.gov/citations/20090029851"
+      }
+    ],
+    "could": [],
+    "how": "A counter appears in a box at random moments, every 1 to 4 seconds; you press Space or tap as fast as you can. Presses under 100 ms count as too early, 355 ms or more as slow (the PVT-B rules).",
+    "path": "Working now: All measures, Reaction time, Start the 3-minute test, or Mind support. The result is saved for you."
+  },
   "cognition": {
     "what": "A short computer test of attention, memory and reaction, compared with your own pre-flight result; NASA runs it monthly on long missions so a change after illness, injury or fatigue can be judged against your own baseline.",
     "iss": [

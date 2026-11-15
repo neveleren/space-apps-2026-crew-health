@@ -41,6 +41,8 @@ const L2 = {
   exercise2023: { name: 'NASA HRP evidence report, 2023', url: 'https://ntrs.nasa.gov/api/citations/20220019338/downloads/Evidence%20report%20aerobic%20and%20muscle_FINAL%209-21-22%20Pubpress%20accepted_v2.pdf' },
   exercise2024: { name: 'NASA, 2024', url: 'https://www.nasa.gov/missions/station/iss-research/astronaut-exercise/' },
   cdcActivity: { name: 'CDC', url: 'https://www.cdc.gov/physical-activity-basics/guidelines/adults.html' },
+  rst2009: { name: 'NASA Reaction Self Test on the ISS (Dinges et al., 2009)', url: 'https://ntrs.nasa.gov/citations/20090029851' },
+  pvtb2011: { name: 'Basner et al., Acta Astronautica, 2011 (PVT-B)', url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC3197786/' },
   sans2023: { name: 'Brunstetter et al., NASA, 2023', url: 'https://ntrs.nasa.gov/api/citations/20220014606/downloads/Brunstetter%20-%20IWS%202023%20SANS%20Clinical%20Update%20-%20Abstract%20-%2023Sep22.pdf' },
   medlineAmsler: { name: 'MedlinePlus (NIH)', url: 'https://medlineplus.gov/ency/article/003446.htm' },
 };
@@ -230,7 +232,7 @@ export const CELLS = [
     },
   },
   {
-    id: null, section: 'body', indicator: 'hearing', effort: 'high', label: 'Hearing threshold', kind: KIND.NUMBER, unit: 'dB HL',
+    id: null, section: 'body', indicator: 'hearing', effort: 'high', label: 'Hearing threshold', kind: KIND.NUMBER, unit: 'dB HL', allowNegative: true, // -10 dB HL is a normal audiogram value
     normType: 'range', norm: { min: null, max: 20, maxExclusive: true }, compareWith: 'earthGeneral',
     norms: {
       earthGeneral: { text: 'normal hearing: below 20 dB, better-ear average at 500 to 4000 Hz', src: L.whoHearing },
@@ -333,6 +335,18 @@ export const CELLS = [
   {
     id: null, section: 'psyche', indicator: 'cognition', effort: 'light', label: 'Thinking test', kind: KIND.SELF, reviewByAi: false,
     normText: "NASA compares it once a month with the person's own pre-flight result; no threshold is published", src: L.ochmoBeh,
+  },
+  {
+    // The 3-minute reaction test (src/reaction-test.js), modelled on NASA's Reaction Self Test; the median in ms.
+    id: null, section: 'psyche', indicator: 'reaction', effort: 'light', label: 'Reaction time (3-minute test)', kind: KIND.NUMBER, unit: 'ms',
+    normType: 'record', reviewByAi: false, compareWith: 'personalEarth',
+    normText: "the median reaction time of the person's own 3-minute test, compared only with their own earlier runs; no threshold is published",
+    norms: {
+      earthGeneral: { text: 'PVT-B, 3 minutes: a response of 355 ms or more counts as slow (a lapse), a press under 100 ms as too early; no single normal value is used here', src: L2.pvtb2011 },
+      spaceGeneral: { text: "NASA's Reaction Self Test gave ISS crews feedback on fatigue from a 3-minute test (Expeditions 21 and 22)", src: L2.rst2009 },
+      personalEarth: { text: "the person's own runs before flight; slower or faster means a median at least 10% away (a placeholder for the team)", src: L2.rst2009 },
+      personalSpace: none,
+    },
   },
   {
     id: null, section: 'psyche', indicator: 'cycle', effort: 'light', label: 'Menstrual cycle', kind: KIND.SELF, reviewByAi: false, private: true,
@@ -503,6 +517,8 @@ export const CELLS = [
     // Draft threshold: NASA's earliest indication of SANS is an increase of 20 microns or more; a thinner retina
     // than before flight is a readable value with no limit here.
     normType: 'range', norm: { min: null, max: 20, maxExclusive: true }, draft: true, compareWith: 'personalEarth',
+    // Draft: NASA's clinically concerning level reaches the person, the crew medical officer and the doctor without the AI.
+    red: [{ when: 'atOrAbove', value: 55, level: 'action', ...cite(L2.sans2023), draft: true, note: 'NASA counts an increase of 55 microns or more as clinically concerning SANS.' }],
     norms: {
       earthGeneral: none,
       spaceGeneral: { text: 'about 66% of long-duration astronauts show the earliest indication of SANS; optic disc swelling of 20 microns or more in 64% of long-duration crew on the US segment', src: L2.sans2023 },
@@ -574,6 +590,7 @@ export const SOURCES = [
   { id: 'sleep-rating', section: 'psyche', label: 'Morning sleep rating', indicator: 'sleepQuality', presets: [6, 2].map((v) => ({ label: `${v} of 7`, value: v })) },
   { id: 'cycle-log', section: 'psyche', label: 'Cycle log', indicator: 'cycle', presets: [{ label: 'Period started', value: 'period_start' }, { label: 'Period ended', value: 'period_end' }] },
   { id: 'weighing-report', section: 'psyche', label: 'Report: what is weighing on you', indicator: 'weighing', self: true, presets: [] },
+  { id: 'reaction-test', section: 'psyche', label: 'Reaction test (3 minutes)', indicator: 'reaction', self: true, input: 'number', presets: [{ label: '305 ms', value: 305 }, { label: '360 ms', value: 360 }] },
   { id: 'cognition-test', section: 'psyche', label: 'Thinking test (once a month)', indicator: 'cognition', presets: [{ label: 'same as before flight', value: 'same as before flight' }, { label: 'worse than before flight', value: 'worse than before flight' }] },
   { id: 'co2-sensor', section: 'env', label: 'CO2 sensor', indicator: 'co2', input: 'number', presets: [2.1, 4.2].map((v) => ({ label: String(v), value: v })) },
   { id: 'mca', section: 'env', label: 'Major Constituent Analyzer: O2', indicator: 'cabinO2', input: 'number', presets: [150, 140].map((v) => ({ label: `${v}`, value: v })) },

@@ -56,7 +56,7 @@ test('the cells the NASA reviews found missing exist, each with label, unit, kin
       assert.ok(c.normText && (c.src || c.kind === KIND.COMPLEX), `${ind}: norm text with a source`);
     }
     for (const s of sourcesIn(c)) {
-      assert.ok(s.name, `${ind}: a source has a name`);
+      assert.ok(s.name || s.source, `${ind}: a source has a name`); // red limits name it as source (src/config.js RED)
       assert.match(s.url, /^https:\/\/[^\s]+$/, `${ind}: ${s.url}`);
     }
     assert.ok(SOURCES.some((s) => s.indicator === ind), `${ind}: a source the technical view can simulate`);

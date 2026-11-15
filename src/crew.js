@@ -29,7 +29,7 @@ import { toICalendar, planDrafts, ICAL_TYPE, icalFileName } from './ical.js';
 import { pinAvailable, hasPin, pinLocked, checkPin, pinTriesLeft, pinProblem, setPin, clearPin, PIN_RULES } from './privacy.js';
 
 // One icon per measure, so a list can be read at a glance.
-const ICON_FOR = { pulse: 'heart-pulse', bp: 'activity', glucose: 'droplet', temp: 'thermometer', spo2: 'droplets', sleep: 'moon', resp: 'wind', fluid: 'glass-water', bodyMass: 'scale', eyePressure: 'eye', hearing: 'ear', radiation: 'radiation', vo2max: 'heart', strength: 'dumbbell', bone: 'bone', camera: 'camera', mood: 'smile', attitude: 'battery', sleepQuality: 'bed', cognition: 'brain', cycle: 'calendar-heart', xray: 'scan-line', ecg: 'chart-line', ultrasound: 'waves', exercise: 'flame', visionCheck: 'eye', octChange: 'eye', octScan: 'scan-line', symptoms: 'stethoscope', medicines: 'pill', co2: 'cloud-fog', cabinTemp: 'thermometer', cabinO2: 'orbit', cabinPressure: 'gauge', noise: 'volume-2', blood: 'test-tube' };
+const ICON_FOR = { pulse: 'heart-pulse', bp: 'activity', glucose: 'droplet', temp: 'thermometer', spo2: 'droplets', sleep: 'moon', resp: 'wind', fluid: 'glass-water', bodyMass: 'scale', eyePressure: 'eye', hearing: 'ear', radiation: 'radiation', vo2max: 'heart', strength: 'dumbbell', bone: 'bone', camera: 'camera', mood: 'smile', attitude: 'battery', sleepQuality: 'bed', cognition: 'brain', reaction: 'zap', cycle: 'calendar-heart', xray: 'scan-line', ecg: 'chart-line', ultrasound: 'waves', exercise: 'flame', visionCheck: 'eye', octChange: 'eye', octScan: 'scan-line', symptoms: 'stethoscope', medicines: 'pill', co2: 'cloud-fog', cabinTemp: 'thermometer', cabinO2: 'orbit', cabinPressure: 'gauge', noise: 'volume-2', blood: 'test-tube' };
 const NAV = [['home', 'Today', 'house'], ['measures', 'All measures', 'list'], ['alerts', 'Messages', 'bell'], ['setup', 'Settings', 'settings']];
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -140,11 +140,20 @@ function rebuild() {
 async function keep(event) {
   stored.push(event);
   try {
-    return await store.append(event);
+    return { ok: true, answer: await store.append(event) };
   } catch {
     toast('Could not save: this record exists only on this screen.');
-    return null;
+    return { ok: false, answer: null };
   }
+}
+
+// What a sent message became, in words; null when it was not saved (keep() has already said so).
+function sentText(to, res, what = 'The message') {
+  if (!res || !res.ok) return null;
+  if (to !== 'doctor-earth') return `${what} is saved for the doctor on board.`;
+  const queued = res.answer && res.answer.outbox && res.answer.outbox.status === 'queued';
+  if (queued) return `${what} is sealed in the outbox: it goes ${ui.ship.linkToEarth ? 'with the next downlink' : 'when the link is back'}.`;
+  return `${what} is saved on this computer only: this copy runs without the station server, so nothing is sent.`;
 }
 
 // A crewmate's screen learns only that this person needs help now, never the rest of the record
@@ -168,10 +177,10 @@ async function addReading(indicator, value, { source = null, person = ui.person,
   const event = { v: 1, kind: 'reading', time: time || new Date().toISOString(), person, state: { ...ui.ship }, reading: { source: src.id, indicator, value, ...(context ? { context } : {}), ...(detail ? { detail } : {}) } };
   machine.setState(event.state);
   const entry = machine.receive({ ...event.reading, person, time: event.time });
-  await keep(event);
+  const res = await keep(event);
   await shareCrewAlarm(person, indicator);
   render();
-  return entry;
+  return { entry, ok: res.ok };
 }
 
 // ---------- the person's measures ----------
@@ -618,7 +627,7 @@ function renderComingUp(p, now) {
   const items = [
     { ic: 'stethoscope', what: 'Private medical conference with your flight surgeon (weekly)', in: every(7, 3), act: () => openPmc(p), actLabel: 'Prepare' },
     { ic: 'message-square', what: 'Private talk with your psychologist (every 2 weeks)', in: every(14, 5) },
-    { ic: 'zap', what: 'Thinking test (monthly)', in: every(30, 11), act: () => openReactionTest('full'), actLabel: 'Start' },
+    { ic: 'zap', what: 'Thinking test (monthly)', in: every(30, 11) },
     eyeDays.length ? { ic: 'scan-line', what: 'Eye check: vision, retina scan (OCT)', in: eyeDays[0] - day } : { ic: 'scan-line', what: 'Eye check after landing', in: toLanding + 1 },
   ].sort((a, b) => a.in - b.in).slice(0, 3);
   const when = (n) => (n === 1 ? 'tomorrow' : `in ${n} days`);
@@ -666,9 +675,10 @@ function openPmc(p) {
     h('p', { class: 'note' }, 'NASA flight surgeons hold a private medical conference with each crew member every week, about 15 minutes.'),
   ], [btn('primary', 'Send to my flight surgeon', async () => {
     const to = ui.ship.doctorOnBoard ? 'doctor-onboard' : 'doctor-earth';
-    await keep({ v: 1, kind: 'report', time: new Date().toISOString(), person: ui.person, state: { ...ui.ship }, report: { to, text: area.value.slice(0, 6000), topic: 'pmc' } });
+    const res = await keep({ v: 1, kind: 'report', time: new Date().toISOString(), person: ui.person, state: { ...ui.ship }, report: { to, text: area.value.slice(0, 6000), topic: 'pmc' } });
+    if (!res.ok) return;
     closePanel();
-    toast(to === 'doctor-earth' ? (ui.ship.linkToEarth ? 'Saved in the outbox: it goes with the next downlink.' : 'Saved in the outbox: it goes when the link is back.') : 'Saved for the doctor on board.');
+    toast(sentText(to, res, 'Your summary'));
     render();
   }, 'send')]);
 }
@@ -829,7 +839,7 @@ const GROUPS = [
   ['Fitness, muscles and bones', 'Exercise every day keeps fitness and bones; the tests are every few weeks.', ['exercise', 'vo2max', 'strength', 'bone']],
   ['Eyes and ears', 'Eyes change on long flights (SANS); checks on flight days 30 and 90 and 30 days before return.', ['visionCheck', 'octChange', 'octScan', 'eyePressure', 'hearing']],
   ['Radiation', 'Carried over the whole career.', ['radiation']],
-  ['Mind', 'Your daily check-ins.', ['mood', 'attitude', 'sleepQuality', 'cognition']],
+  ['Mind', 'Your daily check-ins and your own tests.', ['mood', 'attitude', 'sleepQuality', 'cognition', 'reaction']],
   ['Images, tracings and camera', 'These go to the AI or a doctor.', ['xray', 'ecg', 'ultrasound', 'camera']],
 ];
 // Everyday words a person may type in "Find a measure".
@@ -838,7 +848,7 @@ const WORDS = {
   temp: 'temperature fever temp', resp: 'breathing respiration breaths', sleep: 'sleep hours rest', fluid: 'water drink fluid hydration',
   glucose: 'sugar glucose blood sugar', bodyMass: 'weight mass body', vo2max: 'fitness aerobic vo2 cardio exercise', strength: 'muscle strength',
   bone: 'bone density dexa', eyePressure: 'eye vision iop', hearing: 'ear hearing audiogram', radiation: 'radiation dose msv dosimeter',
-  mood: 'mood feeling', attitude: 'energy tired fatigue', sleepQuality: 'sleep quality rest', cognition: 'thinking cognition memory test reaction reflex speed winscat',
+  mood: 'mood feeling', attitude: 'energy tired fatigue', sleepQuality: 'sleep quality rest', cognition: 'thinking cognition memory test winscat monthly', reaction: 'reaction reflex speed alert alertness fatigue pvt rst test',
   xray: 'x-ray xray image', exercise: 'exercise workout training treadmill bike ared cevis', visionCheck: 'vision eye eyes amsler sans sight', octChange: 'oct retina eye eyes sans', octScan: 'oct scan eye image retina', ecg: 'ecg ekg heart tracing', ultrasound: 'ultrasound echo scan image', camera: 'camera video chest sleep',
   co2: 'co2 carbon dioxide air', cabinO2: 'oxygen o2 air', cabinPressure: 'pressure cabin air', noise: 'noise sound loud db', cabinTemp: 'temperature cabin air',
 };
@@ -1037,11 +1047,12 @@ function renderDetail() {
   const lines = [];
   if (cell.normType === 'baseline-percent') { const b = bandOf(cell, owner); if (b) lines.push({ v: b.min, label: `Limit: ${cell.norm.minPercent}% of own pre-flight level` }); }
   if (indicator === 'radiation') lines.push({ v: cell.norm.max, label: 'NASA career limit' });
-  for (const t of cell.thresholds || []) lines.push({ v: t.min, label: `${cap(t.text)}: ${t.min} ${cell.unit} (draft)` });
+  for (const t of cell.thresholds || []) if (!(cell.red || []).some((r) => r.value === t.min)) lines.push({ v: t.min, label: `${cap(t.text)}: ${t.min} ${cell.unit} (draft)` });
   if (indicator === 'bp') lines.push({ v: cell.norm.sysBelow, label: `Systolic: below ${cell.norm.sysBelow}` }, { v: cell.norm.diaBelow, label: `Diastolic: below ${cell.norm.diaBelow}` });
 
   const facts = [];
   const about = [];
+  const wordCell = cell.kind === KIND.SELF && !ORDINAL[indicator];
   if (fc) {
     const what = indicator === 'bp' ? 'Systolic pressure' : 'This measure';
     const side = fc.crossing && fc.crossing.side === 'below' ? 'below' : 'above';
@@ -1053,9 +1064,14 @@ function renderDetail() {
     else facts.push(`Steady within the normal range until landing on ${fmtDate(MISSION.landing)}, if this line holds.`);
     about.push("The forecast is a straight line through the in-flight readings (Claude's technical choice), not a validated medical model.");
   } else if (cell.kind === KIND.NUMBER) {
-    facts.push(cell.onlyOnEarth ? 'Not measured in flight: only on Earth, before and after flight.' : 'To see where a measure is going, in-flight readings on at least three different days are needed.');
+    const flightDays = new Set((m.list || []).filter((x) => msOf(x.time) >= msOf(MISSION.launch)).map((x) => new Date(x.time).toISOString().slice(0, 10))).size;
+    facts.push(cell.onlyOnEarth ? 'Not measured in flight: only on Earth, before and after flight.'
+      : cell.normType === 'record' ? 'Recorded for you and your doctor: there is no checked norm, so there is no forecast line.'
+        : flightDays < 3 ? 'To see where a measure is going, in-flight readings on at least three different days are needed.'
+          : 'No forecast line: one is drawn only for slow changes (fitness, strength, body mass, radiation, hearing) or a clear trend, so the daily ups and downs raise no alarm.');
+    if (indicator === 'reaction') facts.push('The 3-minute reaction test is modelled on NASA\'s Reaction Self Test (ISS, 2009) and the PVT-B rules. Compare only with yourself, never with others. It is not a fitness-for-duty test.');
   } else if (indicator === 'cognition') {
-    facts.push('Once a month NASA crews take a thinking test (WinSCAT). The 3-minute reaction test here is modelled on NASA\'s Reaction Self Test; compare only with yourself, never with others. It is not a fitness-for-duty test.');
+    facts.push('Once a month NASA crews take a thinking test (WinSCAT) on the station computer and compare it with their own result from before flight. Here you record how it went.');
   } else if (cell.answers) {
     facts.push(cell.normText);
   } else {
@@ -1109,15 +1125,16 @@ function renderDetail() {
         norm ? h('p', { class: 'meta' }, `Normal range: ${rangeText(cell, owner)}${cell.unit && cell.kind === KIND.NUMBER && cell.normType !== 'baseline-percent' ? ` ${cell.unit}` : ''}`) : null,
         lastEntry ? h('p', { class: 'meta' }, 'Last reading ', h('span', { class: 'mono' }, stamp(lastEntry.time, now))) : null)),
     alert ? h('div', { class: 'actions' }, btn('proc', 'What to do', () => openProcedure(alert), 'list-checks')) : null,
-    indicator === 'cognition' ? h('div', { class: 'actions' }, btn('primary', 'Start the 3-minute test', () => openReactionTest('full'), 'zap'), btn('secondary', 'Try a 30-second demo', () => openReactionTest('demo'), 'zap')) : null,
+    indicator === 'reaction' ? h('div', { class: 'actions' }, btn('primary', 'Start the 3-minute test', () => openReactionTest('full'), 'zap'), btn('secondary', 'Try a 30-second demo', () => openReactionTest('demo'), 'zap')) : null,
     cell.answers ? h('section', { class: 'card' },
       h('h2', {}, 'Answer now'),
       cell.howTo ? h('ol', { class: 'links' }, ...cell.howTo.map((s) => h('li', {}, s))) : null,
       cell.indicator === 'visionCheck' ? amslerGrid() : null,
       h('div', { class: 'answers' }, ...cell.answers.map((ans) => btn('secondary', ans.label, async () => { await addReading(indicator, ans.value); toast(cell.tellDoctor && cell.tellDoctor.values.includes(ans.value) ? 'Saved. Worth telling your flight surgeon: use Message the doctor.' : 'Saved.'); redrawDetail(); }))),
       cell.howToSrc ? h('p', { class: 'note' }, 'How to: ', h('a', { href: cell.howToSrc.url, target: '_blank', rel: 'noopener' }, cell.howToSrc.name)) : null) : null,
-    periodBar(redrawDetail),
-    h('section', { class: 'card chart-card' },
+    wordCell ? null : periodBar(redrawDetail),
+    wordCell ? h('section', { class: 'card' }, h('h2', {}, 'Your answers'),
+      (m.list || []).length ? h('ul', { class: 'links mind-log' }, ...[...m.list].reverse().slice(0, 12).map((x) => h('li', {}, h('span', {}, cap(String(valueText(indicator, x.value)))), h('span', { class: 'mono muted' }, `GMT ${gmtDOY(x.time)}`)))) : h('p', { class: 'muted' }, 'No answers yet.')) : h('section', { class: 'card chart-card' },
       cornerTip('t:chart', 'the chart'),
       h('h2', {}, `${cell.label}, ${periodName}`),
       h('p', { class: 'how' }, how),
@@ -1282,7 +1299,7 @@ function renderAlerts() {
     h('h2', { class: 'section-title' }, 'Sent messages'),
     reports.length ? h('ul', { class: 'msgs' }, ...reports.map((r) => h('li', { class: 'card msg' },
       h('div', { class: 'msg-top' }, h('b', {}, r.report.text === TALK_REQUEST_TEXT ? 'Request for a private call, to Earth' : r.report.text.startsWith('Private letter for my psychologist') ? 'Private letter for your psychologist, to Earth' : r.report.to === 'doctor-onboard' ? 'To the doctor on board' : 'To the doctor on Earth'),
-        r.report.to === 'doctor-earth' ? (ui.ship.linkToEarth ? h('span', { class: 'chip neutral' }, icon('send', { size: 16 }), 'In the outbox, goes with the next downlink') : staleChip('Waiting for the link')) : h('span', { class: 'chip neutral' }, icon('check', { size: 16 }), 'Saved for the doctor on board'),
+        r.report.to !== 'doctor-earth' ? h('span', { class: 'chip neutral' }, icon('check', { size: 16 }), 'Saved for the doctor on board') : store && store.kind !== 'server' ? h('span', { class: 'chip off' }, icon('info', { size: 16 }), 'Saved on this computer only') : ui.ship.linkToEarth ? h('span', { class: 'chip neutral' }, icon('send', { size: 16 }), 'Sealed in the outbox, goes with the next downlink') : staleChip('Waiting for the link'),
         h('span', { class: 'when' }, `GMT ${gmtDOY(r.time)}`)),
       h('p', { style: 'white-space: pre-line' }, r.report.text)))) : h('p', { class: 'note' }, 'Nothing sent yet.'),
   );
@@ -1436,7 +1453,7 @@ function openJournal() {
     onSave: (entry) => { const d = loadMind(p.id); d.journal = [entry, ...d.journal.filter((e) => e.id !== entry.id)]; if (!saveMind(p.id, d)) throw new Error('storage'); ctl && ctl.update(d.journal, { link: ui.ship.linkToEarth }); },
     onToggleTalk: (id, on) => { const d = loadMind(p.id); d.journal = d.journal.map((e) => (e.id === id ? { ...e, talk: on } : e)); saveMind(p.id, d); ctl && ctl.update(d.journal, { link: ui.ship.linkToEarth }); },
     onDelete: (id) => { const d = loadMind(p.id); d.journal = d.journal.filter((e) => e.id !== id); saveMind(p.id, d); ctl && ctl.update(d.journal, { link: ui.ship.linkToEarth }); },
-    onSendLetter: async (text) => { await queueReport('doctor-earth', text); toast(ui.ship.linkToEarth ? 'Your letter is in the outbox: it goes with the next downlink.' : 'Your letter waits in the outbox for the link.'); },
+    onSendLetter: async (text) => { const res = await queueReport('doctor-earth', text); if (!res.ok) throw new Error('not saved'); toast(sentText('doctor-earth', res, 'Your letter')); },
   });
   openPanel('Mind support', [backToMind(), host]);
 }
@@ -1447,7 +1464,7 @@ function openPlan() {
   renderPlan(host, {
     plan: data.plan, example: ui.example && !p.real, link: ui.ship.linkToEarth, doctorOnBoard: ui.ship.doctorOnBoard,
     onSave: (plan) => { const d = loadMind(p.id); d.plan = plan; if (!saveMind(p.id, d)) throw new Error('storage'); toast('Your plan is saved in this browser only.'); },
-    onTalkNow: async (kind) => { if (kind === 'ground') { await queueReport('doctor-earth', TALK_REQUEST_TEXT); toast('Your request for a private call is in the outbox.'); } },
+    onTalkNow: async (kind) => { if (kind === 'ground') { const res = await queueReport('doctor-earth', TALK_REQUEST_TEXT); if (!res.ok) throw new Error('not saved'); toast(sentText('doctor-earth', res, 'Your request for a private call')); } },
   });
   openPanel('Mind support', [backToMind(), host]);
 }
@@ -1463,7 +1480,7 @@ function openEarthBreak() {
   runEarthBreak({ onDone: (r) => { const d = loadMind(p.id); d.breaks = [r, ...d.breaks].slice(0, 50); saveMind(p.id, d); toast(r.feeling ? `Noted privately: ${r.feeling}.` : 'Break done.'); }, onCancel: () => {} });
 }
 function earlierRuns(p) {
-  const mine = stored.filter((e) => e.person === p.id && e.reading && e.reading.indicator === 'cognition' && e.reading.detail).map((e) => e.reading.detail);
+  const mine = stored.filter((e) => e.person === p.id && e.reading && e.reading.indicator === 'reaction' && e.reading.detail).map((e) => e.reading.detail);
   return ui.example && !p.real ? [...exampleEarlierRuns(MISSION.launch), ...mine] : mine;
 }
 function openReactionTest(mode) {
@@ -1471,7 +1488,7 @@ function openReactionTest(mode) {
   runReactionTest({ mode, earlier: earlierRuns(p), onDone: async (result) => {
     if (result.median === null || result.median === undefined) { toast('Not enough presses to give a result.'); return; }
     const detail = Object.fromEntries(['median', 'lapses', 'falseStarts', 'count', 'durationS', 'mode', 'score'].filter((k) => result[k] !== undefined).map((k) => [k, result[k]]));
-    await addReading('cognition', Math.round(result.median), { source: { id: 'reaction-test', indicator: 'cognition' }, detail });
+    await addReading('reaction', Math.round(result.median), { source: { id: 'reaction-test', indicator: 'reaction' }, detail });
     const cmp = compareToOwn(result, earlierRuns(p));
     toast(cmp && cmp.text ? cmp.text : 'Saved.');
   }, onCancel: () => {} });
@@ -1480,12 +1497,12 @@ function openReactionTest(mode) {
 // ---------- quick logs: a symptom in about ten seconds, a medicine in two taps (private) ----------
 function openSymptomLog() {
   const host = h('div');
-  symptomLog(host, { onSave: async (e) => { await addReading(e.indicator, e.value, { time: e.time }); closePanel(); toast('Logged privately.'); }, onCancel: () => closePanel() });
+  symptomLog(host, { onSave: async (e) => { const r = await addReading(e.indicator, e.value, { time: e.time }); if (!r.ok) throw new Error('not saved'); closePanel(); toast('Logged privately.'); }, onCancel: () => closePanel() });
   openPanel('Log a symptom', [host]);
 }
 function openMedicineLog() {
   const host = h('div');
-  medicineLog(host, { onSave: async (e) => { await addReading(e.indicator, e.value, { time: e.time }); closePanel(); toast('Logged privately.'); }, onCancel: () => closePanel() });
+  medicineLog(host, { onSave: async (e) => { const r = await addReading(e.indicator, e.value, { time: e.time }); if (!r.ok) throw new Error('not saved'); closePanel(); toast('Logged privately.'); }, onCancel: () => closePanel() });
   openPanel('I took a medicine', [host]);
 }
 function privateLogCard(p, now) {
@@ -1546,9 +1563,10 @@ function openDoctor(a, kind, indicator = null) {
   openPanel(`Message ${toText}`, [h('p', {}, status), area, h('p', { class: 'note' }, 'The automation drafted this text from your data; you can change it.')], [
     btn('primary', 'Send', async () => {
       const event = { v: 1, kind: 'report', time: new Date().toISOString(), person: ui.person, state: { ...ui.ship }, report: { to, text: area.value.slice(0, 4000) } };
-      await keep(event);
+      const res = await keep(event);
+      if (!res.ok) return;
       closePanel();
-      toast(to === 'doctor-earth' ? (ui.ship.linkToEarth ? 'Saved in the outbox: it goes with the next downlink.' : 'Saved in the outbox: it goes when the link is back.') : 'Saved for the doctor on board.');
+      toast(sentText(to, res));
       render();
     }, 'send'),
   ]);

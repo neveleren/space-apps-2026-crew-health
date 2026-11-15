@@ -522,10 +522,11 @@ test('the new answers are kept in their checked shapes, and nothing else', () =>
   assert.equal(eventProblem(rd('pulse', 150, { context: 'exercise' }), { now }), null);
   assert.match(eventProblem(rd('pulse', 150, { context: 'sleep' }), { now }), /exercise/);
   const detail = { median: 301, lapses: 1, falseStarts: 0, count: 60, durationS: 180, mode: 'full', score: 98 };
-  assert.equal(eventProblem(rd('cognition', 301, { detail }), { now }), null);
-  assert.match(eventProblem(rd('cognition', 301, { detail: { ...detail, trials: [] } }), { now }), /reaction test/);
+  assert.equal(eventProblem(rd('reaction', 301, { detail }), { now }), null);
+  assert.match(eventProblem(rd('reaction', 301, { detail: { ...detail, trials: [] } }), { now }), /reaction test/);
+  assert.match(eventProblem(rd('visionCheck', 'banana'), { now }), /answers/);
   assert.match(eventProblem(rd('pulse', 70, { detail }), { now }), /reaction test/);
-  assert.deepEqual(cleanEvent(rd('cognition', 301, { detail })).reading.detail, detail);
+  assert.deepEqual(cleanEvent(rd('reaction', 301, { detail })).reading.detail, detail);
 });
 
 test('the event check and the stored copy', () => {
