@@ -17,7 +17,7 @@ import {
   editWindow, dayProblem, readLog, suppressedOn, episodesOf, periodsOf, spottingApart, bleedingSummary, monthGrid, addMonths, flowWords, entryWords,
 } from '../src/cycle-log.js';
 import { cycleSummary, cycleFacts, lowDaysByPhase } from '../src/cycle.js';
-import { drawCycleLog, resetCycleView } from '../src/cycle-view.js';
+import { drawCycleLog, resetCycleView, showOpenDay } from '../src/cycle-view.js';
 import { eventProblem, cleanEvent } from '../src/security.js';
 import { CELLS, CREW, SOURCES } from '../src/config.js';
 import { createMachine } from '../src/engine.js';
@@ -156,6 +156,13 @@ test('flags from the day log: spotting apart from periods (a draft), a period lo
   const long = cycleSummary(days('2026-11-07', ['medium', 'heavy', 'heavy', 'medium', 'medium', 'light', 'light', 'light', 'light']), NOW);
   assert.ok(long.periods[0].ongoing);
   assert.ok(long.flags.includes('long-period'), '9 days of bleeding so far');
+  assert.match(cycleFacts(long).join(' '), /Your period has gone on for more than 7 days, counted from its first day of bleeding to its last day of bleeding or spotting; ACOG counts bleeding that lasts more than 7 days as abnormal\./);
+  // 6 days of bleeding, a day without, a day of spotting: the period counts 8 days, which the sentence never calls
+  // 8 days of bleeding.
+  const spotEnd = cycleSummary(days('2026-11-01', ['medium', 'heavy', 'medium', 'light', 'light', 'light', 'none', 'spotting']), NOW);
+  assert.deepEqual([spotEnd.periods[0].length, spotEnd.flags], [8, ['long-period']]);
+  assert.match(cycleFacts(spotEnd).join(' '), /Your last period lasted more than 7 days, counted from its first day of bleeding to its last day of bleeding or spotting/);
+  assert.doesNotMatch(cycleFacts(spotEnd).join(' '), /days of bleeding/);
   const short = cycleSummary([...days('2026-10-01', ['medium', 'light']), ...days('2026-10-15', ['medium', 'light'])], NOW);
   assert.ok(short.flags.includes('cycle-outside-range'), 'a cycle of 14 days is outside 21 to 35 (ACOG)');
 });
@@ -346,12 +353,12 @@ const byKey = (root, key) => all(root).find((e) => e.getAttribute && e.getAttrib
 const pressedIn = (root, prefix) => all(root).filter((e) => (e.getAttribute('data-fk') || '').startsWith(prefix) && e.getAttribute('aria-pressed') === 'true').map((e) => e.getAttribute('data-fk'));
 const textOf = (root) => root.textContent;
 
-function view(events, { saves = [], ok = true } = {}) {
+function view(events, { saves = [], ok = true, said = [] } = {}) {
   resetCycleView();
   const host = new FakeDocument().createElement('div');
   const person = { id: 'crew-2' };
   let list = [...events];
-  const draw = () => drawCycleLog(host, { person, summary: cycleSummary(list, NOW), now: NOW, onSave: async (value) => {
+  const draw = () => drawCycleLog(host, { person, summary: cycleSummary(list, NOW), now: NOW, announce: (text) => said.push(text), onSave: async (value) => {
     saves.push(value);
     if (!ok) return { ok: false };
     list = [...list, { time: NOW.toISOString(), value }];
@@ -359,7 +366,7 @@ function view(events, { saves = [], ok = true } = {}) {
     return { ok: true };
   } });
   draw();
-  return { host, saves, redraw: draw };
+  return { host, saves, said, redraw: draw };
 }
 
 test('the calendar: this month with weekday heads, today marked, days still to come not pressable, a label in words for each day', () => {
@@ -374,10 +381,11 @@ test('the calendar: this month with weekday heads, today marked, days still to c
   assert.equal(byKey(host, 'cyc:day:2026-11-16'), undefined, 'tomorrow is not a button');
   assert.match(byKey(host, 'cyc:day:2026-11-12').getAttribute('aria-label'), /^Thursday 12 November 2026, nothing logged, estimated start of your next period/);
   assert.match(textOf(host), /1, 2 or 3 drops: light, medium or heavy flow/);
+  assert.match(textOf(host), /Days are GMT days, as on the ISS\./);
 });
 
 test('the calendar moves between months, back to the earliest logged month or the edit window, not beyond today\'s month', async () => {
-  const { host } = view(regular());
+  const { host, redraw } = view(regular());
   await byKey(host, 'cyc:prev').fire('click');
   assert.match(textOf(host), /October 2026/);
   const oct16 = byKey(host, 'cyc:day:2026-10-16');
@@ -388,6 +396,13 @@ test('the calendar moves between months, back to the earliest logged month or th
   assert.match(textOf(host), /August 2026/);
   assert.equal(byKey(host, 'cyc:prev').getAttribute('aria-disabled'), 'true', 'the earliest logged month');
   await byKey(host, 'cyc:prev').fire('click');
+  assert.match(textOf(host), /August 2026/);
+  // Today's "Cycle log" button: back to the month of the day open in the editor, with the keyboard's stop on it.
+  showOpenDay('crew-2');
+  redraw();
+  assert.match(textOf(host), /November 2026/);
+  assert.equal(byKey(host, `cyc:day:${TODAY}`).getAttribute('tabindex'), '0');
+  for (let i = 0; i < 3; i += 1) await byKey(host, 'cyc:prev').fire('click');
   assert.match(textOf(host), /August 2026/);
   for (let i = 0; i < 5; i += 1) await byKey(host, 'cyc:next').fire('click');
   assert.match(textOf(host), /November 2026/);
@@ -407,12 +422,13 @@ test('the arrow keys move between days, never past today', async () => {
 });
 
 test('the day editor: choose a day, its bleeding and symptoms, and save one tidy value; "Clear this day" saves no bleeding', async () => {
-  const { host, saves } = view(regular());
+  const { host, saves, said } = view(regular());
   await byKey(host, 'cyc:day:2026-11-13').fire('click');
   assert.match(textOf(host), /Friday 13 November 2026/);
   assert.match(textOf(host), /Nothing logged for this day\./);
   await byKey(host, 'cyc:save').fire('click');
   assert.match(textOf(host), /Choose how much you bled first, or "No bleeding"\./);
+  assert.deepEqual(said, ['Choose how much you bled first, or "No bleeding".'], 'said in the screen\'s live region too');
   assert.equal(saves.length, 0);
   await byKey(host, 'cyc:flow:medium').fire('click');
   await byKey(host, 'cyc:sym:tired').fire('click');
@@ -425,6 +441,8 @@ test('the day editor: choose a day, its bleeding and symptoms, and save one tidy
   assert.match(byKey(host, 'cyc:day:2026-11-13').getAttribute('aria-label'), /medium flow; cramps, tiredness/);
   await byKey(host, 'cyc:save').fire('click');
   assert.match(textOf(host), /Nothing changed for Fri 13 Nov 2026\./);
+  assert.equal(said[said.length - 1], 'Nothing changed for Fri 13 Nov 2026.');
+  assert.equal(said.length, 2, 'a save that worked is said by the screen, not here');
   assert.equal(saves.length, 1);
   await byKey(host, 'cyc:clear').fire('click');
   assert.deepEqual(saves[1], { day: '2026-11-13', flow: 'none', symptoms: [] });
@@ -432,7 +450,7 @@ test('the day editor: choose a day, its bleeding and symptoms, and save one tidy
 });
 
 test('the day editor keeps the choice when saving fails, says so when another day is chosen, and forgets it at sign-out', async () => {
-  const { host, saves } = view(regular(), { ok: false });
+  const { host, saves, said } = view(regular(), { ok: false });
   await byKey(host, 'cyc:flow:light').fire('click');
   await byKey(host, 'cyc:save').fire('click');
   assert.equal(saves.length, 1);
@@ -440,6 +458,7 @@ test('the day editor keeps the choice when saving fails, says so when another da
   assert.deepEqual(pressedIn(host, 'cyc:flow:'), ['cyc:flow:light']);
   await byKey(host, 'cyc:day:2026-11-14').fire('click');
   assert.match(textOf(host), /Your choice for Sun 15 Nov 2026 was not saved\./);
+  assert.deepEqual(said, ['Your choice for Sun 15 Nov 2026 was not saved.'], 'the failed save is said by the screen\'s own notice; the lost choice here');
   resetCycleView();
   const again = view(regular());
   assert.deepEqual(pressedIn(again.host, 'cyc:flow:'), [], 'a new sign-in starts empty');
