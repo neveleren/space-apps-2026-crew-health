@@ -170,7 +170,7 @@ function calendar(doc, st, summary, now, icon) {
     make(doc, 'table', { class: 'cyc-grid', 'aria-labelledby': 'cyc-month' },
       make(doc, 'thead', {}, make(doc, 'tr', {}, ...WEEKDAYS.map((d) => make(doc, 'th', { scope: 'col', abbr: d }, d.slice(0, 3))))),
       make(doc, 'tbody', {}, ...grid.weeks.map((week) => make(doc, 'tr', {}, ...week.map(cell))))),
-    make(doc, 'p', { class: 'note' }, `Press a day to log it: today and the ${LOG_RULES.backDays - 1} days before (a draft limit), never a day still to come. Arrow keys move between days.`),
+    make(doc, 'p', { class: 'note' }, `Press a day to log it: today and the ${LOG_RULES.backDays - 1} days before (a draft limit), never a day still to come. Days are GMT days, as on the ISS. Arrow keys move between days.`),
     legend);
 }
 

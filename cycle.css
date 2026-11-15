@@ -54,6 +54,8 @@ span.cyc-day:hover { background: transparent; }
   .cyc-head h3 { font-size: 16px; }
   .cyc-grid { border-spacing: 2px; }
   .cyc-day { min-height: 48px; padding: 4px 1px 7px; }
+  /* In a narrow cell the symptom dot moves into the corner, clear of a two-digit number. */
+  .cyc-day.cyc-sym::after { top: 3px; right: 3px; width: 6px; height: 6px; }
   .cyc-marks { gap: 4px; }
   .cyc-edit { padding: 14px 12px; }
   .cyc-hist .table-wrap th, .cyc-hist .table-wrap td { padding: 6px 8px; }
