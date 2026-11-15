@@ -79,8 +79,9 @@ export const DRILL_WORDS = Object.freeze({
   switchText: `For an analog test such as NASA's HERA. While it is on, the screen shows DRILL; everything you enter is marked as a drill; alarms sound and go to your crewmates and the doctor as usual, with the word DRILL. Drill readings never count in your levels, your medical record or the summaries for the doctor. It ends by itself after ${DRILL_RULES.maxMinutes} minutes (a draft: no public source gives this time, the team decides) and at sign-out.`,
   emergency: 'In a real emergency, press "End the drill" first: until then, what you enter counts as the drill.',
   bannerBold: 'DRILL in progress.',
-  // A fixed end time rather than a countdown: the banner is a live region, and changing words would be read out again.
-  bannerRest: (until) => `Alarms sound and go to the crew and the doctor as usual, marked DRILL. What you enter now is marked as a drill and never counts in your levels, your medical record or the summaries for the doctor. It ends by itself at ${until} (after ${DRILL_RULES.maxMinutes} minutes, a draft).`,
+  // Short, because the banner stays on top of every screen; Settings and the "?" card say the rest. A fixed end time
+  // rather than a countdown: the banner is a live region, and changing words would be read out again.
+  bannerRest: (until) => `Alarms go to the crew and the doctor as usual, marked DRILL. Nothing you enter now counts in your record. It ends by itself at ${until} (a draft).`,
   todayNote: (n) => `DRILL: ${n} drill ${n === 1 ? 'alarm is' : 'alarms are'} in Messages. A drill never changes this sentence or your record.`,
   started: `Drill on. Alarms now sound and reach the crew and the doctor marked DRILL; drill readings stay out of your record. It ends by itself after ${DRILL_RULES.maxMinutes} minutes.`,
   ended: (why) => `Drill over${why === 'time' ? `: it ended by itself after ${DRILL_RULES.maxMinutes} minutes` : ''}. What you enter now counts for your record again.`,
