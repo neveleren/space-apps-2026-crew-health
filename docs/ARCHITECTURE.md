@@ -19,7 +19,8 @@ Written by Claude (Anthropic), an AI system, for team Just For Fun. The idea, th
 |---|---|---|---|
 | Crew screen | `index.html`, `src/crew.js`, `support.css` | browser | The astronaut's own screen: Today, all measures, messages, settings |
 | Crew alarm | `src/crew-alarm.js` | browser; Node in the tests | The rules and words of the crew alarm: which line is new, the all clear, what a save became, the automatic message to the doctor, the timings (`ALARM_RULES`, drafts) |
-| Find, mission, fatigue scale | `src/find.js`, `src/mission.js`, `src/fatigue.js` | browser; Node in the tests | Find a measure by the name on its row; the crew's own mission dates and the flight day; the seven statements of the energy question and its low-day rule |
+| Find, mission, fatigue scale | `src/find.js`, `src/mission.js`, `src/fatigue.js` | browser; Node in the tests | Find a measure by the name on its row; the crew's own mission dates, its critical tasks and the flight day; the seven statements of the energy question and its low-day rule |
+| Readiness and landing | `src/readiness.js`, `src/landing.js`, `src/mission-cards.js` | browser; Node in the tests (not `mission-cards.js`, which draws) | The critical tasks of the mission (the example's made-up ones or the crew's own) and the readiness card in the 24 hours before one; the mission's phase; getting ready for landing from 30 days before it; recovery against the pre-flight level after it (R+). All windows and limits are drafts (`READINESS_RULES`, `LANDING_RULES`) |
 | Technical view | `machine.html`, `src/ui.js` | browser | Simulated devices, the cells, who gets each reading, the log, history and forecast |
 | The machine | `src/engine.js` | browser; its value checks also run in the server; Node in the tests | Cell, norm, red limit, route, history per person |
 | Cells and norms | `src/config.js` | everywhere | Every measure with its norms, sources and red limits; the people; the simulated sources; the team's open questions |
@@ -100,7 +101,7 @@ Every threshold here is a draft (`RULES` and `EXPECTED`, with the reasons in `RU
 | urgent | red | a red limit of level "urgent"; a camera or Help key alarm in the last 24 hours |
 | stale (a note, not a level) | cyan | no reading for twice the expected interval. With no fresh data the sentence says "not enough fresh data", never "excellent". |
 
-Two more rules: a reading taken during exercise that was only recorded never changes the judgement of the person at rest; a run outside the norm that holds a reading past a red limit is never waited on. The ship is assessed on its own (`assessShip()`); only a cabin value past the ship's own limit reaches each person's sentence, as "Ship caution" or "Ship emergency".
+Two more rules: a reading taken during exercise that was only recorded never changes the judgement of the person at rest; a run outside the norm that holds a reading past a red limit is never waited on. The forecast and the changes common in flight need the mission's dates (`hasMissionDates`): with the example flight off and no mission set, nothing counts as in flight and there is no forecast, and after landing there is no forecast to landing either (`measureState`). The ship is assessed on its own (`assessShip()`); only a cabin value past the ship's own limit reaches each person's sentence, as "Ship caution" or "Ship emergency".
 
 ## Event schema
 
@@ -125,7 +126,7 @@ No other field is accepted; only extra switches inside `state` (from an older sa
 |---|---|---|
 | `reading` | `reading: { source, indicator, value, context?, detail? }` | `source`: a device id of lower-case letters, digits and hyphens, at most 64 characters. `indicator`: a measure of `src/config.js`. `value`: the shape the measure takes (next table). `context`: only `"exercise"`. `detail`: only on the reaction test reading (`indicator: "reaction"`): `{ median, lapses, falseStarts, count, durationS, mode, score }`, with `mode` required, `"full"` or `"demo"`, and the others numbers from 0 to 100,000 or left out. |
 | `review` | none | the periodic review of one person's self-reports |
-| `report` | `report: { to, text, topic? }` | `to`: `"doctor-onboard"` or `"doctor-earth"`. `text`: at most 6,000 characters. `topic`: optional, a short id (a lower-case letter, then letters, digits or hyphens, at most 32 characters). The crew screen sends `pmc` (the weekly conference summary), `alarm` and `alarm-clear` (written by the program), `letter-to-psychologist`, `talk-request` and `mind-checkins`. |
+| `report` | `report: { to, text, topic? }` | `to`: `"doctor-onboard"` or `"doctor-earth"`. `text`: at most 6,000 characters. `topic`: optional, a short id (a lower-case letter, then letters, digits or hyphens, at most 32 characters). The crew screen sends `pmc` (the weekly conference summary), `alarm` and `alarm-clear` (written by the program), `letter-to-psychologist`, `talk-request`, `mind-checkins` and `readiness` (the readiness card's message before a critical task, drafted by the program and edited by the person). |
 | `alarm` | `alarm: { text, clear? }` | one line of 1 to 200 characters, shown to every crewmate; `clear: true` marks an all clear, which takes that person's earlier line away. Each screen shows only a person's latest line, for at most 24 hours |
 
 ### Reading values
@@ -200,7 +201,7 @@ What is checked on every request, and what is not protected, is in `docs/SECURIT
 
 | Key | What |
 |---|---|
-| `jff-crew-ui-v1` | screen settings: the switches, messages read, the example flight, the mission profile, the crew's own mission. "Sound off" is not kept: it is on again at every sign-in |
+| `jff-crew-ui-v1` | screen settings: the switches, messages read, the example flight, the mission profile, the crew's own mission with its critical tasks (the technical view reads the mission from here too). "Sound off" is not kept: it is on again at every sign-in |
 | `jff-crew-waiting-v1` | records entered while the station server did not answer; sent when it answers again |
 | `jff-theme` | dark, light, or follow the device |
 | `jff-pin-v1:<id>` | the optional PIN, only as a salted PBKDF2-HMAC-SHA256 hash (600,000 iterations, 16-byte salt) |
@@ -251,6 +252,9 @@ What is checked on every request, and what is not protected, is in `docs/SECURIT
 | `src/quicklog.js` | The symptom and medicine quick logs, their checks and their wording |
 | `src/support.js` | Mind support: topics, small things that help, journal, plan for hard days, five steps, mission calendar |
 | `src/reaction-test.js` | The 3-minute reaction test after NASA's Reaction Self Test (PVT-B rules) |
+| `src/readiness.js` | The mission's critical tasks and the readiness card before one: sleep, sleepy medicines, the reaction test |
+| `src/landing.js` | The mission's phase, getting ready for landing, and recovery after it (R+) |
+| `src/mission-cards.js` | The cards of the readiness, the landing and the time after it on Today, and the critical tasks in Settings |
 | `src/earth-break.js` | The 3-minute Earth break with NASA photos and paced breathing |
 | `src/camera.js` | The camera on this computer with Google MediaPipe models |
 | `src/camera-rules.js` | The camera's rules, testable without a camera |
@@ -306,6 +310,9 @@ These stay open. Where the code needs an answer to run, it carries a draft marke
 | A resting pulse of 40 for athletes | the red limit is "at or below 40 bpm, urgent" (NEWS2), with a note that trained athletes can rest at 40 to 60 |
 | How long a red reading of a rarely taken measure stays | it stays while it is the latest reading of that measure |
 | An ISS-specific cabin pressure limit | the red limit is NASA-STD-3001's 34.5 kPa; the ISS's own 65.3 kPa is only in the note |
+| The readiness card before a critical task | `READINESS_RULES` in `src/readiness.js`, drafts: from 24 hours before the start, a short night of 6 hours or less, the kit list's sleep medicines and those with its sedation note, never more than attention |
+| The landing card and the time after landing | `LANDING_RULES` in `src/landing.js`, drafts: from 30 days before landing, the last 4 weeks of exercise; after landing, recovery is information and raises no level |
+| Whose critical tasks | the example's tasks name who does them; the crew's own tasks are the whole crew's, on this device |
 
 ## Related pages
 
