@@ -253,6 +253,18 @@ const DRUGS = [
   'sleeping pills?', 'sleeping tablets?', 'sleep aids?', 'painkillers?', 'nsaids?', 'caffeine pills?',
 ].join('|');
 const PROS = 'human|person|man|woman|doctor|physician|psychologist|psychiatrist|therapist|counsell?or|nurse|flight surgeon|medic|medical officer|clinician';
+// The words a measure goes by in the panel's lines (src/config.js labels), to tell whether a finding is there.
+const HR = ['heart rate', 'pulse'];
+const O2 = ['spo2', 'oxygen'];
+const SUGAR = ['glucose', 'blood sugar'];
+const BREATH = ['breathing', 'respiratory', 'respiration'];
+const MEASURE_WORDS = Object.freeze({
+  'heart rate': HR, pulse: HR, 'blood pressure': ['blood pressure'], oxygen: O2, spo2: O2, 'blood oxygen': O2, temperature: ['temperature'],
+  glucose: SUGAR, 'blood sugar': SUGAR, 'breathing rate': BREATH, breathing: BREATH, 'respiratory rate': BREATH, sleep: ['sleep'],
+  weight: ['weight', 'body mass'], 'body mass': ['weight', 'body mass'], vo2max: ['vo2max', 'aerobic capacity'], 'aerobic capacity': ['vo2max', 'aerobic capacity'],
+});
+// A vital sign with a number in what the person typed: a reading the automation has not checked.
+export const selfReported = (text) => /\b(?:heart ?rate|pulse|hr|bpm|blood pressure|bp|oxygen|spo2|sp02|saturation|sats|temperature|temp|fever|glucose|blood sugar|sugar|breathing|respiratory rate|breaths)\b[^.?!\n]{0,40}?\d|\d[^.?!\n]{0,12}?(?:bpm|mmhg|%|°|degrees|mg\/dl|breaths)/i.test(base(text));
 
 export const ANSWER_CHECKS = Object.freeze([
   // Says what it is: no claim to be a person or a professional, and no claim not to be an AI.

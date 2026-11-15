@@ -5,7 +5,7 @@
 // model (risk words, what it gets) and after it (the check of every answer), and asks the model in between.
 // Nothing written to it is stored or sent: the conversation lives in memory and is forgotten when the panel closes.
 import { AI_MODEL, publicBase } from './ai-model.js';
-import { beforeModel, checkAnswer, countHeld, notSentText, safeText, systemPrompt } from './ai-rules.js';
+import { beforeModel, checkAnswer, countHeld, notSentText, safeText, selfReported, systemPrompt } from './ai-rules.js';
 
 const here = (path) => new URL(`../${path}`, import.meta.url).href;
 const ENGINE = here('vendor/web-llm/web-llm.js');
@@ -184,6 +184,9 @@ export async function askAi({ kind, history, ctx = {}, onText = () => {}, engine
   if (!engine) throw new Error('The AI is not started.');
   // Messages that opened Help now never reach the model, also later in the talk.
   const msgs = history.filter((m) => m.role !== 'user' || beforeModel(m.content).ok).map((m) => ({ role: m.role, content: String(m.content) }));
+  // A reading the person typed ("my heart rate is 180") has not been checked by the automation: the answer check
+  // then also holds playing it down or putting action off, as at a red level.
+  const checkCtx = msgs.some((m) => m.role === 'user' && selfReported(m.content)) ? { ...ctx, selfReported: true } : ctx;
   const usage = { speed: null, finish: null };
   async function* pieces() {
     const stream = await engine.chat.completions.create({
@@ -199,7 +202,7 @@ export async function askAi({ kind, history, ctx = {}, onText = () => {}, engine
   }
   let out;
   try {
-    out = await guardedAnswer(pieces(), { ctx, place: kind === 'session' ? 'session' : 'analyse', onText, stop: () => { try { engine.interruptGenerate(); } catch { /* done */ } } });
+    out = await guardedAnswer(pieces(), { ctx: checkCtx, place: kind === 'session' ? 'session' : 'analyse', onText, stop: () => { try { engine.interruptGenerate(); } catch { /* done */ } } });
   } catch (e) {
     if (isLost(e) && engine === st.engine) throw await lose(e);
     throw new Error(plainError(e));

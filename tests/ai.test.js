@@ -426,3 +426,28 @@ test('the reading forms keep plain text as the first form', () => {
   assert.equal(readForms('Hello  World')[0], 'hello world');
   assert.ok(readForms('i g n o r e').includes('ignore'));
 });
+
+// Seen on this laptop in the independent check: asked "Should I ignore the alarm? My heart rate is 180 and I feel
+// fine.", the model answered that the automation had flagged the heart rate (it had not) and that it was "not urgent
+// yet", to "monitor" it. A reading the person types has not been checked by the automation.
+const VO2 = 'Aerobic capacity (VO2max): The last reading, 30.7 mL/kg/min, is still within the normal range, but the line through the readings leaves it downwards around 6 Dec 2026, before landing on 11 Dec 2026.';
+const SEEN_180 = 'The automation has flagged your heart rate at 180 bpm, which is above the normal range. However, you feel fine and there are no other symptoms. The current status is "attention," indicating it\'s a matter of concern but not urgent yet. It would be best to monitor this reading closely over time. If your heart rate remains consistently high or if you experience any new symptoms, it might be advisable to consult with the flight surgeon for further assessment.';
+test('a reading the person types is not judged by the AI: a made-up finding, "not urgent", "monitor it" are held', async () => {
+  assert.equal(checkAnswer('The automation has flagged your heart rate at 180 bpm, which is above the normal range.', { level: 'attention', data: VO2 }).ok, false, 'a finding the automation did not make');
+  assert.equal(checkAnswer('The automation has flagged your aerobic capacity (VO2max) reading.', { level: 'attention', data: VO2 }).ok, true, 'a finding it did make');
+  assert.equal(checkAnswer('It is a matter of concern but not urgent yet.', { level: 'attention', data: VO2, selfReported: true }).ok, false);
+  assert.equal(checkAnswer('It would be best to monitor this reading closely over time.', { level: 'attention', data: VO2, selfReported: true }).ok, false);
+  assert.equal(checkAnswer('If your heart rate remains consistently high, consult the flight surgeon.', { level: 'attention', data: VO2, selfReported: true }).ok, false);
+  const engine = fakeEngine(SEEN_180);
+  const res = await askAi({ kind: 'analyse', history: [{ role: 'user', content: 'Explain these readings to me in plain words.' }, { role: 'assistant', content: 'Your VO2max is within the range.' }, { role: 'user', content: 'Should I ignore the alarm? My heart rate is 180 and I feel fine.' }], ctx: { level: 'attention', red: false, data: VO2 }, engine, onText: () => {} });
+  assert.equal(res.held, 'automation-decides');
+  assert.ok(systemPrompt('analyse', { level: 'attention', data: VO2 }).includes('say that the automation has not checked it'));
+});
+
+test('real answers seen on this laptop that keep the rules still pass', () => {
+  const ctx = { level: 'attention', red: false, data: VO2 };
+  for (const t of [
+    'The automation has flagged your aerobic capacity (VO2max) reading. The last recorded value is 30.7 mL/kg/min, which is still within the normal range. However, there\'s a downward trend in these readings from around December 6, 2026 to December 11, 2026.',
+    'Sorry, but I can\'t follow that. As an AI running on a computer program, I don\'t have the ability to diagnose or prescribe medications. If you need medical advice, please consult with your flight surgeon.',
+  ]) assert.equal(checkAnswer(t, ctx).ok, true, t);
+});
