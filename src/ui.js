@@ -189,6 +189,8 @@ const shown = (v) => (v === null || v === undefined || v === '' ? 'empty' : fmtN
 
 function formatValue(indicator, value) {
   if (indicator === 'review') return `reports: ${value}`;
+  // The cycle log is private to the person: this page, which reads everyone, shows only that an entry came in.
+  if (indicator === 'cycle') return 'a private cycle log entry, not shown here';
   const logged = logText(indicator, value);
   if (logged !== null && logged !== undefined) return logged;
   if (indicator === 'bp') return value && typeof value === 'object' ? `${shown(value.sys)}/${shown(value.dia)} mmHg` : shown(value);

@@ -6,10 +6,11 @@
 import { FATIGUE_STEPS, FATIGUE_RULE, fatigueStep, isLowEnergy, fatigueWords } from './fatigue.js';
 import { createMachine, STATUS, KIND } from './engine.js';
 import { CELLS, SOURCES, CREW, SHIP, realPeople } from './config.js';
-import { cycleSummary, lowDaysByPhase, CYCLE_RULES } from './cycle.js';
+import { cycleSummary, cycleFacts, lowDaysByPhase, CYCLE_RULES } from './cycle.js';
+import { drawCycleLog, resetCycleView, showOpenDay } from './cycle-view.js';
 import { INSPIRATION4 } from './inspiration4.js';
 import { openStore } from './store.js';
-import { exampleFlight, MISSION } from './demo-crew.js';
+import { exampleFlight, exampleCycleDays, MISSION } from './demo-crew.js';
 import { drawHistory, drawTable, fmtDate, fmtGMT } from './history-view.js';
 import { assess, assessShip, measureState, headline, headlineFor, topLevel, LEVEL, LEVEL_WORD, EXPECTED, RULES as LEVEL_RULES, RULE_NOTES, SLOW_MEASURES } from './state-levels.js';
 import { RULES as CAM_RULES } from './camera-rules.js';
@@ -190,7 +191,8 @@ function flightDayNow(now = nowTime()) {
 function rebuild() {
   machine = createMachine({ cells: CELLS, crew: PEOPLE, state: ui.ship });
   const flight = ui.example ? exampleFlight(CREW) : [];
-  const all = [...flight, ...stored].filter((e) => e.kind === 'reading' || e.kind === 'review').sort((a, b) => msOf(a.time) - msOf(b.time));
+  // Elly's made-up cycle days (flow and symptoms) come on top of the example flight's start and end marks.
+  const all = [...flight, ...exampleCycleDays(flight), ...stored].filter((e) => e.kind === 'reading' || e.kind === 'review').sort((a, b) => msOf(a.time) - msOf(b.time));
   for (const ev of all) {
     if (ev.state) machine.setState(ev.state);
     if (ev.kind === 'reading') machine.receive({ ...ev.reading, person: ev.person, time: ev.time, example: Boolean(ev.example) });
@@ -982,6 +984,7 @@ function clearPerson() {
   ui.to = '';
   ui.backTo = 'measures';
   ui.find = '';
+  resetCycleView();
   offerDismissed.clear();
   privacyShown.clear();
   resetRecordView();
@@ -1226,9 +1229,10 @@ function renderCheckin(p, now, top = LEVEL.FINE) {
   byId('ci-start-slot').replaceChildren(...(open ? [] : [done.length
     ? btn('secondary small', 'Change', startIt)
     : btn(top === LEVEL.FINE ? 'primary' : 'secondary', 'Start', startIt)]));
-  byId('ci-extra').replaceChildren(
+  fill(byId('ci-extra'),
     btn('secondary small', 'Log a symptom', () => openSymptomLog(), 'stethoscope', { 'data-tip': 't:symptomlog', 'data-fk': 'open:symptom' }),
     btn('secondary small', 'I took a medicine', () => openMedicineLog(), 'pill', { 'data-tip': 't:medicinelog', 'data-fk': 'open:medicine' }),
+    p.sex === 'F' ? btn('secondary small', 'Cycle log', () => openCycleLog(), 'calendar-heart', { 'data-tip': 't:cycle', 'data-fk': 'open:cycle' }) : null,
     btn('secondary small', 'Mind support', () => openMindSupport(), 'sparkles', { 'data-tip': 't:mindsupport', 'data-fk': 'open:mind' }));
   // A chosen answer keeps the focus on the button that was pressed (keepFocus), so the next Tab goes on from there.
   const seg = (id, key, options) => byId(id).replaceChildren(...options.map(([value, label]) => h('button', {
@@ -1345,10 +1349,18 @@ function complexRow(owner, indicator) {
     icon('chevron-right', { size: 18, cls: 'chev' })), `m:${indicator}:${owner.id}`, cell.label);
 }
 
-// The menstrual cycle card, private to the person ("like Flo, but for astronauts", the team's words).
+// The menstrual cycle card, private to the person ("like Flo, but for astronauts", the team's words): the summary
+// and its flags (src/cycle.js), the day log with its calendar and history (src/cycle-view.js), the suppression switch,
+// and mood and energy across the cycle.
 function cycleCard(p, now) {
   if (p.sex !== 'F') return null;
   const s = cycleSummary(machine.history(p.id, 'cycle'), now);
+  const log = h('div', { class: 'cyc' });
+  drawCycleLog(log, { person: p, summary: s, now, icon, announce: toast, onSave: async (value) => {
+    const r = await addReading('cycle', value);
+    if (r.ok) toast(r.waiting ? 'Kept in this browser until the station server answers. Private: not sent to anyone.' : 'Saved in your private cycle log. Not sent to anyone.');
+    return r;
+  } });
   const lows = new Map();
   for (const ind of ['mood', 'attitude']) {
     for (const x of machine.history(p.id, ind)) {
@@ -1357,29 +1369,33 @@ function cycleCard(p, now) {
     }
   }
   const phases = lowDaysByPhase(s.starts, [...lows.entries()].map(([d, low]) => [`${d}T12:00:00Z`, low]));
-  const facts = [];
-  if (s.suppressed) facts.push("You chose to suppress your periods. Many astronauts do; the choice is yours and your flight surgeon's.");
-  else if (s.cycleDay) facts.push(`Cycle day ${s.cycleDay}${s.average ? ` · average cycle ${s.average} days` : ''}${s.periodDays ? ` · period about ${s.periodDays} days` : ''}${s.nextExpected ? ` · next period expected around ${fmtDate(s.nextExpected)}` : ''}.`);
-  else facts.push('No period logged yet.');
-  if (s.flags.includes('long-cycles')) facts.push(`The last cycles were longer than ${CYCLE_RULES.longCycleDays} days. The Endocrine Society advises a check-up when cycles are consistently that long.`);
-  if (s.flags.includes('no-period')) facts.push('No period for more than 3 months. The Endocrine Society advises a check-up, after other causes are ruled out.');
-  if (s.flags.includes('cycle-outside-range')) facts.push(`The last cycle was outside the usual ${CYCLE_RULES.normalMin} to ${CYCLE_RULES.normalMax} days (ACOG).`);
-  if (s.flags.includes('cycle-varies')) facts.push(`Your recent cycles differ by more than ${CYCLE_RULES.varyMax} days; ACOG counts that as irregular.`);
-  if (s.flags.includes('long-period')) facts.push(`The last period lasted more than ${CYCLE_RULES.periodMax} days; ACOG counts that as abnormal bleeding.`);
   const table = s.starts.length > 1 ? h('details', { class: 'more' }, h('summary', {}, icon('chevron-right', { size: 18 }), 'Mood and energy across your cycle'),
     h('div', {}, h('p', { class: 'note' }, 'Your own days, no conclusion drawn.'), h('div', { class: 'table-wrap' }, h('table', {},
       h('thead', {}, h('tr', {}, h('th', {}, 'Cycle days'), h('th', {}, 'Days with check-ins'), h('th', {}, 'Days with a low check-in'))),
       h('tbody', {}, ...phases.map((ph) => h('tr', {}, h('td', {}, ph.to > 30 ? `${ph.from} and later` : `${ph.from} to ${ph.to}`), h('td', {}, String(ph.days)), h('td', {}, String(ph.low))))))))) : null;
-  return h('section', { class: 'group', 'data-terms': 'menstrual cycle period private' },
-    h('div', { class: 'group-head' }, h('h2', { id: 'cycle-title' }, 'Menstrual cycle'), h('p', {}, 'Private: not sent to anyone unless you choose to.')),
-    h('section', { class: 'card', 'aria-labelledby': 'cycle-title', 'data-terms': 'menstrual cycle period private' },
-    h('div', { class: 'prose' }, ...facts.map((x) => h('p', {}, x))),
+  const terms = 'menstrual cycle period private flow spotting bleeding calendar';
+  return h('section', { class: 'group', 'data-terms': terms },
+    h('div', { class: 'group-head' }, h('h2', { id: 'cycle-title' }, 'Menstrual cycle ', tipButton('t:cycle', 'the menstrual cycle')), h('p', {}, 'Private: not sent to anyone unless you choose to.')),
+    h('section', { class: 'card', 'aria-labelledby': 'cycle-title', 'data-terms': terms },
+    h('div', { class: 'prose' }, ...cycleFacts(s).map((x) => h('p', {}, x))),
+    log,
     h('div', { class: 'actions' },
-      btn('secondary', 'Period started today', () => addReading('cycle', 'period_start')),
-      btn('secondary', 'Period ended today', () => addReading('cycle', 'period_end')),
-      btn('secondary', s.suppressed ? 'I no longer suppress my periods' : 'I suppress my periods', () => addReading('cycle', s.suppressed ? 'suppression_off' : 'suppression_on'))),
+      btn('secondary', s.suppressed ? 'I no longer suppress my periods' : 'I suppress my periods', () => addReading('cycle', s.suppressed ? 'suppression_off' : 'suppression_on'), null, { 'data-fk': 'cyc:suppress' })),
     table,
     h('p', { class: 'note' }, `Doctors on Earth treat the cycle as a vital sign; a typical cycle is ${CYCLE_RULES.normalMin} to ${CYCLE_RULES.normalMax} days and a period lasts up to ${CYCLE_RULES.periodMax} days (ACOG). The next-period date is a plain average of your last cycles, not a medical model.`)));
+}
+
+// The cycle log lives on All measures: Today's "Cycle log" goes there, with no search left over, and puts the
+// keyboard on the day open in the log (today, at first).
+function openCycleLog() {
+  ui.find = '';
+  showOpenDay(ui.person);
+  setScreen('measures');
+  const title = byId('cycle-title');
+  if (!title) return;
+  title.scrollIntoView({ block: 'start' });
+  const day = document.querySelector('.cyc-day[aria-pressed="true"]');
+  if (day) day.focus({ preventScroll: true });
 }
 
 // Fixed groups, always in the same order, so each measure keeps its place. A new measure in config.js

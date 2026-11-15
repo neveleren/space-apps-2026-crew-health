@@ -6,6 +6,7 @@
 import { CELLS } from './config.js';
 import { KIND, checkNorm, checkPanel, checkSelf } from './engine.js';
 import { symptomValue, medicineValue } from './quicklog.js';
+import { cycleValue, cycleValueProblem } from './cycle-log.js';
 
 export const REFS = {
   cfr: { name: '14 CFR 1214.403, ISS crew code of conduct (CFR 2026)', url: 'https://www.govinfo.gov/content/pkg/CFR-2026-title14-vol5/pdf/CFR-2026-title14-vol5-sec1214-403.pdf' },
@@ -85,7 +86,7 @@ export function eventProblem(e, { now = Date.now(), checkFuture = true } = {}) {
     for (const k of SWITCHES) if (typeof e.state[k] !== 'boolean') return `state.${k} must be true or false`;
   }
   if (e.kind === 'report') return reportProblem(e.report);
-  if (e.kind === 'reading') return readingProblem(e.reading);
+  if (e.kind === 'reading') return readingProblem(e.reading, e.time);
   if (e.kind === 'alarm') return alarmProblem(e.alarm);
   return null;
 }
@@ -111,7 +112,8 @@ function reportProblem(r) {
   return null;
 }
 
-function readingProblem(r) {
+// time: the event's own time; a day of the cycle log is checked against it (src/cycle-log.js).
+function readingProblem(r, time) {
   if (!isObj(r)) return 'reading must be an object';
   if (unknownKey(r, ['source', 'indicator', 'value', 'context', 'detail']) !== undefined) return 'reading may hold only source, indicator, value, context and detail';
   // Only one context exists: a heart rate recorded during exercise, which is not judged against the resting range.
@@ -127,13 +129,17 @@ function readingProblem(r) {
   if (typeof r.source !== 'string' || !SOURCE_ID.test(r.source)) return 'reading.source must be a device id of lower-case letters, digits and hyphens';
   const cell = typeof r.indicator === 'string' ? cellOf.get(r.indicator) : undefined;
   if (!cell) return 'reading.indicator is not a measure of src/config.js';
-  const why = valueProblem(cell, r.value);
+  const why = valueProblem(cell, r.value, time);
   return why ? `reading.value ${why}` : null;
 }
 
 // The value must be of the kind the measure takes, and readable by the machine's own check (engine.js),
 // so the server keeps exactly what the machine can use. The technical view sends typed numbers as text: allowed.
-function valueProblem(cell, v) {
+// The cycle log takes the four old answers or one day of the log, { day, flow, symptoms }, whose day is not after
+// the event's time and within the 90 days that end on its day (src/cycle-log.js, a draft); being tied to the event's own
+// time, a saved line passes again when it is read back later.
+function valueProblem(cell, v, time = null) {
+  if (cell.indicator === 'cycle') return cycleValueProblem(v, time);
   if (typeof v === 'string' && v.length > LIMITS.textChars) return `must be at most ${LIMITS.textChars} characters`;
   if (cell.kind === KIND.NUMBER) {
     const parts = cell.normType === 'below-both' ? ['sys', 'dia'] : cell.normType === 'min-parts' ? cell.norm.parts.map((p) => p.key) : null;
@@ -183,7 +189,7 @@ export function cleanEvent(e) {
   if (e.state !== undefined) out.state = Object.fromEntries(SWITCHES.map((k) => [k, e.state[k]]));
   if (e.kind === 'reading') {
     const r = e.reading;
-    const value = r.indicator === 'symptoms' ? symptomValue(r.value) : r.indicator === 'medicines' ? medicineValue(r.value) : r.value;
+    const value = r.indicator === 'symptoms' ? symptomValue(r.value) : r.indicator === 'medicines' ? medicineValue(r.value) : r.indicator === 'cycle' ? cycleValue(r.value) : r.value;
     out.reading = { source: r.source, indicator: r.indicator, value };
     if (r.context !== undefined) out.reading.context = r.context;
     if (r.detail !== undefined) out.reading.detail = Object.fromEntries(RT_DETAIL.filter((k) => r.detail[k] !== undefined).map((k) => [k, r.detail[k]]));

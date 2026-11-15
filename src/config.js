@@ -357,7 +357,9 @@ export const CELLS = [
   },
   {
     id: null, section: 'psyche', indicator: 'cycle', effort: 'light', label: 'Menstrual cycle', kind: KIND.SELF, reviewByAi: false, private: true,
-    normText: "the person marks the start and end of a period; it stays private unless the person chooses to share it. Doctors on Earth treat the cycle as a vital sign (ACOG); a check-up is advised if cycles are consistently longer than 45 days or there is no period for 3 months (Endocrine Society)",
+    // The day log and its checks: src/cycle-log.js. The old values period_start, period_end, suppression_on and
+    // suppression_off are still accepted and read.
+    normText: "the person logs each day's bleeding (none, spotting, light, medium or heavy) and symptoms, for today or one of the 89 days before it (the last 90 days, a draft), never a future day; it stays private unless the person chooses to share it. Doctors on Earth treat the cycle as a vital sign (ACOG); a check-up is advised if cycles are consistently longer than 45 days or there is no period for 3 months (Endocrine Society)",
   },
   {
     id: null, section: 'psyche', indicator: 'weighing', effort: 'light', label: 'What is weighing on you', kind: KIND.SELF, reviewByAi: false, private: true,
