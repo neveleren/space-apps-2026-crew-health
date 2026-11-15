@@ -174,8 +174,10 @@ export function exampleFlight(crew, stories = STORY) {
 // - blood oxygen once a week: the ISS medical kit holds a pulse oximeter (NASA's kit list of 9 Apr 2015,
 //   https://www.governmentattic.org/19docs/NASA-ISSmedicalEmergManual_2016.pdf); healthy readings are 95 to 100%
 //   (MedlinePlus); here 96 to 99%;
-// - a thinking test once a month, like NASA's WinSCAT, compared with the person's own pre-flight result
-//   (NASA JSC, 2018: https://ntrs.nasa.gov/api/citations/20180003970/downloads/20180003970.pdf);
+// - a thinking test once a month, like NASA's WinSCAT (NASA JSC, 2018:
+//   https://ntrs.nasa.gov/api/citations/20180003970/downloads/20180003970.pdf), compared with the person's own
+//   pre-flight result (NASA OCHMO-TB-016, 2023: https://www.nasa.gov/wp-content/uploads/2023/12/ochmo-tb-016-behavioral-health.pdf),
+//   on the days of the crew screen's "Coming up" example schedule (flight day 19, 49, 79 and so on, counted from 1);
 // - exercise: the ISS schedules 2.5 hours a day, 6 days a week, about 1 hour 15 minutes of it exercise itself
 //   (NASA HRP evidence report, 2023); here one rest day a week, with no reading. Elly exercises little, and less
 //   as the flight goes on: the made-up story behind her falling endurance above;
@@ -244,7 +246,9 @@ export function exampleLogs(crew, stories = LOG_STORY) {
         const planned = s.exercise[0] + (s.exercise[1] - s.exercise[0]) * (d / flightDays);
         push(p.id, 'exercise-log', 'exercise', Math.max(15, round(planned + noise(8))), dayAt(d, 15));
       }
-      if (d % 30 === 10) push(p.id, 'cognition-test', 'cognition', 'same as before flight', dayAt(d, 5.5));
+      // d counts from 0, the screen's flight day from 1: d 18 is flight day 19, so the last test and the next one
+      // that "Coming up" shows are 30 days apart.
+      if (d % 30 === 18) push(p.id, 'cognition-test', 'cognition', 'same as before flight', dayAt(d, 5.5));
       if (d % 30 === 20) push(p.id, 'eye-self-check', 'visionCheck', 'no change', dayAt(d, 13));
       if (s.sleepAid && d >= 1 && r() < s.sleepAid.from + (s.sleepAid.to - s.sleepAid.from) * (d / flightDays)) {
         const late = d > flightDays * 0.75 && r() < 0.3;

@@ -204,6 +204,9 @@ test('example logs: blood oxygen once a week in the norm, a thinking test once a
     const think = of(p.id, 'cognition');
     assert.ok(think.length >= 5, p.id);
     for (let i = 1; i < think.length; i += 1) assert.equal(flightDay(think[i]) - flightDay(think[i - 1]), 30);
+    // On the days of the crew screen's "Coming up" example schedule (crew.js: every(30, 11)), flight day 19, 49 and
+    // so on counted from 1, so the last test shown and the next one announced are 30 days apart.
+    assert.ok(think.every((e) => (flightDay(e) + 1) % 30 === 19), p.id);
   }
 });
 
