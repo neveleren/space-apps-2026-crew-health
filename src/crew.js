@@ -2598,7 +2598,7 @@ function renderSetup() {
     h('div', { class: 'screen-head' }, h('h1', {}, 'Settings')),
     h('div', { class: 'settings' },
       h('section', { class: 'card' }, cornerTip('t:display', 'the display'), h('h2', {}, 'Sound and display'),
-        switchRow('st-sound', 'Sound and voice', `Alerts that need action sound a tone, and the question "Are you okay?" is spoken. Off mutes only these, until the next sign-in: an urgent alarm always sounds, and repeats every ${ALARM_RULES.repeatSeconds} seconds with its spoken line until someone acknowledges it (a draft).`, !ui.muted, (on) => { ui.muted = !on; renderBar(); }),
+        switchRow('st-sound', 'Sound and voice', `Alerts that need action sound a tone, and the question "Are you okay?" is spoken. Off mutes only these, until the next sign-in: an urgent alarm always sounds: its tone repeats every ${ALARM_RULES.repeatSeconds} seconds and its spoken line every ${ALARM_RULES.repeatSeconds * ALARM_RULES.voiceEvery} seconds until someone acknowledges it (drafts).`, !ui.muted, (on) => { ui.muted = !on; renderBar(); }),
         h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Test the alert sounds'), h('small', {}, 'Plays the needs-action tone, then the urgent tone, so the crew can check them (NASA-STD-3001 Vol 2, 10117).')),
           btn('secondary small', 'Test', () => { caution(); later(() => { warning(0.10); later(() => warning(0.32), 1400); say('Warning. This is a test.'); }, 4200); toast('Sound test: needs action, then urgent.'); }, 'volume-2')),
         h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Display'), h('small', {}, 'Dark suits a dim cabin; light suits a bright one.')),
