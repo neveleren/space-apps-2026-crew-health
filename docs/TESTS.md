@@ -103,23 +103,20 @@ node static_check.cjs http://127.0.0.1:8125/
 - `integ_test.cjs` uploads `tests/fixtures/hexoskin.csv` from a fixed path written in the script.
 - The server loads its rules (`src/security.js`, with `src/config.js`, `src/engine.js` and `src/quicklog.js`) once, when it starts, while the page files are read fresh on every request. Restart the server after changing those files, or the page and the server can disagree, and then saves are refused with 400.
 
-## Results on 15 Nov 2026
+## Results on 15 Nov 2026 (version 1.1.0)
 
-Run against a clean copy (`git archive`) of commit `b922945`, the newest on main at the time, so no work in progress was mixed in, with Node.js 24.13.0 on Windows 11; `npm test` also ran with Node.js 18.20.8.
+After the merge of the review fixes, with Node.js 24.13.0 on Windows 11.
 
-| Check | When (GMT) | Result |
-|---|---|---|
-| `npm test`, Node.js 24.13.0 | 02:31 | 226 tests: 224 pass, 0 fail, 2 skipped (the live checks) |
-| `npm test`, Node.js 18.20.8 | 02:32 | 226 tests: 224 pass, 0 fail, 2 skipped |
-| `JFF_LIVE=1 npm test` | 02:32 | 226 tests: 226 pass, 0 fail; ISSLive and NOAA answered |
-| `e2e.cjs` | 02:32 | 66 of 66 steps pass, no page errors |
-| `mind_test.cjs`, desktop | 02:32 | 28 of 29 steps pass, no page errors; the step for the group "Your private log" fails (below) |
-| `mind_test.cjs`, phone | 02:32 | 28 of 29 steps pass, no page errors; the same step fails |
-| `integ_test.cjs` | 02:32 | 15 of 15 steps pass, no page errors; ISSLive and NOAA answered |
-| `static_check.cjs` | 02:32 | 7 of 7 steps pass |
+| Check | Result |
+|---|---|
+| `npm test` | 270 tests: 268 pass, 0 fail, 2 skipped (the live checks) |
+| `e2e.cjs`, commit `09e93ae` | 66 of 66 steps pass, no page errors |
+| `mind_test.cjs`, desktop, commit `09e93ae` | 29 of 29 steps pass, no page errors |
+| `integ_test.cjs`, commit `09e93ae` | 15 of 15 steps pass, no page errors |
+| `static_check.cjs`, the final files served as plain files | 7 of 7 steps pass |
 
-Why the "Your private log" step fails: commit `a8caf86` put a "?" button into that group's heading, so the heading's text is now "Your private log " with a space at the end, and the step compares the exact text. The group is on the screen, so the step needs fixing, not the page. On commit `43476be`, before that change, all five browser runs passed at 02:25 GMT (66, 29, 29, 15 and 7 steps), and `npm test` gave the same counts as above.
-
-About `static_check.cjs`: "Earth photo loads" looks at both of the Earth break's crossfade images, because the first one stays empty until the second photo, 30 seconds in (`src/earth-break.js`). The two 404 lines in its log are the file server answering `/api/events`, which a plain file server does not have; the page then keeps data in the browser, as designed.
+- The review's checker scripts for the crew alarm (15 scripts) also passed on the merged code. One of them was changed for the new step: the plan's call button now shows the request line and sends it only on "Send the request".
+- The first walk on the merged code failed at every sign-in: a leftover of the old notices stopped it. The unit tests could not see it; the browser walks did. Fixed in `09e93ae`, then all walks passed.
+- Not re-run for 1.1.0: `mind_test.cjs` at phone width, the tests under Node.js 18, and `JFF_LIVE=1`. On 1.0.0 they passed (`mind_test.cjs` phone 28 of 29, the one failure in the script, not the page).
 
 For comparison: version 0.1.0 had 62 tests in 6 files, all passing when run on a clean copy of its commit, `e812007`.

@@ -169,16 +169,17 @@ npm test
 node tools/sbom.mjs --check
 ```
 
-- `npm test` runs Node's own test runner over 14 test files: the machine, history, camera rules, levels, cycle, server, store, PIN, supply chain, mind tools, quick logs, cells, connections and pages. The server tests start the real server on a throwaway data folder.
-- On 15 Nov 2026: 226 tests, 224 pass, 0 fail, 2 skipped, with Node 18.20.8 and with Node 24.13.0. The 2 skipped tests call the real ISSLive and NOAA services; with `JFF_LIVE=1` all 226 passed.
-- We also walk the pages in headless Chromium with Playwright. These scripts are kept outside this repository and are not part of `npm test`. Last run, 15 Nov 2026, against commit `b922945`, the first three each on a fresh data folder:
+- `npm test` runs Node's own test runner over 16 test files: the machine, history, camera rules, levels, cycle, server, store, PIN, supply chain, mind tools, quick logs, cells, connections, pages, crew alarm and screens. The server tests start the real server on a throwaway data folder.
+- On 15 Nov 2026 (version 1.1.0): 270 tests, 268 pass, 0 fail, 2 skipped, with Node 24.13.0. The 2 skipped tests call the real ISSLive and NOAA services.
+- We also walk the pages in headless Chromium with Playwright. These scripts are kept outside this repository and are not part of `npm test`. Last run, 15 Nov 2026, against commit `09e93ae` (the merged review fixes), each on a fresh data folder:
 
 | Browser check | Steps | Result |
 |---|---|---|
 | The main flows of the crew screen, at 1366 px and at 375 px | 66 | 66 passed |
-| Check-in topics, quick logs, mind tools, reaction test, eye check, OCT page | 29 | 28 passed on desktop and on phone. The one failure is in the script, not the page: it compares the exact heading "Your private log", which now ends with a "?" button; the group is shown |
+| Check-in topics, quick logs, mind tools, reaction test, eye check, OCT page (desktop) | 29 | 29 passed |
 | PIN, crew alarm line, live feeds, CSV import, calendar and FHIR files | 15 | 15 passed |
-| A copy without the server: page policy, fonts, NOAA feed, an Earth photo, technical view | 7 | 7 passed, on the current files served as plain files and on the public copy |
+| A copy without the server: page policy, fonts, NOAA feed, an Earth photo, technical view | 7 | 7 passed, on the final files served as plain files |
+| The review's own alarm checks: false alarm, signs that change, retries, refused messages, saves, sign-out, sound, Help key paths, keys, CSV import, repeats, PIN screen | 15 scripts | all passed; one script was changed to press the new "Send the request" step |
 
 The first three checks showed no page errors. What each test file covers, and how to run the browser checks: [docs/TESTS.md](docs/TESTS.md).
 
