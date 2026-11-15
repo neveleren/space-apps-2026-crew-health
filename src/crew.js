@@ -28,7 +28,7 @@ import { fhirBundle as fhirExport, FHIR_TYPE, fhirFileName } from './fhir.js';
 import { toICalendar, planDrafts, ICAL_TYPE, icalFileName } from './ical.js';
 import { pinAvailable, hasPin, pinLocked, checkPin, pinTriesLeft, pinProblem, setPin, clearPin, PIN_RULES } from './privacy.js';
 import {
-  ALARM_RULES, initialsOf, typedNumber, eventKey, newShared, crewLines, latestLine, alarmText, falseAlarmText, allClearText, SIGN_IN_HELP_TEXT,
+  ALARM_RULES, initialsOf, typedNumber, eventKey, newShared, crewLines, latestLine, alarmSince, alarmText, falseAlarmText, allClearText, SIGN_IN_HELP_TEXT,
   needsNewLine, alarmReportText, messageStatus, lineStatus, statusFromOutbox, doctorWords, doctorShort, crewWords, clearWords, noteWords, askTimerText, sentChip,
   restorePlan, shortReason,
 } from './crew-alarm.js';
@@ -564,7 +564,7 @@ function procedureFor(it, personId = ui.person) {
   const reachable = ui.ship.doctorOnBoard || ui.ship.linkToEarth;
   if (it.kind === 'red' && it.cell && it.cell.section === 'env') return ['Follow the ship\'s own procedure for this alarm; this screen only mirrors the ship.', 'The crew and mission control decide.'];
   const sugar = it.kind === 'red' && it.cell && it.cell.indicator === 'glucose' && it.m && it.m.side === 'below' ? [SUGAR_STEP] : [];
-  const since = it.m && it.m.last ? msOf(it.m.last.time) : it.time ? msOf(it.time) : 0;
+  const since = alarmSince(it);
   const crewStep = () => crewWords(statusOf(alarmLineOf(personId, since)));
   const doctorStep = () => doctorWords(statusOf(alarmReportOf(personId, since)), ui.ship);
   if (it.kind === 'red' && it.level >= LEVEL.URGENT) return [...sugar, crewStep(), ...(sugar.length ? [] : ['You: repeat the reading now if you can, at rest.']), doctorStep(), 'Crew medical officer: open the emergency procedure for this sign.'];
@@ -719,7 +719,7 @@ function systemNotices() {
   const help = helpNotice();
   if (help) out.push(help);
   if (serverDown && ui.person) {
-    out.push({ icon: 'wifi-off', bold: 'The station server is not answering.', rest: `What you enter is kept in this browser until it is back${waitingKept ? '' : ', and only until this page closes, because this browser blocks storage'}. Your earlier records and your crewmates' alarms are not shown until then.` });
+    out.push({ icon: 'wifi-off', bold: 'The station server is not answering.', rest: `What you enter is kept in this browser until it is back${waitingKept ? '' : ', and only until this page closes, because this browser blocks storage'}. ${store && store.kind === 'server' ? 'New alarms of your crewmates do not reach this screen until then.' : "Your earlier records and your crewmates' alarms are not shown until then."}` });
   }
   return out;
 }
@@ -883,6 +883,14 @@ function clearPerson() {
   store = null;
   stored = [];
   dropToast();
+  // What the page still holds out of sight: the topic chips of a closed check-in form (they are drawn only when the
+  // form opens), the last side sheet and the last "?" card.
+  byId('ci-topics').replaceChildren();
+  byId('panel-title').textContent = '';
+  byId('panel-body').replaceChildren();
+  byId('panel-actions').replaceChildren();
+  const tipCard = document.getElementById('tip-pop');
+  if (tipCard) tipCard.replaceChildren();
   rebuild();
 }
 function signOut() {

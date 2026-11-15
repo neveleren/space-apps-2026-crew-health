@@ -81,6 +81,17 @@ export function crewLines(events, { viewer = null, now = Date.now(), hours = ALA
   return [...latest.values()].filter((e) => !e.alarm.clear).sort((a, b) => Date.parse(b.time) - Date.parse(a.time));
 }
 
+// Since when the alarm of one item has been on, in milliseconds, so the screen finds the crew line and the message
+// written for it: for a red limit the first reading of the current run outside the range (the same sign measured
+// again, by hand or by a device once a minute, is the same alarm, and gets no new line), for the camera and the Help
+// key the alarm's own time; 0 when the item has no time.
+export function alarmSince(it) {
+  const m = it && it.m;
+  const t = (m && (m.runFrom || (m.last && m.last.time))) || (it && it.time) || null;
+  const v = t instanceof Date ? t.getTime() : t ? Date.parse(t) : NaN;
+  return Number.isFinite(v) ? v : 0;
+}
+
 // The latest crew line of one person (an alarm or an all clear), or null.
 export function latestLine(events, person, { now = Date.now(), hours = ALARM_RULES.lineHours } = {}) {
   let best = null;
@@ -182,7 +193,7 @@ export function doctorShort(status, ship = {}) {
 // What the screen may say about the crew, from what really happened to the crew line.
 export function crewWords(status) {
   switch (status) {
-    case 'shared': return `Every crew screen that is open shows the alarm within ${ALARM_RULES.pollSeconds} seconds; tell your crewmates in person too if you can.`;
+    case 'shared': return `Every crew screen where someone is signed in shows the alarm within ${ALARM_RULES.pollSeconds} seconds; tell your crewmates in person too if you can.`;
     case 'local': return 'This copy runs without the station server, so no other screen shows the alarm: tell your crewmates in person now.';
     case 'waiting': return 'The alarm is not on the station computer yet, so no other screen shows it: tell your crewmates in person now.';
     case 'unsent': return 'The alarm has NOT reached the other crew screens: tell your crewmates in person now.';

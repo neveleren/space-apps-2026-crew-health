@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  ALARM_RULES, initialsOf, typedNumber, eventKey, newShared, crewLines, latestLine, alarmText, falseAlarmText, allClearText, SIGN_IN_HELP_TEXT,
+  ALARM_RULES, initialsOf, typedNumber, eventKey, newShared, crewLines, latestLine, alarmSince, alarmText, falseAlarmText, allClearText, SIGN_IN_HELP_TEXT,
   needsNewLine, alarmReportText, messageStatus, lineStatus, statusFromOutbox, doctorWords, doctorShort, crewWords, clearWords, noteWords, askTimerText,
   sentChip, restorePlan, shortReason,
 } from '../src/crew-alarm.js';
@@ -101,6 +101,16 @@ test('a new line only when the set of urgent signs changes, and an all clear whe
   assert.equal(needsNewLine(cleared, [], universe), false, 'already clear: nothing to write');
   assert.equal(needsNewLine(cleared, ['Help key'], universe), true, 'an alarm after an all clear');
   assert.equal(needsNewLine(null, [], universe), false);
+});
+
+test('the alarm of an item started with its run: the same sign measured again later is the same alarm', () => {
+  // SpO2 85 raised the alarm at -5 min; a device sent 86 at -1 min: no new line, so the screen must look back to -5.
+  const red = { kind: 'red', m: { runFrom: at(-5), last: { time: at(-1) } } };
+  assert.equal(alarmSince(red), NOW - 5 * 60 * 1000);
+  assert.equal(alarmSince({ kind: 'red', m: { runFrom: null, last: { time: at(-1) } } }), NOW - 60 * 1000, 'no run: the reading itself');
+  assert.equal(alarmSince({ kind: 'camera', time: new Date(at(-3)) }), NOW - 3 * 60 * 1000, 'the camera or Help key alarm: its own time');
+  assert.equal(alarmSince({ kind: 'mood' }), 0);
+  assert.equal(alarmSince(null), 0);
 });
 
 test('a poll brings only crew lines and the ship\'s readings that the screen does not have yet', () => {
