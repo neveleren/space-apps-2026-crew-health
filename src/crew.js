@@ -548,6 +548,13 @@ function rangeText(cell, owner) {
   if (cell.normType === 'baseline-shift') return hearingRangeText(machine.history(owner.id, cell.indicator), cell);
   return normShort(cell, owner);
 }
+// The range with its unit on a measure's page: "95% or more of own pre-flight", not "95 or more % of own pre-flight"
+// (body mass). A range said in words of its own (own pre-flight level, hearing) takes no unit.
+function rangeWithUnit(cell, owner) {
+  const r = rangeText(cell, owner);
+  if (!cell.unit || cell.kind !== KIND.NUMBER || cell.normType === 'baseline-percent' || cell.normType === 'baseline-shift') return r;
+  return cell.unit.startsWith('% ') && r.endsWith(' or more') ? `${r.slice(0, -' or more'.length)}% or more ${cell.unit.slice(2)}` : `${r} ${cell.unit}`;
+}
 
 function normShort(cell, owner) {
   if (cell.normType === 'range' || cell.normType === 'below-both' || cell.normType === 'baseline-shift') return `normal range ${rangeText(cell, owner)}`;
@@ -1722,7 +1729,7 @@ function renderDetail() {
       lastEntry ? h('div', { class: `now-value${String(shown).length > 12 && !/^[\d.,\s/:+-]+$/.test(String(shown)) ? ' words' : ''}` }, h('b', {}, shown), cell.unit && cell.kind === KIND.NUMBER ? h('span', { class: 'u' }, cell.unit) : null, arrow) : null,
       h('div', { class: 'now-text' },
         h('p', { class: 'verdict' }, level ? h('span', { class: `lvc${level}` }, icon(LEVEL_ICON[level], { size: 18 }), ' ') : null, verdict, level ? h('span', { class: `lvc${level}` }, ` ${LEVEL_TITLE[level]}.`) : null),
-        norm ? h('p', { class: 'meta' }, `Normal range: ${rangeText(cell, owner)}${cell.unit && cell.kind === KIND.NUMBER && cell.normType !== 'baseline-percent' && cell.normType !== 'baseline-shift' ? ` ${cell.unit}` : ''}`) : null,
+        norm ? h('p', { class: 'meta' }, `Normal range: ${rangeWithUnit(cell, owner)}`) : null,
         indicator === 'co2' ? co2WeekMeta(now) : null,
         lastEntry ? h('p', { class: 'meta' }, 'Last reading ', h('span', { class: 'mono' }, stamp(lastEntry.time, now))) : null)),
     alert ? h('div', { class: 'actions' }, btn('proc', 'What to do', () => openProcedure(alert), 'list-checks')) : null,
