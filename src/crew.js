@@ -175,7 +175,8 @@ let camStop = null;
 
 // The time the screen lives in: with the example flight on, the example's "today" or later saved readings.
 function nowTime() {
-  const latest = Math.max(0, ...stored.map((e) => msOf(e.time)).filter(Number.isFinite));
+  // The steps of the alert log are not readings: looking at an alert never moves the screen's time (src/alert-log.js).
+  const latest = Math.max(0, ...stored.filter((e) => e.kind !== 'alert').map((e) => msOf(e.time)).filter(Number.isFinite));
   return ui.example ? new Date(Math.max(msOf(MISSION.today), latest)) : new Date();
 }
 
@@ -2603,6 +2604,12 @@ async function endDrill(why = 'hand') {
   if (person && !personById[person].real) await shareCrewAlarm(person, { drillEnd: ended.id, force: Boolean(last && isDrill(last) && !last.alarm.clear) });
   if (ui.person !== person || why === 'signout') return;
   render();
+  // "End the drill" leaves with the banner: the keyboard goes to the drill switch when it is on the screen, else to the
+  // Messages key, where the drill's alarms were (WCAG 2.4.3).
+  if (!document.activeElement || document.activeElement === document.body) {
+    const sw = byId('st-drill');
+    (sw && sw.getClientRects().length ? sw : byId('alerts-btn')).focus();
+  }
   toast(DRILL_WORDS.ended(why));
 }
 // The time limit, checked with the clock (a draft: DRILL_RULES.maxMinutes).
