@@ -1,0 +1,5 @@
+# Third-party files are kept byte for byte as their makers ship them (no line-ending changes on checkout),
+# so SHA256SUMS and SBOM.json hold on every computer.
+vendor/** -text
+fonts/** -text
+SHA256SUMS -text
