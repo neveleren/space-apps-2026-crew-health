@@ -1,0 +1,32 @@
+[
+ {
+  "product_id": "TIIA",
+  "issue_datetime": "2026-11-14 22:49:43.693",
+  "message": "Space Weather Message Code: ALTTP2\r\nSerial Number: 1534\r\nIssue Time: 2026 Nov 14 2249 UTC\r\n\r\nALERT: Type II Radio Emission \nBegin Time: 2026 Nov 14 2127 UTC\nEstimate Velocity: 1972 km/s\nComment: "
+ },
+ {
+  "product_id": "TIVA",
+  "issue_datetime": "2026-11-14 22:49:14.370",
+  "message": "Space Weather Message Code: ALTTP4\r\nSerial Number: 720\r\nIssue Time: 2026 Nov 14 2249 UTC\r\n\r\nALERT: Type IV Radio Emission \nBegin Time: 2026 Nov 14 2132 UTC\nComment: "
+ },
+ {
+  "product_id": "EF3A",
+  "issue_datetime": "2026-11-14 05:03:51.727",
+  "message": "Space Weather Message Code: ALTEF3\r\nSerial Number: 3775\r\nIssue Time: 2026 Nov 14 0503 UTC\r\n\r\nCONTINUED ALERT: Electron 2MeV Integral Flux exceeded 1,000pfu\nContinuation of Serial Number: 3774\nBegin Time: 2026 Nov 08 2245 UTC\n\nYesterday Maximum 2MeV Flux: 5223 pfu\nMax time: 2026 Nov 13 1700 UTC"
+ },
+ {
+  "product_id": "EF3A",
+  "issue_datetime": "2026-11-13 05:05:40.730",
+  "message": "Space Weather Message Code: ALTEF3\r\nSerial Number: 3774\r\nIssue Time: 2026 Nov 13 0505 UTC\r\n\r\nCONTINUED ALERT: Electron 2MeV Integral Flux exceeded 1,000pfu\nContinuation of Serial Number: 3773\nBegin Time: 2026 Nov 08 2245 UTC\n\nYesterday Maximum 2MeV Flux: 3235 pfu\nMax time: 2026 Nov 12 1515 UTC"
+ },
+ {
+  "product_id": "EF3A",
+  "issue_datetime": "2026-11-12 06:33:05.873",
+  "message": "Space Weather Message Code: ALTEF3\r\nSerial Number: 3773\r\nIssue Time: 2026 Nov 12 0633 UTC\r\n\r\nCONTINUED ALERT: Electron 2MeV Integral Flux exceeded 1,000pfu\nContinuation of Serial Number: 3772\nBegin Time: 2026 Nov 08 2245 UTC\n\nYesterday Maximum 2MeV Flux: 7897 pfu\nMax time: 2026 Nov 11 1555 UTC"
+ },
+ {
+  "product_id": "EF3A",
+  "issue_datetime": "2026-11-11 05:01:52.690",
+  "message": "Space Weather Message Code: ALTEF3\r\nSerial Number: 3772\r\nIssue Time: 2026 Nov 11 0501 UTC\r\n\r\nCONTINUED ALERT: Electron 2MeV Integral Flux exceeded 1,000pfu\nContinuation of Serial Number: 3771\nBegin Time: 2026 Nov 08 2245 UTC\n\nYesterday Maximum 2MeV Flux: 6420 pfu\nMax time: 2026 Nov 10 1550 UTC"
+ }
+]
