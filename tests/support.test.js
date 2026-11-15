@@ -11,7 +11,7 @@ import {
   withEntry, markSent, matchesRisk, plainText, RISK_RULE, TALK_REQUEST_TEXT, TALK_REQUEST_TOPIC, LETTER_TOPIC, isTalkRequest, isLetter,
 } from '../src/support.js';
 import { RT_RULES, scoreRun, createSession, compareToOwn, median, exampleEarlierRuns } from '../src/reaction-test.js';
-import { breathAt, photoAt, EARTH_PHOTOS } from '../src/earth-break.js';
+import { breathAt, sceneAt, sceneFor, chooseScene, nextSceneAt, clampVolume, soundLevel, volumeText, loopBounds, creditText, BREAK_SCENES, BREAK_RULES } from '../src/earth-break.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 const NOW = new Date('2026-11-15T09:00:00Z');
@@ -309,8 +309,8 @@ test('compareToOwn: only the same length of test, only the person\'s own runs, i
   assert.equal(compareToOwn(demo, null).state, 'first');
 });
 
-// ---------- F7: the Earth break pacing ----------
-test('the breathing pacer: 4 s in, 6 s out, the circle grows and shrinks; six photos share the 3 minutes', () => {
+// ---------- F7: the Earth break pacing, scenes and sound ----------
+test('the breathing pacer: 4 s in, 6 s out, the circle grows and shrinks', () => {
   assert.equal(breathAt(0).phase, 'in');
   assert.equal(breathAt(0).secondsLeft, 4);
   assert.equal(breathAt(3999).phase, 'in');
@@ -320,30 +320,121 @@ test('the breathing pacer: 4 s in, 6 s out, the circle grows and shrinks; six ph
   assert.equal(breathAt(10000).phase, 'in');
   assert.ok(Math.abs(breathAt(4000).scale - 1) < 1e-9);
   assert.ok(Math.abs(breathAt(0).scale - 0.6) < 1e-9);
-  assert.equal(EARTH_PHOTOS.length, 6);
-  assert.equal(photoAt(0, 6, 180000), 0);
-  assert.equal(photoAt(29999, 6, 180000), 0);
-  assert.equal(photoAt(30000, 6, 180000), 1);
-  assert.equal(photoAt(200000, 6, 180000), 5);
-  assert.equal(photoAt(0, 0, 180000), -1);
+});
+
+test('the mix: six scenes share the 3 minutes in the owner\'s order, starting with rain, fields, a city and a cafe', () => {
+  assert.deepEqual(BREAK_SCENES.map((s) => s.id), ['rain', 'field', 'city', 'cafe', 'sea', 'forest']);
+  assert.equal(BREAK_RULES.durationS, 180);
+  assert.equal(sceneAt(0, 6, 180000), 0);
+  assert.equal(sceneAt(29999, 6, 180000), 0);
+  assert.equal(sceneAt(30000, 6, 180000), 1);
+  assert.equal(sceneAt(179999, 6, 180000), 5);
+  assert.equal(sceneAt(200000, 6, 180000), 5, 'past the end: the last scene');
+  assert.equal(sceneAt(-5, 6, 180000), 0);
+  assert.equal(sceneAt(0, 0, 180000), -1);
+  assert.equal(sceneAt(0, 6, 0), -1);
+  assert.deepEqual(nextSceneAt(25000, 6, 180000), { index: 1, startMs: 30000 });
+  assert.equal(nextSceneAt(160000, 6, 180000), null, 'nothing after the last scene');
+});
+
+test('picking a scene holds it until the mix is chosen again; a wrong pick falls back to the mix', () => {
+  const one = chooseScene('2', 6);
+  assert.deepEqual(one, { mode: 'one', index: 2 });
+  assert.equal(sceneFor(one, 0, 6, 180000), 2);
+  assert.equal(sceneFor(one, 170000, 6, 180000), 2, 'the picked scene stays to the end');
+  assert.deepEqual(chooseScene(0, 6), { mode: 'one', index: 0 });
+  const mix = chooseScene('mix', 6);
+  assert.deepEqual(mix, { mode: 'mix' });
+  assert.equal(sceneFor(mix, 95000, 6, 180000), 3, 'back to the mix: the scene for this moment');
+  for (const wrong of ['7', 6, -1, '1.5', 'rain', null, undefined, '']) assert.deepEqual(chooseScene(wrong, 6), { mode: 'mix' }, String(wrong));
+  assert.equal(sceneFor({ mode: 'one', index: 9 }, 0, 6, 180000), 0, 'an index that is gone: the mix');
+});
+
+test('the sound starts on at a calm level; mute gives silence; the volume stays between 0 and 100 percent', () => {
+  assert.equal(BREAK_RULES.volume, 0.5);
+  assert.equal(soundLevel({}), 0.5);
+  assert.equal(soundLevel({ volume: 0.8 }), 0.8);
+  assert.equal(soundLevel({ volume: 0.8, muted: true }), 0);
+  assert.equal(clampVolume(1.7), 1);
+  assert.equal(clampVolume(-0.2), 0);
+  assert.equal(clampVolume(0.333), 0.33);
+  assert.equal(clampVolume('abc'), 0.5);
+  assert.equal(clampVolume(null, 0.3), 0.3);
+  assert.equal(volumeText({ volume: 0.5 }), '50 percent');
+  assert.equal(volumeText({ volume: 0.35, muted: true }), '35 percent, muted');
+});
+
+test('a sound loop skips the silence an encoder adds at both ends, so the loop has no gap', () => {
+  const left = new Float32Array([0, 0, 0, 0.2, -0.3, 0.1, 0, 0]);
+  const right = new Float32Array([0, 0, 0.00001, 0, 0.1, 0, 0.05, 0]);
+  assert.deepEqual(loopBounds([left, right], 4), { start: 3 / 4, end: 7 / 4 }, 'from the first loud sample to just after the last');
+  assert.equal(loopBounds([new Float32Array(10)], 4), null, 'all silence: no bounds, play the whole buffer');
+  assert.equal(loopBounds([], 44100), null);
+  assert.equal(loopBounds([left], 0), null);
+});
+
+test('every scene names its video and sound makers on the screen and has a description', () => {
+  for (const s of BREAK_SCENES) {
+    const line = creditText(s);
+    assert.ok(line.startsWith(`${s.label}. `), s.id);
+    assert.ok(line.includes(s.by.video) && line.includes(s.by.sound), s.id);
+    assert.match(line, /Video: .+ \(Pexels\)\. Sound: .+ \(Freesound, CC0\)\.$/);
+    assert.ok(s.alt.length > 20, `${s.id}: a description for screen readers`);
+  }
+  assert.equal(creditText(null), '');
+});
+
+// The media files: real footage and recordings, credited, small enough for the installer, and offline.
+const BREATHE = (f) => fileURLToPath(new URL(`../assets/breathe/${f}`, import.meta.url));
+function topBoxes(buf) {
+  const out = [];
+  for (let at = 0; at + 8 <= buf.length;) {
+    let size = buf.readUInt32BE(at);
+    const type = buf.toString('latin1', at + 4, at + 8);
+    if (size === 1) size = Number(buf.readBigUInt64BE(at + 8));
+    if (size < 8) break;
+    out.push(type);
+    at += size;
+  }
+  return out;
+}
+test('the Earth break media: H.264 MP4 videos with no sound track and the index first, small stills and sound loops, all credited', () => {
+  const credits = readFileSync(BREATHE('CREDITS.md'), 'utf8');
+  let total = 0;
+  for (const s of BREAK_SCENES) {
+    const video = readFileSync(BREATHE(s.video));
+    total += video.length;
+    assert.ok(video.length < 6 * 1024 * 1024, `${s.video} is ${video.length} bytes`);
+    const boxes = topBoxes(video);
+    assert.ok(boxes.indexOf('moov') >= 0 && boxes.indexOf('moov') < boxes.indexOf('mdat'), `${s.video}: the index comes before the data (faststart)`);
+    assert.ok(video.includes(Buffer.from('avc1')), `${s.video}: H.264`);
+    const handlers = [];
+    for (let at = video.indexOf('hdlr'); at >= 0; at = video.indexOf('hdlr', at + 4)) handlers.push(video.toString('latin1', at + 12, at + 16));
+    assert.ok(handlers.includes('vide') && !handlers.includes('soun'), `${s.video}: a picture track and no sound track (${handlers})`);
+    const still = readFileSync(BREATHE(s.poster));
+    assert.ok(still[0] === 0xff && still[1] === 0xd8 && still.length < 200 * 1024, `${s.poster}: a small JPEG`);
+    const sound = readFileSync(BREATHE(s.sound));
+    assert.ok(sound.length < 1.5 * 1024 * 1024, `${s.sound} is ${sound.length} bytes`);
+    assert.ok(sound.toString('latin1', 0, 3) === 'ID3' || (sound[0] === 0xff && (sound[1] & 0xe0) === 0xe0), `${s.sound}: MP3`);
+    for (const f of [s.video, s.poster, s.sound]) assert.ok(credits.includes(f), `${f} is in CREDITS.md`);
+    assert.ok(credits.includes(s.by.video) && credits.includes(s.by.sound), `${s.id}: the makers are in CREDITS.md`);
+  }
+  assert.ok(total < 35 * 1024 * 1024, `all videos together are ${total} bytes`);
+  assert.match(credits, /https:\/\/www\.pexels\.com\/license\//);
+  assert.match(credits, /https:\/\/creativecommons\.org\/publicdomain\/zero\/1\.0\//);
+  assert.doesNotMatch(credits, /\bNC\b|\bND\b|NonCommercial|NoDerivs|editorial use only/i, 'only licenses that allow use and sharing in an open-source app');
 });
 
 // ---------- the team's text rules ----------
 // No long dashes (U+2013, U+2014) anywhere, and the word for professional treatment of the mind never appears
 // (the pattern is put together from two halves, so this file does not contain the word either).
-test('the new files use no long dashes and never name the AI or anything else as treatment; every photo has its credit', () => {
-  const files = ['../src/support.js', '../src/reaction-test.js', '../src/earth-break.js', '../support.css', '../docs/MIND_SUPPORT.md', '../assets/earth/CREDITS.md', './support.test.js'];
+test('the new files use no long dashes and never name the AI or anything else as treatment', () => {
+  const files = ['../src/support.js', '../src/reaction-test.js', '../src/earth-break.js', '../support.css', '../docs/MIND_SUPPORT.md', '../assets/breathe/CREDITS.md', './support.test.js'];
   const word = new RegExp(['the', 'rap'].join(''), 'i');
   const dash = new RegExp('[' + String.fromCharCode(0x2013, 0x2014) + ']');
   for (const f of files) {
     const text = readFileSync(fileURLToPath(new URL(f, import.meta.url)), 'utf8');
     assert.ok(!dash.test(text), `${f}: long dash`);
     assert.ok(!word.test(text), `${f}: forbidden word`);
-  }
-  const credits = readFileSync(fileURLToPath(new URL('../assets/earth/CREDITS.md', import.meta.url)), 'utf8');
-  for (const p of EARTH_PHOTOS) {
-    assert.ok(credits.includes(p.file) && credits.includes(p.id) && credits.includes(p.url), p.file);
-    const size = readFileSync(fileURLToPath(new URL(`../assets/earth/${p.file}`, import.meta.url))).length;
-    assert.ok(size < 400 * 1024, `${p.file} is ${size} bytes`);
   }
 });

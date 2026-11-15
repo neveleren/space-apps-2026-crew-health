@@ -50,7 +50,6 @@ export const SRC = {
   timing2020: { title: 'The timing mega-study: comparing a range of experiment generators, both lab-based and online', by: 'PeerJ (Bridges et al.)', year: 2020, url: 'https://pubmed.ncbi.nlm.nih.gov/33005482/' },
   vr2017: { title: 'Relaxation with Immersive Natural Scenes Presented Using Virtual Reality', by: 'Aerospace Medicine and Human Performance (Anderson et al.)', year: 2017, url: 'https://pubmed.ncbi.nlm.nih.gov/28539139/' },
   vr2026: { title: 'Effects of Multisensory Virtual Reality Nature on Affect, Presence, and Restorativeness', by: 'NASA-co-authored study (Abbott et al.)', year: 2026, url: 'https://ntrs.nasa.gov/citations/20260005350' },
-  media2026: { title: 'Guidelines for using NASA Images and Media', by: 'NASA', year: 2026, url: 'https://www.nasa.gov/nasa-brand-center/images-and-media/' },
   // Opened on 15 Nov 2026 for the critical tasks of the mission calendar: [V1 4006] names "mission-associated critical
   // operations (such as, but not limited to, vehicle control, robotic operations, and EVAs)".
   std1c2023: { title: 'NASA Space Flight Human-System Standard, Volume 1, Revision C: Crew Health (NASA-STD-3001), [V1 4006]', by: 'NASA', year: 2023, url: 'https://www.nasa.gov/wp-content/uploads/2023/11/nasa-std-3001-vol-1-rev-c-with-signature.pdf' },
@@ -432,9 +431,10 @@ export const SUPPORT_TIPS = {
   },
   earthbreak: {
     title: '3-minute Earth break',
-    lines: ['NASA calls time at the cupola watching Earth "mentally restorative" (2025). In studies on Earth with NASA ties, virtual nature scenes lowered negative feelings (2017, 2026). Slow breathing with long exhales helped mood in a study on Earth (2023).', 'Flat screen, not VR. Photos: NASA, without logos and without implying endorsement, as NASA\'s media guidelines ask.'],
-    badge: BADGE.nasa, sources: [SRC.hrp2025, SRC.vr2017, SRC.vr2026, SRC.breath2023, SRC.media2026],
+    lines: ['In studies on Earth with NASA ties, virtual nature scenes lowered negative feelings (2017, 2026). Slow breathing with long exhales helped mood in a study on Earth (2023).', 'Flat screen, not VR. Real video and sound recorded on Earth: rain, fields, a city, a cafe, the sea and a forest. The studies used nature; the city and cafe scenes are the team\'s choice. Videos from Pexels and recordings from Freesound, credited on the screen.'],
+    badge: BADGE.nasa, sources: [SRC.vr2017, SRC.vr2026, SRC.breath2023],
   },
+
 };
 for (const tip of MIND_TIPS) SUPPORT_TIPS[`tip-${tip.id}`] = { title: tip.title, lines: [tip.why], badge: tip.badge, sources: [tip.source, ...(tip.also || [])] };
 

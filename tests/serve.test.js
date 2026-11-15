@@ -380,6 +380,44 @@ test('every response carries the security headers; the page\'s own inline script
   });
 });
 
+test('the Earth break\'s videos and sounds go out with their types, and in parts when the browser asks for a range', async () => {
+  const size = (await stat(join(APP, 'assets', 'breathe', 'rain.mp4'))).size;
+  const path = '/assets/breathe/rain.mp4';
+  await withServer(async (srv) => {
+    const whole = await raw(srv, path);
+    assert.equal(whole.status, 200);
+    assert.equal(whole.headers['content-type'], 'video/mp4');
+    assert.equal(whole.headers['accept-ranges'], 'bytes');
+    assert.equal(Number(whole.headers['content-length']), size);
+    assert.equal(whole.headers['x-content-type-options'], 'nosniff', 'the security headers ride along');
+    const first = await raw(srv, path, { headers: { Range: 'bytes=0-99' } });
+    assert.equal(first.status, 206);
+    assert.equal(first.headers['content-range'], `bytes 0-99/${size}`);
+    assert.equal(Number(first.headers['content-length']), 100);
+    const tail = await raw(srv, path, { headers: { Range: 'bytes=-10' } });
+    assert.equal(tail.status, 206);
+    assert.equal(tail.headers['content-range'], `bytes ${size - 10}-${size - 1}/${size}`);
+    const rest = await raw(srv, path, { headers: { Range: `bytes=${size - 5}-` } });
+    assert.equal(rest.status, 206);
+    assert.equal(Number(rest.headers['content-length']), 5);
+    const beyond = await raw(srv, path, { headers: { Range: 'bytes=10-99999999999' } });
+    assert.equal(beyond.headers['content-range'], `bytes 10-${size - 1}/${size}`, 'an end past the file stops at the file');
+    for (const bad of [`bytes=${size}-`, 'bytes=-0', 'bytes=9-3']) {
+      const r = await raw(srv, path, { headers: { Range: bad } });
+      assert.equal(r.status, 416, bad);
+      assert.equal(r.headers['content-range'], `bytes */${size}`, bad);
+    }
+    assert.equal((await raw(srv, path, { headers: { Range: 'bytes=0-1,5-6' } })).status, 200, 'several ranges: the whole file');
+    assert.equal((await raw(srv, path, { headers: { Range: 'items=0-1' } })).status, 200, 'another unit: the whole file');
+    const sound = await raw(srv, '/assets/breathe/rain.mp3', { headers: { Range: 'bytes=0-0' } });
+    assert.equal(sound.status, 206);
+    assert.equal(sound.headers['content-type'], 'audio/mpeg');
+    const page = await raw(srv, '/index.html', { headers: { Range: 'bytes=0-9' } });
+    assert.equal(page.status, 200, 'pages and code always go out whole');
+    assert.equal(page.headers['accept-ranges'], undefined);
+  });
+});
+
 test('a message to a doctor is queued in data/outbox, sealed so that only the flight surgeon\'s key opens it', async () => {
   await withServer(async (srv, dir) => {
     const text = 'Chest feels tight since this morning. Mood low.';

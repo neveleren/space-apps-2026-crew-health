@@ -41,7 +41,32 @@ const TYPES = {
   '.md': 'text/markdown; charset=utf-8',
   '.wasm': 'application/wasm', // the camera models' runtime (vendor/mediapipe)
   '.task': 'application/octet-stream', // the camera models themselves
+  '.mp4': 'video/mp4', // the Earth break's videos (assets/breathe)
+  '.mp3': 'audio/mpeg', // the Earth break's sounds
 };
+const isMedia = (type) => type.startsWith('video/') || type.startsWith('audio/');
+
+// One byte range of a video or sound (RFC 9110, section 14): browsers ask for parts of a video to start it, loop
+// it and jump in it, and some play video only from a server that answers such a request. Returns null to send the
+// whole file (no header, several ranges, or a form this server does not read), 'bad' when the range lies outside
+// the file, else { start, end } with end included.
+function byteRange(header, size) {
+  const m = /^bytes=(\d*)-(\d*)$/.exec(String(header || '').trim());
+  if (!m || (m[1] === '' && m[2] === '')) return null;
+  let start;
+  let end;
+  if (m[1] === '') {
+    const n = Number(m[2]);
+    if (n === 0) return 'bad';
+    start = Math.max(0, size - n);
+    end = size - 1;
+  } else {
+    start = Number(m[1]);
+    end = m[2] === '' ? size - 1 : Math.min(Number(m[2]), size - 1);
+  }
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start >= size || start > end) return 'bad';
+  return { start, end };
+}
 const TEXT = 'text/plain; charset=utf-8';
 const JSON_TYPE = 'application/json; charset=utf-8';
 
@@ -105,13 +130,29 @@ async function serveFile(req, res, path) {
   }
   const type = TYPES[extname(real).toLowerCase()] || 'application/octet-stream';
   const hashes = type.startsWith('text/html') ? inlineScriptHashes(body.toString('utf8')) : [];
-  res.writeHead(200, {
+  const headers = {
     ...securityHeaders(hashes),
     'Content-Type': type,
     'Content-Length': body.length,
     // Third-party files never change, so the browser may keep them; our own files are always fresh.
     'Cache-Control': relative(REAL_ROOT, real).split(sep)[0].toLowerCase() === 'vendor' ? 'public, max-age=86400' : 'no-store',
-  });
+  };
+  if (isMedia(type)) {
+    headers['Accept-Ranges'] = 'bytes';
+    const range = byteRange(req.headers.range, body.length);
+    if (range === 'bad') {
+      res.writeHead(416, { ...headers, 'Content-Range': `bytes */${body.length}`, 'Content-Length': 0 });
+      res.end();
+      return;
+    }
+    if (range) {
+      const part = body.subarray(range.start, range.end + 1);
+      res.writeHead(206, { ...headers, 'Content-Range': `bytes ${range.start}-${range.end}/${body.length}`, 'Content-Length': part.length });
+      res.end(req.method === 'HEAD' ? undefined : part);
+      return;
+    }
+  }
+  res.writeHead(200, headers);
   res.end(req.method === 'HEAD' ? undefined : body);
 }
 
