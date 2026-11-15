@@ -140,6 +140,9 @@ test('a short night or a sleep medicine asks for the reaction test until a run f
   assert.equal(readiness({ task, now: NOW, medicines: [dose('melatonin', -14)] }).askTest, true);
   assert.equal(readiness({ task, now: NOW, sleep: [{ time: at(-12), value: 7 }] }).askTest, false);
   assert.equal(readiness({ task, now: NOW, sleep: night, runs: [run(-11, 305)] }).askTest, false, 'a run after the night');
+  const demoOnly = readiness({ task, now: NOW, sleep: night, runs: [run(-11, 305, 'demo')] });
+  assert.equal(demoOnly.askTest, true, 'the 30-second demo is shown, but only a 3-minute run answers the request');
+  assert.match(readinessLines(demoOnly)[2].text, /the 30-second demo.*the 3-minute test now shows how you compare with yourself/);
   assert.equal(readiness({ task, now: NOW, medicines: [dose('zolpidem', -10.5)], runs: [run(-11, 305)] }).askTest, true, 'the run came before the dose');
   const worst = readiness({ task, now: NOW, sleep: night, medicines: [dose('zolpidem', -12)], runs: [...exampleEarlierRuns(Date.parse('2026-06-01T12:00:00Z')), run(-11, 420)] });
   assert.equal(worst.level, 1, 'attention at most');

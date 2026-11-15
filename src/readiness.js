@@ -137,8 +137,8 @@ export const MEDICINE_NOTES = Object.freeze({
 //     the start until now: 'none' or 'taken', each with how many hours before the start;
 //   reaction: the latest reaction test of that window against the person's own earlier runs (compareToOwn): 'none',
 //     'first', 'similar', 'faster' or 'slower'.
-// askTest: a short night or such a medicine, and no reaction test after it yet. level: the highest part; never more
-// than attention, and the card never stops the task.
+// askTest: a short night or such a medicine, and no 3-minute reaction test after it yet (the 30-second demo does not
+// count). level: the highest part; never more than attention, and the card never stops the task.
 export function readiness({ task, now, sleep = [], quality = [], medicines = [], runs = [], kit = KIT, rules = READINESS_RULES } = {}) {
   const start = ms(task.start);
   const t0 = ms(now);
@@ -169,8 +169,10 @@ export function readiness({ task, now, sleep = [], quality = [], medicines = [],
   const cmp = last ? compareToOwn(last, mine) : null;
   const reactionPart = { state: cmp ? cmp.state : 'none', level: cmp && cmp.attention ? 1 : 0, run: last, compare: cmp };
 
+  // Only a 3-minute run answers the request for the test: the 30-second demo is shown and compared, but it is a demo.
+  const lastFull = newest(mine.filter((r) => (r.mode || 'full') === 'full' && ms(r.time) >= from && ms(r.time) <= t0));
   const after = Math.max(short ? ms(night.time) : -Infinity, ...meds.map((m) => ms(m.taken)));
-  const askTest = (short || meds.length > 0) && !(last && ms(last.time) >= after);
+  const askTest = (short || meds.length > 0) && !(lastFull && ms(lastFull.time) >= after);
   return {
     task, start: iso(start), from: iso(from), hoursTo: Math.max(0, (start - t0) / HOUR),
     sleep: sleepPart, medicines: medPart, reaction: reactionPart, askTest,
@@ -220,7 +222,7 @@ export function readinessLines(r, rules = READINESS_RULES) {
     : { key: 'medicines', level: 1, title: m.list.some((x) => x.sleepMed) ? 'A sleep medicine before the task' : 'A medicine that can make you sleepy', text: `${m.list.map(medicineText).join(' ')} Worth telling your flight surgeon before the task (a draft rule).`, src: [S.kit2015, ...m.list.map((x) => (MEDICINE_NOTES[x.key] || {}).src).filter(Boolean)] };
   const c = r.reaction;
   const after = r.sleep.state === 'short' ? 'a short night' : r.medicines.list.some((x) => x.sleepMed) ? 'a sleep medicine' : 'a medicine that can make you sleepy';
-  const ask = r.askTest ? ` After ${after}, a run now shows how you compare with yourself.` : '';
+  const ask = r.askTest ? ` After ${after}, the 3-minute test now shows how you compare with yourself.` : '';
   const reactionLine = c.state === 'none'
     ? { key: 'reaction', level: 0, title: 'Reaction test', text: `No reaction test since ${gmtText(r.from)}, ${rules.windowHours} hours before the start.${ask} It compares you only with your own earlier runs; it is not a fitness-for-duty test.`, src: [S.jones2022] }
     : { key: 'reaction', level: c.level, title: c.state === 'slower' ? 'Reaction test: slower than before' : 'Reaction test', text: `Run of ${gmtText(c.run.time)}${c.run.mode === 'demo' ? ' (the 30-second demo)' : ''}: ${c.compare.text}${c.state === 'slower' ? ' Worth telling your flight surgeon before the task (a draft rule).' : ''}${ask}`, src: [S.jones2022] };
