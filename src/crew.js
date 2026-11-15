@@ -1605,7 +1605,7 @@ function ruleFacts(indicator, owner, now) {
     const link = co2Link();
     if (!ctx || !link) return [];
     const avg = ctx.average ? `The ${ctx.days}-day average is ${fmtVal(ctx.average.value)} mmHg, from ${ctx.average.count} ${ctx.average.count === 1 ? 'reading' : 'readings'}${ctx.average.notBelowLine ? `: not below ${ctx.line} mmHg.` : `: below ${ctx.line} mmHg.`}` : `No reading in the last ${ctx.days} days, so there is no ${ctx.days}-day average.`;
-    return [h('span', {}, `${avg} ${link.text} (`, srcLink(link.src), '). NASA\'s limit is a one-hour average of at most ', String(ctx.limit), ' mmHg; these are single readings, so they are compared with it only roughly.')];
+    return [h('span', {}, `${avg} ${link.text.replace(/\.$/, '')} (`, srcLink(link.src), '). NASA\'s limit is a one-hour average of at most ', String(ctx.limit), ' mmHg; these are single readings, so they are compared with it only roughly.')];
   }
   return [];
 }
@@ -1624,7 +1624,7 @@ function headacheCard(owner) {
   return h('section', { class: 'card', 'aria-labelledby': 'air-title', 'data-terms': 'headache co2 carbon dioxide' },
     h('h2', { id: 'air-title' }, 'Headaches and cabin CO2'),
     list.length ? h('ul', { class: 'links' }, ...list.map(({ entry, co2 }) => h('li', {}, h('b', {}, `${logText('symptoms', entry.value)}, GMT ${gmtDOY(entry.time)}. `), co2Words(co2, link).join(' ')))) : h('p', { class: 'muted' }, 'No headache logged yet. When you log one, the cabin CO2 before it shows here and on Today.'),
-    h('p', { class: 'note' }, `NASA's limit: a one-hour average of at most ${cellBy.co2.norm.max} mmHg (`, srcLink(lim.src), `). ${link.text} (`, srcLink(link.src), '; ', srcLink(link.src2), "). The cabin CO2 is the ship's own reading before each headache; it does not show what caused it."));
+    h('p', { class: 'note' }, `NASA's limit: a one-hour average of at most ${cellBy.co2.norm.max} mmHg (`, srcLink(lim.src), `). ${link.text.replace(/\.$/, '')} (`, srcLink(link.src), '; ', srcLink(link.src2), "). The cabin CO2 is the ship's own reading before each headache; it does not show what caused it."));
 }
 
 function renderDetail() {

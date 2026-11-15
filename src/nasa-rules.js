@@ -91,7 +91,7 @@ export function co2Words(ctx, link = co2Link()) {
   const out = [];
   if (!ctx.latest) out.push(`No cabin CO2 reading before it.`);
   else out.push(`Latest cabin CO2 before it: ${one(ctx.latest.value)} mmHg at ${gmtText(ctx.latest.time)}, ${agoText(ctx.latest.hoursBefore)} before${ctx.latest.overLimit ? `, above NASA's limit of ${ctx.limit} mmHg (a limit on the one-hour average; this is a single reading)` : ''}.`);
-  if (ctx.average) out.push(`${ctx.days}-day average: ${one(ctx.average.value)} mmHg from ${ctx.average.count} ${ctx.average.count === 1 ? 'reading' : 'readings'}${ctx.line === null ? '' : ctx.average.notBelowLine ? `, not below ${ctx.line} mmHg (a headache risk below 1% needs a ${ctx.days}-day average below ${ctx.line} mmHg)` : `, below ${ctx.line} mmHg`}.`);
+  if (ctx.average) out.push(`${ctx.days}-day average: ${one(ctx.average.value)} mmHg from ${ctx.average.count} ${ctx.average.count === 1 ? 'reading' : 'readings'}${ctx.line === null ? '' : ctx.average.notBelowLine ? `, not below ${ctx.line} mmHg` : `, below ${ctx.line} mmHg`}.`);
   else if (ctx.latest) out.push(`No cabin CO2 reading in the ${ctx.days} days before it, so there is no ${ctx.days}-day average.`);
   return out;
 }
