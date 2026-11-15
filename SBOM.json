@@ -1,10 +1,10 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:39bcfce5-f882-4f0c-a83d-2a04dcb081b9",
+  "serialNumber": "urn:uuid:325721fb-cc1d-4b6d-8b11-50bdfd66a3b5",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-11-15T07:53:22.477Z",
+    "timestamp": "2026-11-15T17:30:10.882Z",
     "authors": [
       {
         "name": "Claude (Anthropic), an AI system, for team Just For Fun"
@@ -380,6 +380,132 @@
       ]
     },
     {
+      "type": "library",
+      "bom-ref": "npm:@mlc-ai/web-llm@0.2.87",
+      "supplier": {
+        "name": "MLC (Machine Learning Compilation) project",
+        "url": [
+          "https://github.com/mlc-ai/web-llm"
+        ]
+      },
+      "group": "@mlc-ai",
+      "name": "web-llm",
+      "version": "0.2.87",
+      "description": "Engine that runs the AI model in the browser over WebGPU (src/ai.js), copied unchanged from the npm package.",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40mlc-ai/web-llm@0.2.87",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "df8375f7df3c31d684b7387c32afc83ab7ca0a4d874433ab5e01242d3dbcaf76a2c8053a64949407ebf7e6def3c94fb440468597dd58e14e52b8f37f730a0737"
+        },
+        {
+          "alg": "SHA-1",
+          "content": "6bc9c1b004c518742a9b1916f0e6dbd18bf35e19"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@mlc-ai/web-llm/-/web-llm-0.2.87.tgz"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/mlc-ai/web-llm"
+        }
+      ],
+      "components": [
+        {
+          "type": "file",
+          "bom-ref": "file:vendor/web-llm/web-llm.js",
+          "name": "vendor/web-llm/web-llm.js",
+          "description": "lib/index.js of the package",
+          "hashes": [
+            {
+              "alg": "SHA-256",
+              "content": "3bff4c55cd2f0200711517341babcebe7a91a8ef85b983420439fcf26835a674"
+            }
+          ],
+          "evidence": {
+            "occurrences": [
+              {
+                "location": "vendor/web-llm/web-llm.js"
+              }
+            ]
+          }
+        },
+        {
+          "type": "file",
+          "bom-ref": "file:vendor/web-llm/LICENSE",
+          "name": "vendor/web-llm/LICENSE",
+          "description": "licence text",
+          "hashes": [
+            {
+              "alg": "SHA-256",
+              "content": "87935f332472db09253871326ef23d5d6a45f4fd2e6c96772f72052866dfab0d"
+            }
+          ],
+          "evidence": {
+            "occurrences": [
+              {
+                "location": "vendor/web-llm/LICENSE"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "model-lib:Qwen2-1.5B-Instruct-q4f16_1_cs1k-webgpu",
+      "supplier": {
+        "name": "MLC (Machine Learning Compilation) project",
+        "url": [
+          "https://github.com/mlc-ai/binary-mlc-llm-libs"
+        ]
+      },
+      "name": "Qwen2-1.5B-Instruct-q4f16_1_cs1k-webgpu",
+      "version": "v0_2_87",
+      "description": "The AI model's compiled WebGPU program (WebAssembly) for WebLLM 0.2.87. The model weights are not in this folder: an on-board install puts them in assets/models/ (tools/fetch-model.mjs).",
+      "licenses": [
+        {
+          "license": {
+            "name": "No licence file in the repository; built from Apache-2.0 sources (MLC LLM, Apache TVM). TO CONFIRM"
+          }
+        }
+      ],
+      "purl": "pkg:generic/binary-mlc-llm-libs/Qwen2-1.5B-Instruct-q4f16_1_cs1k-webgpu@v0_2_87?download_url=https%3A%2F%2Fraw.githubusercontent.com%2Fmlc-ai%2Fbinary-mlc-llm-libs%2Fmain%2Fweb-llm-models%2Fv0_2_87%2Fbase%2FQwen2-1.5B-Instruct-q4f16_1_cs1k-webgpu.wasm",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "155ef7359c859f7d646f4c5adc548d779475da3e3196701c7a9d4b82827559a8"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs/main/web-llm-models/v0_2_87/base/Qwen2-1.5B-Instruct-q4f16_1_cs1k-webgpu.wasm"
+        },
+        {
+          "type": "vcs",
+          "url": "https://github.com/mlc-ai/binary-mlc-llm-libs"
+        }
+      ],
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "vendor/web-llm/libs/Qwen2-1.5B-Instruct-q4f16_1_cs1k-webgpu.wasm"
+          }
+        ]
+      }
+    },
+    {
       "type": "file",
       "bom-ref": "font:atkinson-hyperlegible-next@2.001",
       "supplier": {
@@ -536,6 +662,8 @@
         "model:pose_landmarker_lite",
         "model:face_landmarker",
         "npm:lucide-static@1.66.0",
+        "npm:@mlc-ai/web-llm@0.2.87",
+        "model-lib:Qwen2-1.5B-Instruct-q4f16_1_cs1k-webgpu",
         "font:atkinson-hyperlegible-next@2.001",
         "font:atkinson-hyperlegible-mono@2.001"
       ]
@@ -554,6 +682,14 @@
     },
     {
       "ref": "npm:lucide-static@1.66.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:@mlc-ai/web-llm@0.2.87",
+      "dependsOn": []
+    },
+    {
+      "ref": "model-lib:Qwen2-1.5B-Instruct-q4f16_1_cs1k-webgpu",
       "dependsOn": []
     },
     {
