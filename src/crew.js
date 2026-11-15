@@ -264,6 +264,7 @@ const limitWords = (red) => `${({ atOrBelow: 'at or below', atOrAbove: 'at or ab
 
 // What one item of the assessment says, in plain words.
 function itemText(it, owner) {
+  if (it.kind === 'tell') return { title: it.title, text: it.text, time: it.time }; // the levels word these items themselves (state-levels.js)
   if (it.kind === 'camera') {
     const last = machine.history(owner.id, 'camera').filter((x) => x.status === STATUS.OUT).slice(-1)[0];
     if (last && last.source === 'help-key') return { title: 'Help requested with the Help key', text: `You held the Help key. The automation called the doctor ${whereDoctor()}.`, time: it.time };
@@ -297,6 +298,7 @@ function procedureFor(it) {
     case 'forecast': return ['Take a new reading.', 'If the line is confirmed, tell the doctor.', 'The forecast here is a straight line through the readings, not a medical model.'];
     case 'expected': return ['This is a common change in flight; the source is named in the explanation.', 'If you feel unwell, tell the doctor.'];
     case 'mood': return ['The planned review will look at the check-ins.', 'You can start an anonymous session with the AI or write to the doctor on Earth.'];
+    case 'tell': return it.steps;
     default: return ['Repeat the reading.', 'If it is outside the normal range again, press "Analyse with AI" or "Message the doctor".'];
   }
 }
@@ -549,6 +551,7 @@ function renderHome() {
   const items = all.length === 4 ? all : all.slice(0, 3);
   const short = (it) => {
     if (it.kind === 'camera') return 'The automation called the doctor';
+    if (it.kind === 'tell') return it.short;
     if (it.kind === 'mood') return `${it.days} low days in the last two weeks`;
     if (it.kind === 'forecast') return `Forecast: in the normal range now, may leave it around ${fmtDate(it.m.forecast.crossing.date)}`;
     if (it.kind === 'red') return `${valueText(it.cell.indicator, it.m.last.value)} ${it.cell.unit || ''}: ${limitWords(it.red)}, the ${it.level >= LEVEL.URGENT ? 'urgent' : 'needs-action'} limit`.replace(/ +:/, ':');
