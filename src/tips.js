@@ -395,6 +395,108 @@ export const PROVENANCE = {
     "how": "Self-report each morning on the 1 to 7 scale that NASA's medical standard suggests (OCHMO-STD-100.1A, requirement 6039), reported weekly at the private medical conference. A wrist actigraph (motion and light) can add an objective measure; the NASA standard names actimetry as another method.",
     "path": "Manual entry on the morning check-in, the same 1 to 7 scale as NASA's standard."
   },
+  "exercise": {
+    "what": "Minutes a day on the station's exercise devices; long-flight crews exercise about two hours a day to protect heart, muscles and bones.",
+    "iss": [
+      {
+        "name": "ARED weight machine, T2 treadmill and CEVIS cycle",
+        "maker": "NASA",
+        "url": "https://www.nasa.gov/missions/station/iss-research/astronaut-exercise/"
+      }
+    ],
+    "could": [],
+    "how": "The devices record loads, speeds and minutes of each session; NASA follows each crew member's exercise prescription and reports to the flight surgeon every other week.",
+    "path": "Simulated now: a button on the technical view. Planned: the station's exercise logs, which need NASA."
+  },
+  "visionCheck": {
+    "what": "Your own answer to a quick vision check with an Amsler grid; a change in sight can be a sign of SANS, the eye changes of long flights.",
+    "iss": [
+      {
+        "name": "Eye chart, Amsler grid and questionnaire at the eye exams on flight days 30 and 90",
+        "maker": "NASA",
+        "url": "https://ntrs.nasa.gov/api/citations/20180004916/downloads/20180004916.pdf"
+      }
+    ],
+    "could": [
+      {
+        "name": "Amsler grid self-test",
+        "maker": "MedlinePlus (NIH)",
+        "url": "https://medlineplus.gov/ency/article/003446.htm"
+      }
+    ],
+    "how": "Cover one eye, look at the dot in the centre of the grid from about 35 cm, and check that all lines look straight and unbroken; then the other eye.",
+    "path": "Working now: All measures, Eyes, Answer now; one tap saves your answer."
+  },
+  "octChange": {
+    "what": "How much thicker the retina around the optic nerve is than in your own scan before flight; 20 micrometres or more is NASA's earliest sign of SANS, 55 or more counts as clinically concerning.",
+    "iss": [
+      {
+        "name": "OCT eye scanner of the US segment",
+        "maker": "NASA",
+        "url": "https://ntrs.nasa.gov/api/citations/20180004916/downloads/20180004916.pdf"
+      }
+    ],
+    "could": [],
+    "how": "An OCT scanner measures the layers of the retina with light; the change is the difference from the person's own OCT before flight.",
+    "path": "Simulated now: a button on the technical view. Planned: the OCT results from NASA's eye specialists on the ground."
+  },
+  "octScan": {
+    "what": "The OCT image of the eye itself; a picture cannot be judged by a number, so it goes to an eye specialist.",
+    "iss": [
+      {
+        "name": "OCT eye scanner of the US segment, reported working in 2022",
+        "maker": "NASA",
+        "url": "https://ntrs.nasa.gov/api/citations/20220014606/downloads/Brunstetter%20-%20IWS%202023%20SANS%20Clinical%20Update%20-%20Abstract%20-%2023Sep22.pdf"
+      }
+    ],
+    "could": [],
+    "how": "The scanner takes cross-section images of the retina and the optic nerve head on flight days 30 and 90 and 30 days before return.",
+    "path": "Simulated now: a button on the technical view marks that a scan came in. Planned: the images themselves (DICOM), with NASA."
+  },
+  "symptoms": {
+    "what": "A symptom you log yourself, with its strength from 0 to 10; most medical problems in flight are symptoms such as a stuffy nose, back pain or headache, not numbers.",
+    "iss": [
+      {
+        "name": "The weekly private medical conference with the flight surgeon",
+        "maker": "NASA",
+        "url": "https://www.nasa.gov/podcasts/houston-we-have-a-podcast/mission-control-crew-health-consoles"
+      }
+    ],
+    "could": [],
+    "how": "You pick what you feel and how strong it is, in about ten seconds, and add a few words if you like.",
+    "path": "Working now: Today, Log a symptom. Private: sent to no one unless you choose."
+  },
+  "medicines": {
+    "what": "A medicine you took, from the ISS medical kit list, with the amount and the time.",
+    "iss": [
+      {
+        "name": "ISS medical kit list (2015)",
+        "maker": "NASA",
+        "url": "https://www.governmentattic.org/19docs/NASA-ISSmedicalEmergManual_2016.pdf"
+      },
+      {
+        "name": "EveryWear app, used daily by ISS crews, logs medicine intake",
+        "maker": "MEDES and CNES, with ESA",
+        "url": "https://blogs.esa.int/orion/2026/04/06/everywear-from-earth-orbit-to-the-moon/"
+      }
+    ],
+    "could": [],
+    "how": "Two taps: the medicine, then the amount; choose when if it was earlier. NASA relies on crew self-reports to keep track of the kit.",
+    "path": "Working now: Today, I took a medicine. Private: sent to no one unless you choose."
+  },
+  "weighing": {
+    "what": "Optional topics you pick at the morning check-in, such as missing home or workload; private, used only to choose which help to offer.",
+    "iss": [
+      {
+        "name": "The topics NASA psychologists cover in private talks",
+        "maker": "NASA (Picano and Holland, 2024)",
+        "url": "https://ntrs.nasa.gov/citations/20240000994"
+      }
+    ],
+    "could": [],
+    "how": "Tap the topics that weigh on you, or Nothing in particular; only the last check-in of each day counts.",
+    "path": "Working now: Today, How are you today? Private."
+  },
   "reaction": {
     "what": "How fast you react, as the median of a 3-minute test; compared only with your own earlier runs, because fatigue and too little sleep slow it down.",
     "iss": [
