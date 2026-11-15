@@ -49,6 +49,7 @@ test('registry: every connection has an id, a status, one sentence of what and h
     assert.ok(['working', 'simulated', 'planned'].includes(c.status), `${c.id} status`);
     for (const k of ['name', 'what', 'how']) assert.ok(typeof c[k] === 'string' && c[k].length > 5 && !/\n/.test(c[k]), `${c.id}.${k}`);
     assert.ok(/[.!?]$/.test(c.what) && /[.!?]$/.test(c.how), `${c.id}: what and how end as sentences`);
+    if (c.caveat !== undefined) assert.ok(typeof c.caveat === 'string' && /[.!?]$/.test(c.caveat) && !/\n/.test(c.caveat), `${c.id}.caveat is one sentence`);
     assert.ok(Array.isArray(c.sources) && c.sources.length >= 1, `${c.id} has sources`);
     for (const s of c.sources) assert.ok(s.title && /^https?:\/\//.test(s.url), `${c.id} source ${s.title}`);
     if (c.status === 'planned') assert.match(c.needs, /^needs /, `${c.id} says who must agree`);
@@ -625,6 +626,79 @@ test('iCalendar: durations, plan drafts, wrong input refused', () => {
   assert.match(text, /RRULE:FREQ=MONTHLY;COUNT=6/);
   assert.throws(() => ical.toICalendar([{ start: NOW }]), /no title/);
   assert.equal(ical.icalFileName('crew-1', NOW), 'plan-crew-1-2026-11-15.ics');
+});
+
+// ---------- review fixes (independent review, 15 Nov 2026) ----------
+test('Working rows that were never tried with a real device or file say so on the row itself', () => {
+  for (const id of ['ble-heart-rate', 'ble-health', 'csv-import']) assert.match(CONNECTIONS.find((c) => c.id === id).caveat, /^(No test with a real|Not yet tried with (a )?real)/, id);
+  const host = new FakeNode('div');
+  renderConnections(host, { state: {} });
+  const rowText = (id) => host.all((n) => n.attributes['data-conn'] === id)[0].textContent;
+  assert.match(rowText('ble-health'), /Not yet tried with a real device/);
+  assert.match(rowText('ble-heart-rate'), /No test with a real strap/);
+  assert.match(rowText('csv-import'), /Svantek layout is a guess/);
+  assert.doesNotMatch(rowText('isslive'), /Not yet tried/, 'ISSLive was read for real tonight');
+  assert.match(connectionTip('ble-health').textContent, /Not yet tried with a real device/);
+  assert.match(host.children[0].textContent, /say what has not been tried yet/);
+});
+
+test('sourceInfo: the person\'s own answers and the camera are never called simulated', () => {
+  for (const id of ['mood-report', 'attitude-report', 'sleep-rating', 'cycle-log', 'cognition-test', 'reaction-test']) {
+    assert.equal(sourceInfo(id).origin, 'self', id);
+    assert.equal(sourceInfo(id).thisValue, 'Your own answer');
+  }
+  assert.equal(sourceInfo('camera').origin, 'device');
+  assert.doesNotMatch(sourceInfo('camera').text, /Bluetooth/);
+  assert.equal(sourceInfo('pulse-meter').origin, 'simulated', 'a technical-view button stays simulated');
+  // In FHIR an own answer is like a typed value: the person is the performer, no Device is invented.
+  const m = createMachine({ cells: CELLS, crew: [...CREW, SHIP], now: () => NOW });
+  m.receive({ person: 'crew-1', indicator: 'pulse', value: 70, source: 'reaction-test', time: '2026-11-14T06:00:00Z' });
+  const { bundle } = fhir.fhirBundle({ machine: m, person: CREW[0], now: NOW });
+  assert.deepEqual(fhir.checkBundle(bundle), []);
+  assert.equal(res(bundle, 'Device').length, 0);
+  const o = res(bundle, 'Observation')[0];
+  assert.equal(o.performer[0].reference, o.subject.reference);
+  assert.equal(res(bundle, 'Provenance')[0].agent[0].type.coding[0].code, 'enterer');
+});
+
+test('onlyNew: a saved event whose time is not a time is skipped over, not thrown on', () => {
+  const r = [{ source: 'isslive', person: 'ship', indicator: 'cabinTemp', value: 23.3, time: '2026-11-15T00:55:55.597Z' }];
+  const broken = [{ v: 1, kind: 'reading', time: 'not a time', person: 'ship', reading: { source: 'isslive', indicator: 'cabinTemp', value: 23 } }];
+  assert.equal(onlyNew(r, broken).length, 1);
+  assert.equal(onlyNew(r, [...broken, ...toEvents(r)]).length, 0);
+});
+
+test('BLE numbers: a malformed FLOAT with an exponent below -100 gives a value, not an exception', () => {
+  assert.doesNotThrow(() => ble.decodeFloat(0x80000001));
+  assert.equal(ble.decodeFloat(0x80000001).special, null);
+  assert.equal(ble.toReadings('thermometer', ble.parseTemperature(hex('00 01 00 00 80'))).readings.length, 0, 'outside the plausibility limits');
+});
+
+test('CSV import: a decimal comma survives the column picker, as documented (mapReadings(result.rows, choice))', () => {
+  const r = csv.importCsv('Zeit;Puls;Notiz\n2026-11-14 06:00;64,5;morgens\n2026-11-14 18:00;71,0;abends\n');
+  assert.equal(r.needsColumns, true);
+  assert.equal(r.decimalComma, true);
+  const m = csv.mapReadings(r.rows, { timeColumn: 'Zeit', valueColumn: 'Puls', indicator: 'pulse', unit: null });
+  assert.deepEqual(m.readings.map((x) => x.value), [64.5, 71]);
+  assert.equal(m.rejected.length, 0);
+  assert.deepEqual(Object.keys(r.rows[0]), ['_line', 'Zeit', 'Puls', 'Notiz'], 'the setting is not a column');
+});
+
+test('CSV import: day and month are read the same way for the whole file', () => {
+  assert.equal(csv.guessDayFirst(['10/11/2026', '13/11/2026']), true);
+  assert.equal(csv.guessDayFirst(['11/10/2026', '11/13/2026 08:00']), false);
+  assert.equal(csv.guessDayFirst(['03.11.2026', '09.11.2026']), true, 'dates with dots are day first');
+  assert.equal(csv.guessDayFirst(['2026-11-14', '11/10/2026']), null);
+  const uk = csv.importCsv('date,time,hr\n10/11/2026,06:00,64\n13/11/2026,06:00,66\n');
+  const m = csv.mapReadings(uk.rows, { timeColumn: 'time', dateColumn: 'date', valueColumn: 'hr', indicator: 'pulse' });
+  assert.deepEqual(m.readings.map((x) => x.time), ['2026-11-10T06:00:00.000Z', '2026-11-13T06:00:00.000Z']);
+  const one = csv.importCsv('when,hr\n10/11/2026 06:00,64\n13/11/2026 06:00,66\n');
+  assert.deepEqual(csv.mapReadings(one.rows, { timeColumn: 'when', valueColumn: 'hr', indicator: 'pulse' }).readings.map((x) => x.time.slice(0, 10)), ['2026-11-10', '2026-11-13']);
+  // The Actiware fixtures moved two days earlier and written day first (11/11, 12/11, 13/11): row by row, "12/11"
+  // would be read as 11 December and "13/11" as 13 November.
+  const dayFirst = (text) => text.replace(/"11\/(\d{2})\/2026"/g, (_, d) => `"${String(Number(d) - 2).padStart(2, '0')}/11/2026"`);
+  assert.deepEqual(csv.importCsv(dayFirst(fixture('actiware-stats.csv'))).readings.map((x) => x.time), ['2026-11-12T06:20:00.000Z', '2026-11-13T05:40:00.000Z']);
+  assert.deepEqual(csv.importCsv(dayFirst(fixture('actiware-epochs.csv'))).readings.map((x) => [x.value, x.time]), [[7.33, '2026-11-12T06:00:00.000Z'], [5.67, '2026-11-13T05:00:00.000Z']]);
 });
 
 // ---------- live, on request ----------

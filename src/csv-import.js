@@ -139,6 +139,9 @@ export function parseCsv(text, { delimiter = null } = {}) {
   const decimalComma = d === ';' && table.some((r) => r.some((c) => /^[-+]?\d+,\d+$/.test(c)));
   const headerIndex = findHeader(table);
   const { header, rows } = headerIndex >= 0 ? rowsUnder(table, headerIndex) : { header: [], rows: [] };
+  // The rows carry the decimal comma setting, so mapReadings(result.rows, choice) after the column picker reads
+  // "64,5" as 64.5 without the screen passing it on.
+  Object.defineProperty(rows, 'decimalComma', { value: decimalComma, enumerable: false });
   return { delimiter: d, decimalComma, table, headerIndex, columns: header, rows };
 }
 
@@ -188,6 +191,24 @@ export function parseTime(value, { date = null, unit = null, dayFirst = null } =
   return NaN;
 }
 
+// The day and month order of a whole column, so one file is never read two ways (10/11 as October and 13/11 as
+// November): a first number above 12 anywhere means day first, a second number above 12 means month first, and
+// dates written with dots (14.11.2026) are day first. null when the column does not say; parseTime then reads
+// month first.
+export function guessDayFirst(values) {
+  let monthFirst = false;
+  let dots = false;
+  for (const v of values || []) {
+    const m = String(v ?? '').trim().match(/^(\d{1,2})([/.-])(\d{1,2})\2\d{2,4}(?!\d)/);
+    if (!m) continue;
+    if (+m[1] > 12) return true;
+    if (+m[3] > 12) monthFirst = true;
+    if (m[2] === '.') dots = true;
+  }
+  if (monthFirst) return false;
+  return dots ? true : null;
+}
+
 // ---------- units ----------
 // Into the unit of the program's cell. Pressure factors from NIST SP 811 Appendix B.8: 1 torr = 133.3224 Pa,
 // 1 mmHg = 133.3224 Pa, 1 psi = 6.894757 kPa
@@ -226,18 +247,21 @@ const round = (v, d = 2) => Number(Number(v).toFixed(d));
 // dateColumn (a separate date cell), timeUnit ('s/256', 's/1000', 's'), dayFirst, every (milliseconds: keep one
 // reading per period, the mean of that period, as the Bluetooth heart rate keeps one a minute), aggregate
 // ('energy-mean-day' for sound levels: the energy average of each GMT day), source (the source id saved with each
-// reading), person. Returns { readings, rejected: [{ line, value, reason }], notes }.
+// reading), person, decimalComma (by default the setting parseCsv gave the rows). Without dayFirst, the order of
+// day and month is decided once for the whole column (guessDayFirst). Returns { readings, rejected: [{ line, value,
+// reason }], notes }.
 export function mapReadings(rows, opts = {}) {
-  const { timeColumn, valueColumn, indicator, unit = null, dateColumn = null, timeUnit = null, dayFirst = null, every = 0, aggregate = null, source = 'csv-import', person = null, decimalComma = false } = opts;
+  const { timeColumn, valueColumn, indicator, unit = null, dateColumn = null, timeUnit = null, dayFirst = null, every = 0, aggregate = null, source = 'csv-import', person = null, decimalComma = Boolean(rows && rows.decimalComma) } = opts;
   const notes = [];
   const rejected = [];
   if (!indicator || !unitOf[indicator]) return { readings: [], rejected, notes: [`"${indicator}" is not a number measure of the program.`] };
   if (!timeColumn || !valueColumn) return { readings: [], rejected, notes: ['Choose a time column and a value column.'] };
+  const order = dayFirst !== null || timeUnit ? dayFirst : guessDayFirst(rows.map((r) => (dateColumn ? r[dateColumn] : r[timeColumn])));
   const points = [];
   for (const row of rows) {
     const line = row._line;
     const rawValue = row[valueColumn];
-    const t = parseTime(row[timeColumn], { date: dateColumn ? row[dateColumn] : null, unit: timeUnit, dayFirst });
+    const t = parseTime(row[timeColumn], { date: dateColumn ? row[dateColumn] : null, unit: timeUnit, dayFirst: order });
     if (!Number.isFinite(t)) { rejected.push({ line, value: row[timeColumn], reason: 'the time cannot be read' }); continue; }
     const n = toNumber(rawValue, decimalComma);
     if (!Number.isFinite(n)) { if (String(rawValue ?? '').trim() !== '') rejected.push({ line, value: rawValue, reason: 'not a number' }); continue; }
@@ -356,7 +380,8 @@ const ACTIWARE_EPOCHS = {
   },
   extract({ parsed, headerIndex }) {
     const { rows } = rowsUnder(parsed.table, headerIndex);
-    const points = rows.map((r) => ({ line: r._line, t: parseTime(r.Time, { date: r.Date }), sleep: String(r['Sleep/Wake']).trim() === '0', rest: /^rest/i.test(String(r['Interval Status']).trim()) })).filter((p) => Number.isFinite(p.t));
+    const order = guessDayFirst(rows.map((r) => r.Date));
+    const points = rows.map((r) => ({ line: r._line, t: parseTime(r.Time, { date: r.Date, dayFirst: order }), sleep: String(r['Sleep/Wake']).trim() === '0', rest: /^rest/i.test(String(r['Interval Status']).trim()) })).filter((p) => Number.isFinite(p.t));
     const gaps = points.slice(1).map((p, i) => p.t - points[i].t).filter((g) => g > 0).sort((a, b) => a - b);
     const epoch = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 0;
     const nights = [];

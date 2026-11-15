@@ -6,7 +6,7 @@ Night of 14 to 15 November 2026. Written by Claude (Anthropic), an AI system, fo
 
 Three words, one per row, shown as a chip in Settings:
 
-- **Working**: it really works now.
+- **Working**: it runs in the program now. A working row that has not been tried with a real device or a real file says so on the row itself, not only behind its "?": both Bluetooth rows and the CSV import.
 - **Simulated**: the program imitates it.
 - **Planned**: designed, needs the partner named in the row.
 
@@ -112,6 +112,16 @@ A file built from the example flight (187 readings of the last 30 days, 6 device
 
 No Bluetooth thermometer, cuff, oximeter or heart rate strap was connected tonight. The CSV formats were tested only with files written from the documents (next section).
 
+### Checked again by an independent review (15 Nov 2026, 01:26 to 01:36 GMT)
+
+- **ISSLive**, with curl and the same TLCP requests: `CONOK`, `SUBOK,1,8,4`; USLAB000058 757.94677734375 torr at TimeStamp 7657.3974 (01:23:50), USLAB000059 23.449 °C (01:26:25); the CO2 and O2 items unchanged since 2 Nov 15:01 and 14:51; AIRLOCK000049 756.36 torr; TIME_000001 at 7657.4453, that is 01:26:43, against a wall clock of 01:26:47, with the text `318/01:26:43`. `Origin: http://127.0.0.1:8080` was echoed, `Origin: null` got `*`; without `LS_cid`: `CONERR,67,LS_cid parameter missing`. The two live tests (`JFF_LIVE=1`) passed at 01:26.
+- **NOAA**: HTTP 200 with `Access-Control-Allow-Origin: *`; 2,288 rows, GOES-18 only; newest at least 10 MeV 0.2244 pfu at 01:15 (S0); 71 alerts, newest `ALTTP2` at 22:49:43 UTC on 14 Nov; no proton alert; NOAA's own S level 0 at 01:25.
+- **OSDR**: 9 and 11 files; the metabolic panel and blood count files not restricted; CORS names only `osdr.nasa.gov`.
+- **LOINC**: all 13 codes found in NLM's table with the names the file uses (9108-2 is a volume rate, so `mL/(24.h)` fits).
+- **FHIR**: files for each of the four example crew members (181 observations each) and one with every kind of source passed the R4 JSON schema with ajv 8.17.1.
+- **Bluetooth**: the field layouts, flags and special values were compared with the GATT Specification Supplement of 2026-09-09 (sections 3.34, 3.80, 3.126, 3.239, 3.242, Table 2.1) and PLXS 1.0.1 (Tables 3.3, 3.4, 3.5, 3.7); the four service and five characteristic names are in the Web Bluetooth registry and none is on its blocklist.
+- **No internet**: with a name that does not resolve and an address that never answers, both Earth demos returned `{ ok: false }` (in 0.1 s, or after the 3 s timeout given), never an exception.
+
 ## CSV files: documented or guessed
 
 | Export | Recognised by | Becomes | What is documented | What is guessed |
@@ -123,7 +133,7 @@ No Bluetooth thermometer, cuff, oximeter or heart rate strap was connected tonig
 | Svantek sound dosimeter | a column named LAeq and a date or time column | noise for the ship, one per GMT day (energy average) | only that SvanPC++ exports CSV | the whole layout |
 | Any other CSV | nothing | the person picks the time column, value column, measure and unit | | |
 
-Every imported value passes the same plausibility limits as typing it in by hand; values outside them are listed, not saved. Times without a zone are read as GMT. Cabin measures (noise) are saved for the ship, as the crew screen shows them.
+Every imported value passes the same plausibility limits as typing it in by hand; values outside them are listed, not saved. Times without a zone are read as GMT. The order of day and month is decided once for the whole column (`guessDayFirst`): a first number above 12 means day first, a second number above 12 means month first, dates with dots are day first, otherwise month first. A semicolon file with decimal commas keeps that setting on its `rows`, so the column picker path reads 64,5 as 64.5. Cabin measures (noise) are saved for the ship, as the crew screen shows them.
 
 ## Using the modules on the crew screen
 
@@ -138,7 +148,7 @@ Every connector gives readings in one shape, `{ source, indicator, value, time, 
 | CSV | `importCsv(text, { person })` gives `{ format, readings, rejected, notes }`, or `needsColumns` with `columns` and `rows`; then `columnPicker(columns, { onPick })` and `mapReadings(rows, { timeColumn, valueColumn, indicator, unit })` | `pulse`, `resp`, `spo2`, `sleep` for the person, `noise` for the ship; `csv-hexoskin`, `csv-astroskin`, `csv-actiware`, `csv-svantek` or `csv-import` |
 | FHIR | `fhirBundle({ machine, person, days: 30, example, now })` gives `{ bundle, count, skipped, period }`; `checkBundle(bundle)` lists problems; file type `FHIR_TYPE`, name `fhirFileName(id)` | |
 | Calendar | `toICalendar(planDrafts({ from, until }))`; file type `ICAL_TYPE`, name `icalFileName(id)` | |
-| "?" of a value | `sourceInfo(source, { example })` gives `{ origin, label, text, thisValue }` | |
+| "?" of a value | `sourceInfo(source, { example })` gives `{ origin, label, text, thisValue }`; the person's own answers (`mood-report`, `sleep-rating`, the reaction test and any source marked `self: true`) give origin `self` ("Your own answer"), the camera gives `device` | |
 
 ## Decisions left to the team
 
