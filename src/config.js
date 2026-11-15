@@ -62,6 +62,25 @@ const L = {
 
 const none = null;
 
+// Sources of the cells added after the two NASA panel reviews of 15 Nov 2026 (symptoms, medicines, exercise,
+// eyes). Each was opened and checked by Claude on 2026-11-15; what each one supports is said where it is used.
+const L2 = {
+  lsah2017: { name: 'NASA HRP evidence report, 2017', url: 'https://ntrs.nasa.gov/api/citations/20170004604/downloads/20170004604.pdf' },
+  sas2025: { name: 'NASA OCHMO-MTB-004 Rev A, 2025', url: 'https://www.nasa.gov/wp-content/uploads/2025/09/ochmo-mtb-004-space-adaptation-sickness-sas.pdf' },
+  law2014: { name: 'Law et al., 2014', url: 'https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:24806559%20AND%20SRC:MED&resultType=core&format=json' },
+  pmc2025: { name: 'NASA podcast 377, 2025', url: 'https://www.nasa.gov/podcasts/houston-we-have-a-podcast/mission-control-crew-health-consoles' },
+  doseTracker: { name: 'Wotring and Smith, 2019', url: 'https://www.frontiersin.org/10.3389/conf.fphys.2018.26.00047/event_abstract' },
+  wotring2015: { name: 'Wotring, 2015', url: 'https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:26187345%20AND%20SRC:MED&resultType=core&format=json' },
+  kit2015: { name: 'NASA ISS medical kit list, 9 Apr 2015', url: 'https://www.governmentattic.org/19docs/NASA-ISSmedicalEmergManual_2016.pdf' },
+  inventory2024: { name: 'Gilkey et al., NASA, 2024', url: 'https://ntrs.nasa.gov/api/citations/20240004905/downloads/ISSRDC%20Abstract%20submission%20submit.pdf' },
+  everyWear: { name: 'ESA, 2026', url: 'https://blogs.esa.int/orion/2026/04/06/everywear-from-earth-orbit-to-the-moon/' },
+  exercise2023: { name: 'NASA HRP evidence report, 2023', url: 'https://ntrs.nasa.gov/api/citations/20220019338/downloads/Evidence%20report%20aerobic%20and%20muscle_FINAL%209-21-22%20Pubpress%20accepted_v2.pdf' },
+  exercise2024: { name: 'NASA, 2024', url: 'https://www.nasa.gov/missions/station/iss-research/astronaut-exercise/' },
+  cdcActivity: { name: 'CDC', url: 'https://www.cdc.gov/physical-activity-basics/guidelines/adults.html' },
+  sans2023: { name: 'Brunstetter et al., NASA, 2023', url: 'https://ntrs.nasa.gov/api/citations/20220014606/downloads/Brunstetter%20-%20IWS%202023%20SANS%20Clinical%20Update%20-%20Abstract%20-%2023Sep22.pdf' },
+  medlineAmsler: { name: 'MedlinePlus (NIH)', url: 'https://medlineplus.gov/ency/article/003446.htm' },
+};
+
 export const CELLS = [
   {
     id: 'A', section: 'body', indicator: 'pulse', effort: 'light', label: 'Heart rate', kind: KIND.NUMBER, unit: 'bpm',
@@ -322,6 +341,120 @@ export const CELLS = [
       personalSpace: none,
     },
   },
+  // ----- Added after the two NASA panel reviews of 15 Nov 2026, drafted by Claude from the cited sources; every
+  // threshold below is a draft until the team and the flight surgeons decide. Why these four: the commonest in-flight
+  // medical problems are symptoms, crews logged more than ten times the medicine use their records showed, exercise
+  // is the lever behind aerobic capacity and strength, and NASA screens the eyes for SANS. The two self-logs are
+  // private by default: the person chooses whether to share them.
+  {
+    id: null, section: 'body', indicator: 'symptoms', effort: 'light', label: 'Symptoms', kind: KIND.SELF, reviewByAi: false, private: true,
+    unit: '0 (none) to 10 (worst)', normType: 'record',
+    normText: "the person picks one symptom and rates it from 0 (none) to 10 (worst), with a note if they like; it is recorded, never judged by a number. The commonest in-flight medical problems are symptoms: in NASA's records of Shuttle, Mir and ISS flights up to 2006, nasal congestion was reported 389 times, back pain 382, space motion sickness 325, insomnia 299 and headache 233",
+    src: L2.lsah2017, src2: L2.sas2025,
+    availability: 'On the ISS, crew tell their flight surgeon how they sleep, eat and feel in a private medical conference of about 15 minutes once a week (NASA, 2025). This log keeps what they feel in between, to share if they choose.',
+    availabilitySrc: [L2.pmc2025],
+    // NASA's commonest in-flight complaints. Each fact is calm context for the screen, never an alarm.
+    symptoms: [
+      { key: 'headache', label: 'Headache', fact: 'Up to 90% of astronauts report headaches in the first few days of flight; they can come back later in the mission.', src: L2.sas2025 },
+      { key: 'stuffyNose', label: 'Stuffy nose', fact: "The commonest complaint in NASA's records (389 reports): body fluid moves towards the head in weightlessness; it usually eases within days.", src: L2.lsah2017, src2: L2.sas2025 },
+      { key: 'backPain', label: 'Back pain', fact: '52% of people in space get back pain in the first 2 to 5 days of flight, as the spine straightens.', src: L2.sas2025 },
+      { key: 'nausea', label: 'Nausea or motion sickness', fact: 'Space motion sickness affects up to 73% of crew in the first 2 to 3 days of flight.', src: L2.sas2025 },
+      { key: 'sleep', label: 'Trouble sleeping', fact: "NASA's records hold 299 reports of insomnia early in flight and 133 later on.", src: L2.lsah2017 },
+      { key: 'skin', label: 'Skin', fact: "Skin rash and skin abrasion were each reported 94 times in NASA's records.", src: L2.lsah2017 },
+      { key: 'eyes', label: 'Eyes or vision change', fact: 'NASA checks the eyes for SANS in long flights; a change in vision is one of its signs.', src: L2.sans2023 },
+      { key: 'other', label: 'Something else', needsNote: true },
+    ],
+    // The 0 to 10 scale is the panel's proposal (draft).
+    severity: { min: 0, max: 10, minText: 'none', maxText: 'worst', draft: true },
+    // A link between measures the panel asked for: cabin CO2 and headaches on the ISS.
+    links: [{ symptom: 'headache', measure: 'co2', text: 'On the ISS, for each 1 mmHg more cabin CO2 the odds of a reported headache doubled; keeping the risk below 1% needs a 7-day average below 2.5 mmHg.', src: L2.law2014 }],
+  },
+  {
+    id: null, section: 'body', indicator: 'medicines', effort: 'light', label: 'Medicines taken', kind: KIND.SELF, reviewByAi: false, private: true,
+    unit: 'tablets of the kit strength', normType: 'record',
+    normText: 'the person picks a medicine from the kit, how much and when; it is recorded, never judged. When ISS crew logged their medicines in an app (Dose Tracker), the use they logged was more than ten times what the medical records showed; on the ISS the commonest uses were for sleep, pain, congestion and allergy',
+    src: L2.doseTracker, src2: L2.wotring2015,
+    availability: "NASA relies on crew self-reporting to keep track of the ISS medical kit (NASA, 2024); ESA's EveryWear app, used daily by all ISS crew, logs medication intake (ESA, 2026).",
+    availabilitySrc: [L2.inventory2024, L2.everyWear],
+    // A short list from NASA's ISS medical kit list of 9 Apr 2015, the latest public one (the kit flying now may
+    // differ): the commonest uses on the ISS, and the medicines NASA's brief names for the first days of flight.
+    // Strength and unit as printed on the kit list; kitNote is the kit list's own comment. The amounts a person can
+    // pick are a log of what was taken, not dosing advice. Draft: the flight surgeons own the real list.
+    kitSrc: L2.kit2015, kitSrc2: L2.sas2025, kitDraft: true,
+    uses: { sleep: 'Sleep', pain: 'Pain or headache', nose: 'Stuffy nose', allergy: 'Allergy', nausea: 'Motion sickness', bowel: 'Constipation' },
+    kit: [
+      { key: 'melatonin', name: 'Melatonin', strength: '3 mg', unit: 'tablet', use: 'sleep', kitNote: 'Do not use with other sleep meds.' },
+      { key: 'zolpidem', name: 'Zolpidem', brand: 'Ambien', strength: '10 mg', unit: 'tablet', use: 'sleep', kitNote: 'Do not use with other sleep meds.' },
+      { key: 'acetaminophen', name: 'Acetaminophen (paracetamol)', brand: 'Tylenol', strength: '325 mg', unit: 'tablet', use: 'pain', kitNote: 'No more than 12 tablets every 24 hours.' },
+      { key: 'ibuprofen', name: 'Ibuprofen', brand: 'Motrin', strength: '400 mg', unit: 'tablet', use: 'pain', kitNote: 'No more than 8 tablets every 24 hours. Take with food.' },
+      { key: 'pseudoephedrine', name: 'Pseudoephedrine', brand: 'Sudafed 12 Hour', strength: '120 mg', unit: 'tablet', use: 'nose' },
+      { key: 'loratadine', name: 'Loratadine', brand: 'Claritin', strength: '10 mg', unit: 'tablet', use: 'allergy' },
+      { key: 'promethazine', name: 'Promethazine', brand: 'Phenergan', strength: '25 mg', unit: 'tablet', use: 'nausea', kitNote: 'May cause sedation and impair performance. Do not use with sleep meds.' },
+      { key: 'meclizine', name: 'Meclizine', brand: 'Antivert', strength: '25 mg', unit: 'tablet', use: 'nausea', kitNote: 'May cause sedation and impair performance. Do not use with sleep meds.' },
+      { key: 'bisacodyl', name: 'Bisacodyl', brand: 'Dulcolax', strength: '5 mg', unit: 'tablet', use: 'bowel' },
+    ],
+    amounts: [0.5, 1, 2],
+  },
+  {
+    id: null, section: 'body', indicator: 'exercise', effort: 'light', label: 'Exercise', kind: KIND.NUMBER, unit: 'min/day',
+    normType: 'record', compareWith: 'spaceGeneral',
+    norms: {
+      earthGeneral: { text: 'adults: at least 150 minutes a week of moderate activity, and muscle strengthening on 2 days a week', src: L2.cdcActivity },
+      spaceGeneral: { text: 'the ISS schedules 2.5 hours a day for exercise, 6 days a week, including changing and clean-up, so about 1 hour 15 minutes of exercise itself; NASA says crews now average about two hours a day on ARED, T2 and CEVIS. Recorded here, not judged: each prescription is personal', src: L2.exercise2023, src2: L2.exercise2024 },
+      personalEarth: none,
+      personalSpace: { text: "the person's own exercise prescription, updated as the mission goes on; prescriptions and how closely crews follow them have varied widely", src: L2.exercise2023 },
+    },
+    availability: 'ARED (weights), T2 (treadmill) and CEVIS (cycle) record loads and speeds; NASA records each prescription and how it is followed, and reports to the flight surgeon every other week (NASA, 2023). The daily minutes here are simulated.',
+    availabilitySrc: [L2.exercise2023, L2.exercise2024],
+    devices: ['ARED', 'T2', 'CEVIS'],
+    // The panel asked to show exercise beside aerobic capacity and strength, so a falling line has its lever next to it.
+    shownWith: ['vo2max', 'strength'],
+  },
+  {
+    id: null, section: 'body', indicator: 'visionCheck', effort: 'light', label: 'Eyes (SANS): vision self-check', kind: KIND.SELF, reviewByAi: false,
+    unit: 'one answer from the list', normType: 'record', group: 'Eyes (SANS)',
+    normText: 'SANS (spaceflight associated neuro-ocular syndrome) means changes in the eyes during long flights. Two questions: has your near or far vision changed, and do all lines of the Amsler grid look straight and unbroken? The answer is recorded, not judged by a number. Crew of the station\'s US segment answer a vision questionnaire and look at an Amsler grid on flight day 30, flight day 90 and 30 days before return',
+    src: L.nasaEyes2018, src2: L2.sans2023,
+    answers: [
+      { value: 'no change', label: 'No change: I see as before, and all grid lines look straight' },
+      { value: 'vision changed', label: 'My near or far vision has changed' },
+      { value: 'grid changed', label: 'Some grid lines look wavy, broken or missing' },
+      { value: 'vision and grid changed', label: 'Both: my vision changed, and grid lines look wrong' },
+    ],
+    // Draft: any answer but "no change" is worth telling the flight surgeon. NASA counts distorted central vision as
+    // SANS with an acute effect on sight, and a shift in the eye's focus of +0.75 dioptres or more as an earliest sign.
+    tellDoctor: { values: ['vision changed', 'grid changed', 'vision and grid changed'], draft: true, src: L2.sans2023 },
+    howTo: ['Wear your reading glasses if you use them.', 'Hold the grid about 35 cm (14 inches) from your eyes.', 'Test one eye at a time.', 'Look at the dot in the centre: all lines should look straight and unbroken, with no missing areas.'],
+    howToSrc: L2.medlineAmsler,
+    availability: "On the ISS the eye chart, Amsler grid and questionnaire are part of the eye exams on flight day 30, flight day 90 and 30 days before return (NASA, 2018). A monthly self-check between those exams is this app's draft.",
+    availabilitySrc: [L.nasaEyes2018],
+  },
+  {
+    id: null, section: 'body', indicator: 'octChange', effort: 'high', label: 'Eyes (SANS): retinal thickness change (OCT)', kind: KIND.NUMBER,
+    unit: 'µm', allowNegative: true, group: 'Eyes (SANS)',
+    // Draft threshold: NASA's earliest indication of SANS is an increase of 20 microns or more; a thinner retina
+    // than before flight is a readable value with no limit here.
+    normType: 'range', norm: { min: null, max: 20, maxExclusive: true }, draft: true, compareWith: 'personalEarth',
+    norms: {
+      earthGeneral: none,
+      spaceGeneral: { text: 'about 66% of long-duration astronauts show the earliest indication of SANS; optic disc swelling of 20 microns or more in 64% of long-duration crew on the US segment', src: L2.sans2023 },
+      personalEarth: { text: "NASA's earliest indication of SANS: an increase of 20 microns or more in the peripapillary total retinal thickness, against the person's own pre-flight OCT; 55 microns or more counts as clinically concerning", src: L2.sans2023 },
+      personalSpace: none,
+    },
+    // NASA's two published levels, for the screen and for the levels; both are drafts here until the team decides.
+    thresholds: [
+      { min: 20, text: 'earliest indication of SANS', src: L2.sans2023, draft: true },
+      { min: 55, text: 'clinically concerning SANS', src: L2.sans2023, draft: true },
+    ],
+    availability: 'Crew of the US segment get an OCT scan of the retina on flight day 30, flight day 90 and 30 days before return (NASA, 2018). The scan is an image (the cell "Eye images (OCT)"); this number is measured from it.',
+    availabilitySrc: [L.nasaEyes2018],
+  },
+  {
+    id: null, section: 'complex', indicator: 'octScan', effort: 'high', label: 'Eye images (OCT)', kind: KIND.COMPLEX, unit: 'image', group: 'Eyes (SANS)',
+    normText: 'an image of the retina: the AI or a doctor reads it; the thickness change measured from it goes to "Eyes (SANS): retinal thickness change (OCT)"',
+    availability: 'On the ISS, crew of the US segment are scanned on flight day 30, flight day 90 and 30 days before return (NASA, 2018); in 2023 NASA reported all its SANS eye hardware on board, the OCT included, working normally.',
+    availabilitySrc: [L.nasaEyes2018, L2.sans2023],
+  },
 ];
 
 // People. The crew members are made up for the example; their pre-flight levels are example
@@ -378,6 +511,15 @@ export const SOURCES = [
   { id: 'pressure-sensor', section: 'env', label: 'Cabin pressure sensor', indicator: 'cabinPressure', input: 'number', presets: [101.3, 30].map((v) => ({ label: `${v} kPa`, value: v })) },
   { id: 'acoustic-monitor', section: 'env', label: 'Acoustic monitor', indicator: 'noise', input: 'number', presets: [62, 75].map((v) => ({ label: `${v} dBA`, value: v })) },
   { id: 'cabin-thermo', section: 'env', label: 'Cabin thermometer', indicator: 'cabinTemp', input: 'number', presets: [22, 29].map((v) => ({ label: `${v} °C`, value: v })) },
+  // The cells added after the NASA panel reviews. self: true marks the person's own entry, not a device.
+  // Value shapes: a symptom is { symptom, severity, note? }; a medicine is { medicine, name, strength, amount, unit,
+  // takenAt? } (src/quicklog.js builds and checks both); the eye self-check is one answer string.
+  { id: 'symptom-log', section: 'body', label: 'Symptom log (own entry)', indicator: 'symptoms', self: true, presets: [{ label: 'Headache, 4 of 10', value: { symptom: 'headache', severity: 4 } }, { label: 'Back pain, 6 of 10', value: { symptom: 'backPain', severity: 6 } }] },
+  { id: 'medicine-log', section: 'body', label: 'Medicine log (own entry)', indicator: 'medicines', self: true, presets: [{ label: 'Melatonin 3 mg, 1 tablet', value: { medicine: 'melatonin', name: 'Melatonin', strength: '3 mg', amount: 1, unit: 'tablet' } }, { label: 'Ibuprofen 400 mg, 1 tablet', value: { medicine: 'ibuprofen', name: 'Ibuprofen', strength: '400 mg', amount: 1, unit: 'tablet' } }] },
+  { id: 'exercise-log', section: 'body', label: 'Exercise devices ARED, T2, CEVIS: minutes today', indicator: 'exercise', input: 'number', presets: [90, 30].map((v) => ({ label: `${v} min`, value: v })) },
+  { id: 'eye-self-check', section: 'body', label: 'Eye self-check: vision question and Amsler grid', indicator: 'visionCheck', self: true, presets: [{ label: 'No change', value: 'no change' }, { label: 'Vision changed', value: 'vision changed' }, { label: 'Grid lines look wrong', value: 'grid changed' }] },
+  { id: 'oct-result', section: 'body', label: 'OCT result: retinal thickness change', indicator: 'octChange', input: 'number', presets: [8, 24].map((v) => ({ label: `+${v} µm`, value: v })) },
+  { id: 'oct-scanner', section: 'complex', label: 'OCT eye scanner', indicator: 'octScan', presets: [{ label: 'A scan came in', value: 'scan' }] },
 ];
 
 // The team's own open questions, in the order the steps point to them.
