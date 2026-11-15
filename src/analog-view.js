@@ -16,7 +16,7 @@ const sources = (list) => h('p', { class: 'note' }, list.length > 1 ? 'Sources: 
 // The "?" cards, in the shape of src/tips.js (title and lines).
 export const ANALOG_TIPS = {
   drill: { title: 'Drill', lines: [
-    'A drill is on: the crew practises an emergency, as NASA\'s HERA missions plan medical and emergency drills (NASA, 2017).',
+    'A drill is on: the crew practises an emergency. A NASA presentation on the HERA analog lists medical drills and emergency drills among the mission tasks (Vessey and others, 2017).',
     'Alarms sound and go to your crewmates and the doctor as usual, with the word DRILL. Drill readings never count in your levels, your medical record or the summaries for the doctor.',
     `It ends with "End the drill", by itself after ${DRILL_RULES.maxMinutes} minutes (a draft), and at sign-out. ${DRILL_WORDS.emergency}`,
   ] },

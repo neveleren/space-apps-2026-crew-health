@@ -1,5 +1,5 @@
-// The drill switch, for an analog test such as NASA's HERA, whose mission plans list medical drills and emergency
-// drills among the crew's tasks (Vessey, Cromwell and Platts, NASA, 2017). While a drill is on, everything new on the
+// The drill switch, for an analog test such as NASA's HERA: a NASA presentation on HERA lists medical drills and
+// emergency drills among the mission tasks (Vessey, Cromwell and Platts, 2017). While a drill is on, everything new on the
 // crew screen carries the drill's mark (the time the drill started), the screen says DRILL, and alarms sound and go to
 // the crew and the doctor as usual, with the word DRILL, because that is what a drill tests. Drill events never count
 // in the levels, the medical record or the summaries for the doctor: the screen judges the person by a machine that

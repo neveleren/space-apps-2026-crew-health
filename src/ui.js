@@ -621,7 +621,8 @@ function renderStoreNote() {
     browser: 'Saved in the browser on this computer.',
     memory: 'Not saved: everything is lost when the page reloads.',
   };
-  byId('store-note').textContent = store ? where[store.kind] : '';
+  const drills = stored.filter((e) => e.drill && (e.kind === 'reading' || e.kind === 'review')).length;
+  byId('store-note').textContent = store ? `${where[store.kind]}${drills ? ` ${drills} ${drills === 1 ? 'reading' : 'readings'} of a drill ${drills === 1 ? 'is' : 'are'} left out of this view, as of every judgement.` : ''}` : '';
 }
 
 function renderLog() {
@@ -715,7 +716,8 @@ function rebuild() {
   lastByDest = {};
   const flight = byId('sw-example').checked ? exampleFlight(CREW) : [];
   const paths = stored.length === 0 ? mainPathsExample(new Set(flight.filter((e) => e.reading).map((e) => e.reading.source))) : [];
-  const all = [...flight, ...stored, ...paths].sort((a, b) => new Date(a.time) - new Date(b.time));
+  // A drill's events never count in any judgement (src/drill.js): this view leaves them out too, and says so.
+  const all = [...flight, ...stored.filter((e) => !e.drill), ...paths].sort((a, b) => new Date(a.time) - new Date(b.time));
   replaying = true;
   try {
     for (const ev of all) {

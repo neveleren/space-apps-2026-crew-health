@@ -407,6 +407,7 @@ async function reconnect(person) {
   serverDown = false;
   stored = withWaiting([...s.events, ...sent.events, ...late.events], person);
   await readOutbox();
+  applyLog(); // steps of the alert log written on the person's other screens meanwhile
   rebuild();
   render();
   checkHelpCall();
