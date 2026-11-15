@@ -10,6 +10,7 @@ import { RULES as CAM_RULES } from './camera-rules.js';
 import { exampleFlight, MISSION } from './demo-crew.js';
 import { forecast } from './trend.js';
 import { drawHistory, drawTable, fmtDate } from './history-view.js';
+import { studyRows, subjectRows, toCsv, ALERT_COLUMNS, SUBJECT_COLUMNS } from './alert-log.js';
 
 const PEOPLE = [...CREW, SHIP, ...realPeople(INSPIRATION4.subjects)];
 const personById = Object.fromEntries(PEOPLE.map((p) => [p.id, p]));
@@ -733,6 +734,22 @@ function rebuild() {
 store = await openStore();
 stored = [...store.events];
 rebuild();
+
+// The study export of an analog test (src/alert-log.js): the alert log of everyone this view reads, by id only.
+// The command line does the same from the data folder: node tools/study-export.mjs.
+function studyExport(which) {
+  const rows = studyRows(stored);
+  const day = new Date().toISOString().slice(0, 10);
+  const text = which === 'alerts' ? toCsv(rows, ALERT_COLUMNS) : toCsv(subjectRows(rows, stored), SUBJECT_COLUMNS);
+  const a = h('a', { href: URL.createObjectURL(new Blob([text], { type: 'text/csv' })), download: `study-${which}-${day}.csv` });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  const people = new Set(rows.map((r) => r.subject)).size;
+  byId('study-count').textContent = `${rows.length} alert ${rows.length === 1 ? 'row' : 'rows'} of ${people} ${people === 1 ? 'person' : 'people'}, from the events this view reads (${store.kind === 'server' ? 'the station server' : 'this browser'}).`;
+}
+byId('study-alerts').addEventListener('click', () => studyExport('alerts'));
+byId('study-subjects').addEventListener('click', () => studyExport('subjects'));
 byId('sw-example').addEventListener('change', rebuild);
 byId('hist-indicator').addEventListener('change', renderHistory);
 let histFrame = 0;

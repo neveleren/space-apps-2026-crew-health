@@ -305,6 +305,12 @@ button { font: inherit; }
       <ul id="gaps" class="plain"></ul>
       <h2 class="col-title"><span>Next in the plan</span></h2>
       <ul id="next" class="plain"></ul>
+      <h2 class="col-title" id="study-title"><span>Study export, analog test</span></h2>
+      <section aria-labelledby="study-title" class="study-box">
+        <p class="note" id="study-note">The alert log of every person (shown, acknowledged, read, cleared, false alarm, Bedford workload) as two CSV files, by id only: no names, measures, values or texts, and no alert about the mind, the cycle, symptoms or medicines. The same from the command line: node tools/study-export.mjs.</p>
+        <p class="cam-actions"><button type="button" id="study-alerts" class="btn">Alert steps (CSV)</button> <button type="button" id="study-subjects" class="btn">Summary per person (CSV)</button></p>
+        <p class="note" id="study-count" role="status"></p>
+      </section>
     </aside>
   </section>
 
