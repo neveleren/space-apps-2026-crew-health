@@ -17,7 +17,7 @@ const sources = (list) => h('p', { class: 'note' }, list.length > 1 ? 'Sources: 
 export const ANALOG_TIPS = {
   drill: { title: 'Drill', lines: [
     'A drill is on: the crew practises an emergency. A NASA presentation on the HERA analog lists medical drills and emergency drills among the mission tasks (Vessey and others, 2017).',
-    'Alarms sound and go to your crewmates and the doctor as usual, with the word DRILL. Drill readings never count in your levels, your medical record or the summaries for the doctor.',
+    'Alarms sound and go to your crewmates and the doctor as usual, with the word DRILL; while a real urgent alarm of yours stands, they get that one instead, never a drill value. Drill readings never count in your levels, your medical record or the summaries for the doctor.',
     `It ends with "End the drill", by itself after ${DRILL_RULES.maxMinutes} minutes (a draft), and at sign-out. ${DRILL_WORDS.emergency}`,
   ] },
   alertlog: { title: 'Alert log', lines: [

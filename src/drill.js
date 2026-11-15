@@ -77,7 +77,7 @@ export function lineDrill({ drill = null, ended = null, realSigns = 0, clear = f
 export const DRILL_WORDS = Object.freeze({
   tag: 'DRILL',
   switchLabel: 'Drill (a draft)',
-  switchText: `For an analog test such as NASA's HERA. While it is on, the screen shows DRILL; everything you enter is marked as a drill; alarms sound and go to your crewmates and the doctor as usual, with the word DRILL. Drill readings never count in your levels, your medical record or the summaries for the doctor. It ends by itself after ${DRILL_RULES.maxMinutes} minutes (a draft: no public source gives this time, the team decides) and at sign-out.`,
+  switchText: `For an analog test such as NASA's HERA. While it is on, the screen shows DRILL; everything you enter is marked as a drill, except "I am okay: false alarm" on a real alarm, which calls that alarm off for real; alarms sound and go to your crewmates and the doctor as usual, with the word DRILL. Drill readings never count in your levels, your medical record or the summaries for the doctor. It ends by itself after ${DRILL_RULES.maxMinutes} minutes (a draft: no public source gives this time, the team decides) and at sign-out.`,
   emergency: 'In a real emergency, press "End the drill" first: until then, what you enter counts as the drill.',
   bannerBold: 'DRILL in progress.',
   // Short, because the banner stays on top of every screen; Settings and the "?" card say the rest. A fixed end time
