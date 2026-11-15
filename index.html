@@ -103,9 +103,15 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .demo-band { display: flex; justify-content: center; padding-block: 4px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); background: repeating-linear-gradient(45deg, var(--panel) 0 5px, var(--bg) 5px 10px); border-bottom: 1px solid var(--line); }
 .demo-band span { padding: 2px 10px; border-radius: 4px; background: var(--panel); border: 1px solid var(--line); font-size: 14px; font-weight: 600; }
 
-/* Four keys: Today, All measures, Messages, Settings. A row under the status line on wide screens, a bar at the bottom on phones and tablets. */
+/* Five keys: Today, All measures, Medical record, Messages, Settings. A row under the status line on wide screens, a bar at the bottom on phones and tablets.
+   On phones two keys show a short name (.key-short); the full name stays the key's name for screen readers (.key-long). */
 .keys { background: var(--panel); }
-.keys-in { max-width: 960px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.key-short { display: none; }
+@media (max-width: 640px) {
+  .key-long { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .key-short { display: inline; }
+}
+.keys-in { max-width: 960px; margin: 0 auto; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
 .key { min-width: 0; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 52px; padding: 0 12px; border: 0; background: transparent; color: var(--muted); font-size: 16px; font-weight: 600; cursor: pointer; }
 .key:hover { color: var(--ink); background: var(--panel-2); }
 .key[aria-current="page"] { color: var(--ink); font-weight: 700; }
@@ -420,6 +426,57 @@ details.more > div { padding: 0 0 16px; display: grid; gap: 12px; }
 .read-tag { font-size: 14px; color: var(--muted); }
 .section-title { margin: 8px 0 0; font-size: 20px; font-weight: 600; }
 
+/* The medical record (src/record-view.js): who and which mission, today, the sections with their counts, then each
+   section, newest first, and what this prototype does not hold. Private parts carry a lock and the word "Private". */
+.rec-id .rec-who { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.rec-who h2 { margin: 0; font-size: 22px; }
+.rec-avatar { flex: none; width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; background: var(--cmd-soft); color: var(--link); font-family: var(--font-mono); font-size: 17px; font-weight: 600; }
+.rec-dl { margin: 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 18px; }
+.rec-dl dt { color: var(--muted); font-size: 15px; }
+.rec-dl dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 480px) { .rec-dl { grid-template-columns: minmax(0, 1fr); gap: 2px; } .rec-dl dd + dt { margin-top: 10px; } }
+.rec-today.lv1 { box-shadow: inset 6px 0 0 var(--lv1); }
+.rec-today.lv2 { box-shadow: inset 6px 0 0 var(--lv2-stripe); }
+.rec-today.lv3 { box-shadow: inset 6px 0 0 var(--lv3-stripe); }
+.rec-sentence { font-size: 19px; font-weight: 600; line-height: 1.35; max-width: 60ch; }
+.rec-toc { display: flex; flex-wrap: wrap; gap: 8px; }
+.rec-toc button { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font-size: 15px; font-weight: 600; cursor: pointer; }
+.rec-toc button:hover { border-color: var(--cmd-edge); background: var(--cmd-soft); }
+.rec-toc .icon { color: var(--muted); }
+.rec-count { font-family: var(--font-mono); font-weight: 500; color: var(--muted); }
+.rec-private { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 10px; border-radius: 4px; border: 1px dashed var(--axis); color: var(--ink); font-size: 14px; font-weight: 600; white-space: nowrap; }
+.rec-box { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 0 8px; }
+.rec-box .reasons { border-top: 0; }
+.rec-item .what .rec-tag { font-size: 13px; font-weight: 700; }
+.rec-item .what .rec-meta, .rec-draw .rec-meta { font-size: 14px; color: var(--muted); }
+.reason.static { grid-template-columns: 22px minmax(0, 1fr); cursor: default; }
+.reason.static:hover { background: transparent; }
+.rec-folded > .rec-extra { display: none; }
+.rec-empty { margin: 0; padding: 12px 16px; border: 1px dashed var(--line); border-radius: 10px; color: var(--muted); }
+.rec-draw > summary .rec-meta { font-weight: 400; }
+.rec-draw-group { display: grid; gap: 6px; }
+.rec-draw-group h3 { margin: 6px 0 0; font-size: 16px; font-weight: 600; color: var(--muted); }
+.row.static { cursor: default; }
+.row.static:hover { background: transparent; }
+.rec-docs { display: grid; gap: 10px; }
+.rec-doc { display: grid; gap: 8px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.rec-doc p { margin: 0; }
+.rec-sources { max-width: none; }
+/* Printing the record (or saving it as a PDF): the record alone, every list open, in dark ink on white. */
+@media print {
+  :root, :root[data-theme] {
+    --bg: #FFFFFF; --panel: #FFFFFF; --panel-2: #FFFFFF; --line: #8A929C; --ink: #000000; --muted: #2B3138; --axis: #5A6470;
+    --lv1: #163E96; --lv2: #6B4400; --lv2-stripe: #A87400; --lv3: #96140C; --lv3-stripe: #B3221A; --stale: #00525A; --off: #3F4854; --link: #000000; --cmd-soft: #FFFFFF;
+    color-scheme: light;
+  }
+  body { background: #FFFFFF; color: #000000; font-size: 12pt; }
+  body::before, .status-line, .keys, .crew-banner, .toast, .tip-pop, .sheet, .rec-toc, .tip-btn, .chev, .actions, .sheet-note, .link { display: none !important; }
+  .main { max-width: none; padding: 0; gap: 12px; }
+  .rec-folded > .rec-extra { display: list-item; }
+  .card, .rec-doc, .row-wrap, .reasons li { break-inside: avoid; }
+  a { color: #000000; }
+}
+
 /* What to do: NASA-style electronic procedure, numbered steps in magenta. */
 .steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .step { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 12px; border-radius: 8px; }
@@ -652,6 +709,7 @@ dialog p { margin: 0; }
     </div>
 
     <div id="screen-detail" class="screen" hidden></div>
+    <div id="screen-record" class="screen record" hidden></div>
     <div id="screen-alerts" class="screen" hidden></div>
     <div id="screen-setup" class="screen" hidden></div>
   </section>

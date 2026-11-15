@@ -35,10 +35,14 @@ import {
 } from './crew-alarm.js';
 import { shortLabel, WORDS, normalFind, findText, findHit } from './find.js';
 import { readMission, missionProblem, missionTimes, flightDay, missionDay, MISSION_RULES } from './mission.js';
+import { buildRecord } from './medrecord.js';
+import { drawRecord, printRecord, resetRecordView } from './record-view.js';
 
 // One icon per measure, so a list can be read at a glance.
 const ICON_FOR = { pulse: 'heart-pulse', bp: 'activity', glucose: 'droplet', temp: 'thermometer', spo2: 'droplets', sleep: 'moon', resp: 'wind', fluid: 'glass-water', bodyMass: 'scale', eyePressure: 'eye', hearing: 'ear', radiation: 'radiation', vo2max: 'heart', strength: 'dumbbell', bone: 'bone', camera: 'camera', mood: 'smile', attitude: 'battery', sleepQuality: 'bed', cognition: 'brain', reaction: 'zap', cycle: 'calendar-heart', xray: 'scan-line', ecg: 'chart-line', ultrasound: 'waves', exercise: 'flame', visionCheck: 'eye', octChange: 'eye', octScan: 'scan-line', symptoms: 'stethoscope', medicines: 'pill', co2: 'cloud-fog', cabinTemp: 'thermometer', cabinO2: 'orbit', cabinPressure: 'gauge', noise: 'volume-2', blood: 'test-tube' };
-const NAV = [['home', 'Today', 'house'], ['measures', 'All measures', 'list'], ['alerts', 'Messages', 'bell'], ['setup', 'Settings', 'settings']];
+// The keys: screen, name, icon, and a short name for phones (index.html .key-short); the full name stays the key's
+// accessible name. The medical record is the fifth key (src/medrecord.js, src/record-view.js).
+const NAV = [['home', 'Today', 'house'], ['measures', 'All measures', 'list', 'Measures'], ['record', 'Medical record', 'user', 'Record'], ['alerts', 'Messages', 'bell'], ['setup', 'Settings', 'settings']];
 
 const DAY = 24 * 60 * 60 * 1000;
 const REAL = realPeople(INSPIRATION4.subjects);
@@ -748,7 +752,8 @@ function stamp(t, now) {
 function renderNav() {
   const host = byId('tabs-in');
   if (!host.children.length) {
-    host.replaceChildren(...NAV.map(([view, label, ic]) => h('button', { type: 'button', class: 'key', 'data-view': view, onclick: () => { if (view === 'alerts') ackAll(); setScreen(view); } }, icon(ic, { size: 22 }), h('span', {}, label))));
+    host.replaceChildren(...NAV.map(([view, label, ic, short]) => h('button', { type: 'button', class: 'key', 'data-view': view, onclick: () => { if (view === 'alerts') ackAll(); setScreen(view); } }, icon(ic, { size: 22 }),
+      short ? [h('span', { class: 'key-long' }, label), h('span', { class: 'key-short', 'aria-hidden': 'true' }, short)] : h('span', {}, label))));
   }
   for (const key of host.children) {
     const view = key.dataset.view;
@@ -978,6 +983,7 @@ function clearPerson() {
   ui.find = '';
   offerDismissed.clear();
   privacyShown.clear();
+  resetRecordView();
   acked.clear();
   toneDone.clear();
   currentLines = [];
@@ -991,6 +997,7 @@ function clearPerson() {
   // What the page still holds out of sight: the topic chips of a closed check-in form (they are drawn only when the
   // form opens), the last side sheet and the last "?" card.
   byId('ci-topics').replaceChildren();
+  byId('screen-record').replaceChildren();
   byId('panel-title').textContent = '';
   byId('panel-body').replaceChildren();
   byId('panel-actions').replaceChildren();
@@ -1317,15 +1324,19 @@ function cameraRow(owner) {
 }
 
 // Complex data: an image or a tracing goes to the AI or a doctor; the row shows what came in last.
+function openComplex(indicator) {
+  const cell = cellBy[indicator];
+  openPanel(cell.label, [
+    h('p', {}, `How the machine handles it: ${cell.normText}. With the AI working it goes to the AI; when the AI analyses it and when a doctor does is still the team's open question.`),
+    cell.availability ? h('p', {}, cell.availability) : null,
+    h('p', { class: 'note' }, 'Devices are simulated on the technical view, where an image or a tracing can be sent.'),
+  ]);
+}
 function complexRow(owner, indicator) {
   const cell = cellBy[indicator];
   const now = nowTime();
   const last = machine.history(owner.id, indicator).slice(-1)[0] || null;
-  return rowWrap(h('button', { type: 'button', class: 'row', 'data-ind': indicator, 'data-tip': `m:${indicator}:${owner.id}`, onclick: () => openPanel(cell.label, [
-    h('p', {}, `How the machine handles it: ${cell.normText}. With the AI working it goes to the AI; when the AI analyses it and when a doctor does is still the team's open question.`),
-    cell.availability ? h('p', {}, cell.availability) : null,
-    h('p', { class: 'note' }, 'Devices are simulated on the technical view, where an image or a tracing can be sent.'),
-  ]) },
+  return rowWrap(h('button', { type: 'button', class: 'row', 'data-ind': indicator, 'data-tip': `m:${indicator}:${owner.id}`, onclick: () => openComplex(indicator) },
     h('b', { class: 'r-name' }, cell.label),
     last ? h('span', { class: 'r-num word nounit' }, 'Received') : h('span', { class: 'r-none' }, 'Nothing yet'),
     h('span', { class: 'r-time' }, last ? stamp(last.time, now) : ''),
@@ -1544,14 +1555,14 @@ function openDetail(indicator) {
 
 const EXPECTED_EVERY_DAYS_ONE = ['pulse', 'bp', 'temp', 'sleep', 'resp', 'fluid', 'spo2', 'glucose'];
 const NORM_NAMES = { earthGeneral: 'General, Earth', spaceGeneral: 'General, space', personalEarth: 'Personal, Earth', personalSpace: 'Personal, space' };
-const BACK_LABEL = { home: 'Today', measures: 'All measures', alerts: 'Messages', setup: 'Settings' };
+const BACK_LABEL = { home: 'Today', measures: 'All measures', record: 'Medical record', alerts: 'Messages', setup: 'Settings' };
 // Back returns to the screen before, with the keyboard on the row of the measure that was open, or on the heading.
 const backButton = () => btn('secondary small back', BACK_LABEL[ui.backTo] || 'All measures', () => {
   const from = ui.detail;
   const to = ui.backTo || 'measures';
   setScreen(to);
   const screen = byId(`screen-${to}`);
-  const row = screen && [...screen.querySelectorAll('.row[data-ind]')].find((r) => r.dataset.ind === String(from) && r.getClientRects().length);
+  const row = screen && [...screen.querySelectorAll('.row[data-ind], .rec-item[data-ind]')].find((r) => r.dataset.ind === String(from) && r.getClientRects().length);
   if (row) { row.focus(); return; }
   const head = screen && screen.querySelector('h1');
   if (head) { head.setAttribute('tabindex', '-1'); head.focus(); }
@@ -2790,6 +2801,54 @@ function saveCalendar() {
   toast('Calendar file saved: open it to add the planned reviews to a calendar.');
 }
 
+// ---------- the medical record: everything about the signed-in person in one place, read only ----------
+// src/medrecord.js builds the sections from what this screen already holds; src/record-view.js draws them.
+function renderRecord() {
+  const p = personById[ui.person];
+  const now = nowTime();
+  const a = p.real ? null : assess({ machine, person: p, cells: CELLS, mission: mission(), now });
+  const flagged = {};
+  for (const it of a ? [...a.body.items, ...a.psyche.items] : []) if (it.cell && !(flagged[it.cell.indicator] >= it.level)) flagged[it.cell.indicator] = it.level;
+  // The same words as the rows of All measures (measureRow): a forecast, a change common in flight, a watched value.
+  const notes = {};
+  for (const it of a ? a.body.items : []) if (it.cell && it.kind === 'forecast') notes[it.cell.indicator] = 'Forecast: may leave the range';
+  for (const x of a ? a.info || [] : []) if (x.cell && x.kind === 'expected') notes[x.cell.indicator] = 'Common in flight'; else if (x.cell && x.kind === 'watch') notes[x.cell.indicator] = `Watching: ${x.m.streak} of ${x.needed}`;
+  const today = a ? {
+    sentence: headlineFor(fmtDate(now), a), body: a.body.level, mind: a.psyche.level, ship: a.ship ? a.ship.level : LEVEL.FINE,
+    stale: ((a.fresh && a.fresh.missing) || []).map((x) => (x.days === null ? `No ${lower(x.label)} yet` : `No new ${lower(x.label)} for ${x.days} days`)),
+    alerts: alertsFor(p.id),
+  } : null;
+  const own = !ui.example && ui.mission ? { name: ui.mission.name || MISSION_RULES.defaultName, launch: `${ui.mission.launch}T12:00:00Z`, landing: `${ui.mission.landing}T12:00:00Z`, example: false } : null;
+  const model = buildRecord({
+    person: p, history: (id, ind) => machine.history(id, ind), events: stored, unsent, statusOf, now, today, flagged, notes, ship: ui.ship, valueText,
+    mission: ui.example ? { name: MISSION.name, launch: MISSION.launch, landing: MISSION.landing, example: true } : own,
+    flightDay: p.real ? null : flightDayNow(now), storeKind: serverDown ? 'waiting' : store ? store.kind : 'memory',
+  });
+  drawRecord(byId('screen-record'), model, {
+    personId: p.id, initials: initialsOf(p), tip: tipButton, pinNote: pinNote(p, 'open your medical record and read it'),
+    measure: (ind) => openDetail(ind), blood: (code) => openDetail(`blood:${code}`), complex: (ind) => openComplex(ind),
+    messages: () => setScreen('alerts'), cycle: () => openCycleCard(), fhir: () => openFhir(), copy: () => exportMine(),
+    connection: (id) => goToConnection(id), print: () => printRecord(byId('screen-record'), { personId: p.id, after: () => { if (ui.screen === 'record') render(); } }),
+  });
+}
+// The cycle card on All measures, with the keyboard on its heading.
+function openCycleCard() {
+  setScreen('measures');
+  const head = byId('cycle-title') || document.querySelector('#groups [data-terms*="cycle"] h2');
+  if (head) { head.setAttribute('tabindex', '-1'); head.scrollIntoView({ block: 'start' }); head.focus({ preventScroll: true }); }
+}
+// One row of the Connections list in Settings, its group opened, with the keyboard on its "?".
+function goToConnection(id) {
+  setScreen('setup');
+  const row = document.querySelector(`[data-conn="${CSS.escape(id)}"]`);
+  if (!row) return;
+  const group = row.closest('details');
+  if (group) group.open = true;
+  row.scrollIntoView({ block: 'center' });
+  const q = row.querySelector('.tip-btn');
+  if (q) q.focus({ preventScroll: true });
+}
+
 // ---------- settings ----------
 const THEMES = [['dark', 'Dark'], ['light', 'Light'], ['auto', 'Follow the device']];
 const themePick = () => { try { return localStorage.getItem('jff-theme') || 'dark'; } catch { return 'dark'; } };
@@ -3029,16 +3088,18 @@ function drawAll() {
   byId('checkin').hidden = Boolean(p.real);
   byId('keynums').hidden = Boolean(p.real);
   if (p.real) byId('comingup').hidden = true;
-  const names = { home: 'Today', measures: 'All measures', alerts: 'Messages', setup: 'Settings' };
+  const names = { home: 'Today', measures: 'All measures', record: 'Medical record', alerts: 'Messages', setup: 'Settings' };
   const detailName = ui.detail ? (String(ui.detail).startsWith('blood:') ? 'Blood test' : (cellBy[ui.detail] || {}).label) : '';
   byId('screen-name').textContent = ui.screen === 'detail' ? detailName : names[ui.screen];
   byId('screen-home').hidden = ui.screen !== 'home';
   byId('screen-measures').hidden = ui.screen !== 'measures';
   byId('screen-detail').hidden = ui.screen !== 'detail';
+  byId('screen-record').hidden = ui.screen !== 'record';
   byId('screen-alerts').hidden = ui.screen !== 'alerts';
   byId('screen-setup').hidden = ui.screen !== 'setup';
   if (ui.screen === 'home' || ui.screen === 'measures') renderHome();
   else if (ui.screen === 'detail') renderDetail();
+  else if (ui.screen === 'record') renderRecord();
   else if (ui.screen === 'alerts') renderAlerts();
   else if (ui.screen === 'setup' && !camStop) renderSetup();
 }
