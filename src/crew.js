@@ -7,7 +7,7 @@ import { FATIGUE_STEPS, FATIGUE_RULE, fatigueStep, isLowEnergy, fatigueWords } f
 import { createMachine, STATUS, KIND } from './engine.js';
 import { CELLS, SOURCES, CREW, SHIP, realPeople } from './config.js';
 import { cycleSummary, cycleFacts, lowDaysByPhase, CYCLE_RULES } from './cycle.js';
-import { drawCycleLog, resetCycleView } from './cycle-view.js';
+import { drawCycleLog, resetCycleView, showOpenDay } from './cycle-view.js';
 import { INSPIRATION4 } from './inspiration4.js';
 import { openStore } from './store.js';
 import { exampleFlight, exampleCycleDays, MISSION } from './demo-crew.js';
@@ -1377,6 +1377,7 @@ function cycleCard(p, now) {
 // keyboard on the day open in the log (today, at first).
 function openCycleLog() {
   ui.find = '';
+  showOpenDay(ui.person);
   setScreen('measures');
   const title = byId('cycle-title');
   if (!title) return;

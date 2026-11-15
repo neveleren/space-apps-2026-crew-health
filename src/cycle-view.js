@@ -13,6 +13,14 @@ import { FLOWS, CYCLE_SYMPTOMS, LOG_RULES, LOG_SOURCES, WEEKDAYS, MONTHS, dayOf,
 // draft (unsaved choices for day), status, all (the whole history), ctx (the latest drawing's inputs) }.
 const views = new Map();
 export function resetCycleView() { views.clear(); }
+// Today's "Cycle log" button: the calendar shows the month of the day open in the editor again, with the keyboard on
+// that day, also after the person looked at other months. The next drawing applies it.
+export function showOpenDay(personId) {
+  const st = views.get(personId);
+  if (!st) return;
+  st.month = monthOf(st.day);
+  st.focus = st.day;
+}
 // A message that answers a press with no save behind it: shown under the editor and said in the screen's live region.
 function tell(st, text) {
   st.status = text;
