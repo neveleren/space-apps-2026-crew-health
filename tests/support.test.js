@@ -212,23 +212,38 @@ test('waits always fall between 1 and 4 s, and a counter left alone for 30 s cou
 test('compareToOwn: first run, similar, slower and faster, against the before-flight runs when there are any', () => {
   const now = (median) => ({ median, lapses: 1, falseStarts: 0, count: 60, durationS: 180, mode: 'full' });
   assert.equal(compareToOwn(now(300), []).state, 'first');
-  const earlier = exampleEarlierRuns('2026-05-30T12:00:00Z');
-  const full = earlier.filter((r) => r.mode === 'full');
-  assert.equal(full.length, 3);
-  assert.ok(earlier.every((r) => r.example && r.beforeFlight));
-  const same = compareToOwn(now(280), earlier);
+  const own = [
+    { median: 271, lapses: 1, mode: 'full', beforeFlight: true },
+    { median: 266, lapses: 0, mode: 'full', beforeFlight: true },
+    { median: 278, lapses: 2, mode: 'full', beforeFlight: true },
+    { median: 400, lapses: 9, mode: 'full' }, // an in-flight run: not part of the baseline while there are before-flight runs
+  ];
+  const same = compareToOwn(now(280), own);
   assert.equal(same.state, 'similar');
   assert.equal(same.baseline, 271);
   assert.equal(same.runs, 3);
   assert.equal(same.basis, 'your runs from before flight');
-  const slow = compareToOwn(now(300), earlier);
+  assert.equal(same.baselineLapses, 1);
+  const slow = compareToOwn(now(300), own);
   assert.equal(slow.state, 'slower');
   assert.equal(slow.attention, true);
   assert.equal(slow.diffMs, 29);
   assert.match(slow.text, /^Slower than your runs from before flight: median 300 ms against 271 ms \(3 runs\)\./);
-  const fast = compareToOwn(now(240), earlier);
+  const fast = compareToOwn(now(240), own);
   assert.equal(fast.state, 'faster');
   assert.equal(fast.attention, false);
+});
+
+test('compareToOwn: the made-up example runs are called made up, never "yours"', () => {
+  const earlier = exampleEarlierRuns('2026-05-30T12:00:00Z');
+  assert.equal(earlier.filter((r) => r.mode === 'full').length, 3);
+  assert.equal(earlier.filter((r) => r.mode === 'demo').length, 2);
+  assert.ok(earlier.every((r) => r.example && r.beforeFlight && Date.parse(r.time) < Date.parse('2026-05-30T12:00:00Z')));
+  const c = compareToOwn({ median: 320, lapses: 1, falseStarts: 0, count: 60, durationS: 180, mode: 'full' }, earlier);
+  assert.equal(c.baseline, 305);
+  assert.equal(c.state, 'similar');
+  assert.equal(c.basis, 'the made-up example runs from before flight');
+  assert.doesNotMatch(c.text, /your/);
 });
 
 test('compareToOwn: only the same length of test, only the person\'s own runs, in-flight runs when there is no baseline', () => {

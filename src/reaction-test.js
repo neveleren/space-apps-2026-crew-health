@@ -153,7 +153,9 @@ export function compareToOwn(result, earlier = [], rule = COMPARE_RULE) {
   const same = (Array.isArray(earlier) ? earlier : []).filter((r) => r && r !== result && Number.isFinite(r.median) && r.median > 0 && modeOf(r) === modeOf(result));
   const before = same.filter((r) => r.beforeFlight === true);
   const base = before.length ? before : same;
-  const basis = before.length ? 'your runs from before flight' : 'your earlier runs';
+  // Made-up example runs are never passed off as the person's own.
+  const madeUp = base.length > 0 && base.every((r) => r.example === true);
+  const basis = `${madeUp ? 'the made-up example' : 'your'} ${before.length ? 'runs from before flight' : 'earlier runs'}`;
   const length = modeOf(result) === 'demo' ? '30-second' : '3-minute';
   if (!base.length) {
     return { state: 'first', runs: 0, basis: null, attention: false, placeholder: true, text: `This is your first ${length} run: there is nothing of your own to compare with yet.` };
@@ -177,7 +179,8 @@ export function compareToOwn(result, earlier = [], rule = COMPARE_RULE) {
 }
 
 // Made-up earlier runs for the example crew (marked example: true), so the comparison can be shown in a demo:
-// three 3-minute runs and two 30-second runs before launch.
+// three 3-minute runs and two 30-second runs before launch, with medians near 305 ms, a plausible result for a
+// rested person pressing a keyboard in a browser (Claude's choice of example numbers, not from a study).
 export function exampleEarlierRuns(launch = Date.now()) {
   const L = msOf(launch);
   const run = (daysBefore, med, lapses, falseStarts, count, mode) => ({
@@ -185,7 +188,7 @@ export function exampleEarlierRuns(launch = Date.now()) {
     durationS: mode === 'demo' ? RT_RULES.demoS : RT_RULES.fullS, mode,
     score: Math.round(100 * (1 - (lapses + falseStarts) / (count + falseStarts))), beforeFlight: true, example: true,
   });
-  return [run(60, 271, 1, 1, 62, 'full'), run(30, 266, 0, 0, 63, 'full'), run(14, 278, 2, 1, 61, 'full'), run(30, 262, 0, 0, 10, 'demo'), run(14, 274, 0, 1, 9, 'demo')];
+  return [run(60, 305, 2, 1, 60, 'full'), run(30, 298, 1, 0, 61, 'full'), run(14, 312, 2, 1, 59, 'full'), run(30, 300, 0, 0, 10, 'demo'), run(14, 310, 1, 1, 9, 'demo')];
 }
 
 // The moment of a key press or tap on the page's clock; the event's own time is closer than "now".
@@ -202,7 +205,9 @@ const clock = (ms) => { const s = Math.ceil(ms / 1000); return `${Math.floor(s /
 // without one ('cancelled', 'discarded'). Space or a tap answers; Esc stops at any time. Returns { close }.
 export function runReactionTest({ mode = 'full', onDone, onCancel, earlier = [], rng = Math.random, durationS = null } = {}) {
   const demo = mode === 'demo';
-  const lengthText = demo ? '30-second demo' : '3-minute test';
+  const lengthS = Number.isFinite(durationS) && durationS > 0 ? durationS : (demo ? RT_RULES.demoS : RT_RULES.fullS);
+  const lengthWord = lengthS % 60 === 0 ? `${lengthS / 60}-minute` : `${lengthS}-second`;
+  const lengthText = `${lengthWord} ${demo ? 'demo' : 'test'}`;
   let session = null;
   let screen = 'intro';
   let raf = 0;
@@ -304,7 +309,7 @@ export function runReactionTest({ mode = 'full', onDone, onCancel, earlier = [],
       ['Slow responses (355 ms or more)', String(result.lapses)],
       ['Too-early presses', String(result.falseStarts)],
       ['Responses', String(result.count)],
-      ['Score (PVT-B)', result.score === null ? 'none' : `${result.score}%`],
+      ['Score by the PVT-B formula (slow and early presses lower it)', result.score === null ? 'none' : `${result.score}%`],
     ];
     fill(panel,
       h('h2', { id: 'sup-rt-title' }, 'Your result'),
@@ -323,7 +328,7 @@ export function runReactionTest({ mode = 'full', onDone, onCancel, earlier = [],
   };
 
   fill(panel,
-    h('div', { class: 'sup-head' }, supIcon('timer', { size: 24 }), h('h2', { id: 'sup-rt-title' }, demo ? 'Reaction test: 30-second demo' : '3-minute reaction test')),
+    h('div', { class: 'sup-head' }, supIcon('timer', { size: 24 }), h('h2', { id: 'sup-rt-title' }, demo ? `Reaction test: ${lengthWord} demo` : `${lengthWord} reaction test`)),
     h('p', {}, 'When a counter appears in the box, press Space or tap the box as fast as you can. It comes at random moments, every 1 to 4 seconds. Do not press before it appears.'),
     h('p', { class: 'sup-rt-say' }, SAY),
     h('p', { class: 'note' }, 'Use the same computer each time: browser timing is less exact than lab hardware. Esc stops at any time.'),
