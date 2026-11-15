@@ -67,7 +67,8 @@ export const RETURN_FACTS = Object.freeze([
 
 // Where the mission is now. none: no launch and landing to work with (the example flight off, no mission set);
 // before: days to launch; flight: days to landing, near when landing is within LANDING_RULES.nearDays; after: n days
-// after landing, R+n, by GMT days as on the status line.
+// after landing, R+n. All by GMT calendar days, as on the status line: the landing day itself is 0 days to landing
+// ("today"), and the count always matches the landing date shown next to it.
 export function missionPhase(mission, now, rules = LANDING_RULES) {
   if (!hasMissionDates(mission)) return { kind: 'none' };
   const t = ms(now);
@@ -75,7 +76,8 @@ export function missionPhase(mission, now, rules = LANDING_RULES) {
   const R = ms(mission.landing);
   if (dayNum(t) < dayNum(L)) return { kind: 'before', days: dayNum(L) - dayNum(t) };
   if (dayNum(t) > dayNum(R)) { const n = dayNum(t) - dayNum(R); return { kind: 'after', n, short: `R+${n}`, landing: iso(R) }; }
-  return { kind: 'flight', daysToLanding: Math.max(0, Math.ceil((R - t) / DAY)), near: R - t <= rules.nearDays * DAY, landing: iso(R) };
+  const daysToLanding = dayNum(R) - dayNum(t);
+  return { kind: 'flight', daysToLanding, near: daysToLanding <= rules.nearDays, landing: iso(R) };
 }
 
 const baseOf = (person, cell) => Number(person && person.baselines ? person.baselines[cell.baselineKey] : NaN);

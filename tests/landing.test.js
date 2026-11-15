@@ -50,8 +50,11 @@ test('the phase by GMT days: none without dates, before launch, in flight (near 
   assert.equal(far.near, false);
   const near = missionPhase(M, '2026-11-15T06:00:00Z');
   assert.equal(near.near, true);
-  assert.equal(near.daysToLanding, 26);
-  assert.equal(missionPhase(M, '2026-11-10T11:00:00Z').near, false, 'just over 30 days before');
+  assert.equal(near.daysToLanding, 25, '15 Nov to 10 Dec: 25 days by the calendar, as the date next to it says');
+  assert.equal(missionPhase(M, '2026-11-09T23:00:00Z').near, false, '31 days before');
+  assert.deepEqual([missionPhase(M, '2026-11-10T00:30:00Z').near, missionPhase(M, '2026-11-10T00:30:00Z').daysToLanding], [true, 30], 'from 30 days before');
+  assert.equal(missionPhase(M, '2026-12-09T20:00:00Z').daysToLanding, 1, 'the evening before: tomorrow');
+  assert.equal(missionPhase(M, '2026-12-10T08:00:00Z').daysToLanding, 0, 'the landing day, before the midday the own mission uses: today, not tomorrow');
   assert.equal(missionPhase(M, '2026-12-10T20:00:00Z').kind, 'flight', 'the landing day is the last flight day, as on the status line');
   const after = missionPhase(M, '2026-12-13T09:00:00Z');
   assert.deepEqual([after.kind, after.n, after.short], ['after', 3, 'R+3']);
@@ -67,7 +70,9 @@ test('the example flight: Elly\'s aerobic capacity crosses NASA\'s 80% before la
   const now = MISSION.today;
   const elly = landingPrep({ machine, person: person('crew-2'), cells: CELLS, mission: MISSION, now });
   const tom = landingPrep({ machine, person: person('crew-1'), cells: CELLS, mission: MISSION, now });
-  assert.equal(elly.daysToLanding, 26);
+  // The example follows the calendar: landing is 25.5 days after the start of this hour, so 25 or 26 calendar days.
+  assert.equal(elly.daysToLanding, Math.floor(Date.parse(MISSION.landing) / DAY) - Math.floor(Date.parse(now) / DAY));
+  assert.ok([25, 26].includes(elly.daysToLanding), String(elly.daysToLanding));
   assert.deepEqual(elly.rows.map((r) => r.key), ['vo2max', 'strength', 'exercise', 'eyes']);
   const ev = elly.rows[0];
   assert.equal(ev.level, LEVEL.ATTENTION);

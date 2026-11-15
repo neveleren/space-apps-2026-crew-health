@@ -7,7 +7,7 @@
 import { h, fill, btn, supIcon } from './support.js';
 import { tipButton } from './explain.js';
 import { LEVEL_WORD } from './state-levels.js';
-import { READINESS_RULES, READINESS_SOURCES, TASK_KINDS, taskName, taskThe, readinessLines, startsIn } from './readiness.js';
+import { READINESS_RULES, READINESS_SOURCES, TASK_KINDS, taskName, taskThe, readinessLines, startsIn, startsInAt } from './readiness.js';
 import { LANDING_RULES, LANDING_SOURCES, fmtDay } from './landing.js';
 import { TASK_KIND_KEYS, MISSION_RULES, taskProblem, missionDay } from './mission.js';
 import { gmtText } from './quicklog.js';
@@ -182,6 +182,5 @@ export function phaseTip(key) {
 export const comingUpText = (t) => `${cap(taskName(t))}, ${gmtText(t.start)} (critical task${t.example ? ', made-up example' : ''})`;
 // One row of the Coming up list for a task, in the list's own layout: icon, words, when.
 export function comingUpItem(t, now) {
-  const hours = (Date.parse(t.start) - new Date(now).getTime()) / 3600000;
-  return h('li', { class: 'task' }, supIcon((TASK_KINDS[t.kind] || TASK_KINDS.other).icon, { size: 18 }), h('span', {}, comingUpText(t)), h('span', { class: 'when' }, startsIn(hours)));
+  return h('li', { class: 'task' }, supIcon((TASK_KINDS[t.kind] || TASK_KINDS.other).icon, { size: 18 }), h('span', {}, comingUpText(t)), h('span', { class: 'when' }, startsInAt(t.start, now)));
 }

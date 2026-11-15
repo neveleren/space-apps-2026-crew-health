@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   READINESS_RULES, READINESS_SOURCES, TASK_KINDS, EXAMPLE_TASKS, MEDICINE_NOTES, exampleTasks, calendarItems, tasksFor, upcomingTasks,
-  nextTask, readinessDue, readiness, readinessLines, readinessMessage, medicineText, startsIn, taskName, taskThe,
+  nextTask, readinessDue, readiness, readinessLines, readinessMessage, medicineText, startsIn, startsInAt, taskName, taskThe,
 } from '../src/readiness.js';
 import { taskProblem, readMission, missionTimes, TASK_KIND_KEYS, MISSION_RULES } from '../src/mission.js';
 import { CELLS } from '../src/config.js';
@@ -169,6 +169,10 @@ test('plain words: every line names its sources, the drafts say so, nothing clai
   assert.equal(startsIn(0.5), 'in 30 minutes');
   assert.equal(startsIn(14.2), 'in 14 hours');
   assert.equal(startsIn(80), 'in 3 days');
+  // Coming up shows the GMT date next to it, so from 2 days on it counts GMT calendar days: 7 days and 16 hours after
+  // 15 Nov 07:00 is 22 Nov, "in 7 days", not "in 8 days".
+  assert.equal(startsInAt('2026-11-22T23:00:00Z', '2026-11-15T07:00:00Z'), 'in 7 days');
+  assert.equal(startsInAt('2026-11-16T03:00:00Z', '2026-11-15T07:00:00Z'), 'in 20 hours');
   assert.equal(taskName({ kind: 'robotics' }), 'Robotic arm work');
   assert.equal(taskThe({ kind: 'other', title: 'Hatch opening' }), 'the task "Hatch opening"');
 });

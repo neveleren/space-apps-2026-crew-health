@@ -183,6 +183,13 @@ export function startsIn(hours) {
   const d = Math.round(hours / 24);
   return `in ${d} days`;
 }
+// The same for a list that also shows the task's GMT date (Coming up): from 2 days on it counts GMT calendar days, as
+// the status line does, so "in 7 days" always matches the date next to it.
+export function startsInAt(start, now) {
+  const hours = (ms(start) - ms(now)) / HOUR;
+  if (hours < 48) return startsIn(hours);
+  return `in ${Math.floor(ms(start) / DAY) - Math.floor(ms(now) / DAY)} days`;
+}
 const hoursText = (h) => { const r = Math.round(h * 10) / 10; return `${r} ${r === 1 ? 'hour' : 'hours'}`; };
 const fmtNum = (v) => String(Math.round(Number(v) * 10) / 10);
 
