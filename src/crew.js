@@ -2590,6 +2590,8 @@ function openWorkload(x) {
     closePanel();
     toast(!res ? 'This alarm was already rated.' : res.ok ? `${savedWord(res, 'Saved in your record')}: workload ${n} of 10.` : `Not saved: ${shortReason(res.why)}. Try again later.`);
     render();
+    // The rating button leaves with the rating, so the keyboard goes to that message's "What to do", as after Mark as read.
+    if (!document.activeElement || document.activeElement === document.body) { const next = document.querySelector(`[data-fk="todo:${CSS.escape(x.id)}"]`); if (next) next.focus(); }
   } })], [], { key: `workload:${x.id}` });
 }
 
