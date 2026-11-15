@@ -21,6 +21,7 @@ import {
   DRILL_RULES, DRILL_SOURCES, DRILL_WORDS, isDrill, isDrillId, recordEvents, drillEvents, startDrill, drillOver, minutesLeft, markFor,
   drillLine, drillReport, lineDrill,
 } from '../src/drill.js';
+import { ackText } from '../src/analog-view.js';
 import { cleanEvent, eventProblem, EVENT_KINDS, SECURITY_RULES } from '../src/security.js';
 import { eventKey, crewLines } from '../src/crew-alarm.js';
 import { createMachine } from '../src/engine.js';
@@ -147,6 +148,11 @@ test('the log read back: the first time of each step counts, read and a false al
   const { read, acked } = readAndAcked(st);
   assert.deepEqual([...read].sort(), [HELP.id, SPO2.id, SYMPTOM.id].sort());
   assert.deepEqual([...acked].sort(), [HELP.id, SPO2.id, SYMPTOM.id].sort());
+  // What each message says about it (src/analog-view.js ackText): seconds, and from a minute on whole minutes and seconds.
+  assert.equal(ackText(s), 'Acknowledged GMT 319/12:00:12, 12.4 s after it showed (Silence).');
+  assert.equal(ackText({ ...s, timeToAck: 119.6 }), 'Acknowledged GMT 319/12:00:12, 2 min 0 s after it showed (Silence).');
+  assert.equal(ackText(st.get(HELP.id)), 'Acknowledged GMT 319/12:02:10, 30 s after it showed (I am okay: false alarm).');
+  assert.equal(ackText(undefined), 'Not acknowledged yet.');
 });
 
 test('a second screen of the same person: what the first wrote reaches it at its next look, and the alarm is acknowledged there too', () => {
