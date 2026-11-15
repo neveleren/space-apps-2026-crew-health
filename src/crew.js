@@ -3015,11 +3015,14 @@ function missionFields() {
     const next = { name: name.value.trim(), launch: launch.value, landing: landing.value };
     const why = missionProblem(next);
     if (why) { status.textContent = why; return; }
-    // The critical tasks stay with the mission; those outside new dates are dropped (src/mission.js readMission).
-    ui.mission = readMission({ ...next, tasks: (ui.mission && ui.mission.tasks) || [] });
+    // The critical tasks stay with the mission; those outside new dates are dropped (src/mission.js readMission), and
+    // the notice says so.
+    const had = (ui.mission && ui.mission.tasks) || [];
+    ui.mission = readMission({ ...next, tasks: had });
+    const dropped = had.length - (ui.mission.tasks || []).length;
     savePrefs();
     render();
-    toast(`Mission saved on this device: ${flightDayNow() ? flightDayNow().words.toLowerCase() : 'its days are counted on the status line'}.`);
+    toast(`Mission saved on this device: ${flightDayNow() ? flightDayNow().words.toLowerCase() : 'its days are counted on the status line'}.${dropped ? ` ${dropped} critical ${dropped === 1 ? 'task' : 'tasks'} outside the new dates ${dropped === 1 ? 'was' : 'were'} removed.` : ''}`);
   };
   const clear = () => { ui.mission = null; savePrefs(); render(); toast('Mission cleared: no flight day is shown.'); };
   return h('div', { class: 'mission-own' },
