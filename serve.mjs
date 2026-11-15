@@ -72,6 +72,19 @@ function inlineScriptHashes(html) {
   return out;
 }
 
+// True when a real path lies in the data folder. DATA_DIR may put that folder inside the app folder under any
+// name (DATA_DIR=./records), where the name rules above would not know it.
+async function inData(real) {
+  let data;
+  try {
+    data = await realpath(DATA);
+  } catch {
+    return false; // no data folder yet: nothing can be served from it
+  }
+  const r = relative(data, real);
+  return r === '' || (r !== '..' && !r.startsWith(`..${sep}`) && !isAbsolute(r));
+}
+
 async function serveFile(req, res, path) {
   // Back slashes, colons and NUL never appear in this program's addresses; on Windows they would mean another
   // folder, a drive or a hidden stream.
@@ -84,7 +97,7 @@ async function serveFile(req, res, path) {
   try {
     // Checked again under the name the disk uses, which also catches short names such as DEMO-K~1.
     real = await realpath(file);
-    if (!real.startsWith(REAL_ROOT + sep) || isPrivatePath(relative(REAL_ROOT, real))) return notFound(res);
+    if (!real.startsWith(REAL_ROOT + sep) || isPrivatePath(relative(REAL_ROOT, real)) || (await inData(real))) return notFound(res);
     if (!(await stat(real)).isFile()) return notFound(res);
     body = await readFile(real);
   } catch {
@@ -182,10 +195,12 @@ async function postEvent(req, res) {
   if (problem) return json(res, 400, { error: `not a valid event: ${problem}` });
   const clean = cleanEvent(event);
   // A message is queued first: if that fails, nothing is kept and the screen says so, so it can be sent again.
+  // Without a key on this computer, a message to the doctor on board is still kept (that doctor reads it here);
+  // only a message to Earth, which cannot reach the ground without the key, is refused.
   let outbox = null;
   if (clean.kind === 'report') {
-    if (!OUTBOX_KEY) return json(res, 503, { error: 'no outbox key on this computer: the message was not queued' });
-    outbox = await queueMessage(clean);
+    if (OUTBOX_KEY) outbox = await queueMessage(clean);
+    else if (clean.report.to !== 'doctor-onboard') return json(res, 503, { error: 'no outbox key on this computer: the message was not queued' });
   }
   await mkdir(DATA, { recursive: true });
   await appendFile(join(DATA, `${clean.person}.jsonl`), `${JSON.stringify(clean)}\n`, 'utf8');

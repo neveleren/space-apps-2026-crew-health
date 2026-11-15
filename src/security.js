@@ -31,11 +31,12 @@ export const REFS = {
   ntia: { name: 'NTIA, The Minimum Elements for an SBOM, 12 Jul 2021', url: 'https://www.ntia.gov/report/2021/minimum-elements-software-bill-materials-sbom' },
 };
 
-// Sizes and times. bodyBytes and reportChars are kept from the first version (the screen cuts a message at 4,000
-// characters too); the others are new drafts. A real Inspiration4 blood panel holds 37 analytes.
+// Sizes and times. bodyBytes is kept from the first version; reportChars follows the crew screen, which cuts a
+// message to a doctor at 4,000 characters and the conference summary and the letter to the psychologist at 6,000;
+// the others are new drafts. A real Inspiration4 blood panel holds 37 analytes.
 export const LIMITS = Object.freeze({
   bodyBytes: 64 * 1024,
-  reportChars: 4000,
+  reportChars: 6000,
   textChars: 200,
   panelAnalytes: 200,
   futureMinutes: 5,
@@ -55,6 +56,9 @@ const OWN = { reading: ['reading'], review: [], report: ['report'], alarm: ['ala
 // The reaction test result kept with a thinking-test reading: numbers only, and the length of the run.
 const RT_DETAIL = ['median', 'lapses', 'falseStarts', 'count', 'durationS', 'mode', 'score'];
 const ALARM_CHARS = 200;
+// What a message says it is, for the screens: "pmc" (the weekly conference summary), "letter-to-psychologist",
+// "talk-request" ("Talk to a person now"). A short id, not a list, so a new kind of message is never refused.
+const TOPIC_ID = /^[a-z][a-z0-9-]{0,31}$/;
 const cellOf = new Map(CELLS.map((c) => [c.indicator, c]));
 
 const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
@@ -97,9 +101,10 @@ function alarmProblem(a) {
 
 function reportProblem(r) {
   if (!isObj(r)) return 'report must be an object';
-  if (unknownKey(r, ['to', 'text']) !== undefined) return 'report may hold only to and text';
+  if (unknownKey(r, ['to', 'text', 'topic']) !== undefined) return 'report may hold only to, text and topic';
   if (!DOCTORS.includes(r.to)) return `report.to must be ${DOCTORS.join(' or ')}`;
   if (typeof r.text !== 'string' || r.text.length > LIMITS.reportChars) return `report.text must be text of at most ${LIMITS.reportChars} characters`;
+  if (r.topic !== undefined && !(typeof r.topic === 'string' && TOPIC_ID.test(r.topic))) return 'report.topic must be a short id of lower-case letters, digits and hyphens';
   return null;
 }
 
@@ -179,7 +184,10 @@ export function cleanEvent(e) {
     if (r.context !== undefined) out.reading.context = r.context;
     if (r.detail !== undefined) out.reading.detail = Object.fromEntries(RT_DETAIL.filter((k) => r.detail[k] !== undefined).map((k) => [k, r.detail[k]]));
   }
-  if (e.kind === 'report') out.report = { to: e.report.to, text: e.report.text };
+  if (e.kind === 'report') {
+    out.report = { to: e.report.to, text: e.report.text };
+    if (e.report.topic !== undefined) out.report.topic = e.report.topic;
+  }
   if (e.kind === 'alarm') out.alarm = { text: e.alarm.text };
   return out;
 }
@@ -297,7 +305,7 @@ export function securityHeaders(scriptHashes = []) {
 // draft: true marks a number or a choice by Claude that the team and the flight surgeons still have to confirm.
 export const SECURITY_RULES = [
   { id: 'private-files', title: 'Private folders are never served',
-    rule: `The data, the program's workshop and the demo keys (${PRIVATE_NAMES.join(', ')}) and every name that starts with a dot are never sent as files. Names are compared without letter case and without trailing dots or spaces, as Windows reads them, and again under the name the disk itself uses.`,
+    rule: `The data, the program's workshop and the demo keys (${PRIVATE_NAMES.join(', ')}) and every name that starts with a dot are never sent as files. Names are compared without letter case and without trailing dots or spaces, as Windows reads them, and again under the name the disk itself uses. The data folder is refused wherever DATA_DIR puts it.`,
     draft: false, sources: [REFS.caseWin] },
   { id: 'known-host', title: 'Only known host names',
     rule: `The server answers only to ${LOCAL_HOSTS.join(', ')}, the exact address it listens on, and the names in HOSTS. This stops DNS rebinding, where a web page points its own name at this computer.`,
@@ -309,19 +317,19 @@ export const SECURITY_RULES = [
     rule: 'A save with an Origin must come from this server\'s own address, and a browser\'s Sec-Fetch-Site must say same-origin. A save with no Origin comes from a program such as curl, not from a web page.',
     draft: false, sources: [REFS.csrf, REFS.origin] },
   { id: 'event-shape', title: 'Every event is checked',
-    rule: `Version 1; kind ${EVENT_KINDS.join(', ')}; a person id of lower-case letters, digits and hyphens; the switches as true or false; a reading names a measure of src/config.js and carries a value the machine can read; nothing else.`,
+    rule: `Version 1; kind ${EVENT_KINDS.join(', ')}; a person id of lower-case letters, digits and hyphens; the switches as true or false; a reading names a measure of src/config.js and carries a value the machine can read; a message to a doctor may name its topic with a short id; nothing else.`,
     draft: false, sources: [REFS.input] },
   { id: 'future-time', title: 'No times from the future',
     rule: `An event may be dated at most ${LIMITS.futureMinutes} minutes ahead of this computer's clock, the usual clock tolerance (Kerberos).`,
     value: `${LIMITS.futureMinutes} minutes`, draft: true, sources: [REFS.clock] },
   { id: 'sizes', title: 'Size limits',
-    rule: `A request of at most ${LIMITS.bodyBytes / 1024} KB; a message to a doctor of at most ${LIMITS.reportChars} characters; a text value of at most ${LIMITS.textChars} characters; a blood panel of at most ${LIMITS.panelAnalytes} analytes (a real Inspiration4 panel has 37). No public standard gives these numbers: engineering drafts.`,
+    rule: `A request of at most ${LIMITS.bodyBytes / 1024} KB; a message to a doctor of at most ${LIMITS.reportChars} characters; a text value of at most ${LIMITS.textChars} characters; a message topic of at most 32 characters; a blood panel of at most ${LIMITS.panelAnalytes} analytes (a real Inspiration4 panel has 37). No public standard gives these numbers: engineering drafts.`,
     draft: true, sources: [REFS.input] },
   { id: 'own-data', title: 'The crew screen reads one person',
     rule: 'The crew screen asks for one person\'s events plus the ship\'s cabin readings (/api/events?person=<id>). The whole list (/api/events?all=1) is the engineering view for the technical page; a real deployment would give it only to the flight surgeons.',
     draft: false, sources: [REFS.cfr, REFS.std2] },
   { id: 'outbox', title: 'Messages to a doctor are sealed',
-    rule: 'Each message to a doctor is also written as one file in data/outbox, the hand-over point for the station\'s downlink. Who it is for and when stay readable for routing; the text is encrypted for the flight surgeon\'s public key (ECDH P-256, HKDF-SHA-256, AES-256-GCM), and the readable fields are bound to it. This version uses a DEMO key pair.',
+    rule: 'Each message to a doctor is also written as one file in data/outbox, the hand-over point for the station\'s downlink; without a key, a message to the doctor on board is still kept and one to Earth is refused, so the screen can say so. Who it is for and when stay readable for routing; the text is encrypted for the flight surgeon\'s public key (ECDH P-256, HKDF-SHA-256, AES-256-GCM), and the readable fields are bound to it. The seal hides the text but does not prove who wrote it. This version uses a DEMO key pair.',
     draft: true, sources: [REFS.std1, REFS.esa, REFS.ecdh, REFS.hkdf, REFS.gcm] },
   { id: 'file-names', title: 'No personal information in file names',
     rule: 'Data files are named by the person\'s id, outbox files by time and a random number.',
