@@ -29,7 +29,9 @@ h2 { margin: 6px 0 0; font-size: 40px; line-height: 1.12; font-weight: 700; text
 .points li { display: grid; grid-template-columns: 14px 1fr; gap: 14px; }
 .points li::before { content: ""; width: 10px; height: 10px; margin-top: 12px; border-radius: 2px; background: var(--cmd-edge); }
 .points b { font-weight: 700; }
-.shot { width: 100%; max-height: 520px; object-fit: contain; object-position: top center; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); }
+.shot { width: 100%; max-height: 484px; object-fit: contain; object-position: top center; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); }
+.shots2 { display: grid; gap: 14px; min-height: 0; }
+.shots2 .shot { height: 238px; max-height: 238px; object-fit: cover; object-position: top center; }
 .quote { margin: 0; padding: 22px 26px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); box-shadow: inset 6px 0 0 var(--lv1); font-size: 30px; line-height: 1.3; font-weight: 600; }
 .chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
 .chip { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 4px; border: 1px solid; font-size: 20px; font-weight: 600; }
@@ -44,8 +46,7 @@ h2 { margin: 6px 0 0; font-size: 40px; line-height: 1.12; font-weight: 700; text
 .lead { font-size: 28px; line-height: 1.35; color: var(--muted); margin: 18px 0 0; max-width: 34ch; }
 .links { font-family: var(--font-mono); font-size: 22px; line-height: 1.6; }
 .links a { color: var(--cmd-edge); }
-.counter { position: fixed; right: 16px; bottom: 12px; font-family: var(--font-mono); font-size: 14px; color: #8a929c; }
-.help { position: fixed; left: 16px; bottom: 12px; font-size: 13px; color: #8a929c; }
+.counter { position: fixed; right: 12px; top: 10px; z-index: 2; margin: 0; padding: 2px 8px; border-radius: 4px; background: rgba(0,0,0,0.55); font-family: var(--font-mono); font-size: 13px; color: #aeb6c2; }
 @media print {
   @page { size: 1280px 720px; margin: 0; }
   html, body { background: var(--bg); height: auto; }
@@ -61,7 +62,6 @@ h2 { margin: 6px 0 0; font-size: 40px; line-height: 1.12; font-weight: 700; text
   <!-- Slides are filled from slides.js so the text stays in one place. -->
 </main>
 <p class="counter" id="counter"></p>
-<p class="help">Arrow keys or click: next and previous slide</p>
 <script type="module" src="./slides.js"></script>
 </body>
 </html>

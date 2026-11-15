@@ -468,21 +468,22 @@ dialog p { margin: 0; }
 @media (max-width: 520px) { .ask-buttons { grid-template-columns: 1fr; } }
 @media (max-width: 420px) { .seg button { min-width: 40px; padding: 0 8px; } .seg.small button { padding: 0 10px; } }
 @media (max-width: 480px) { .periods .seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; } .periods .seg button { border-bottom: 1px solid var(--line); } .row { grid-template-columns: minmax(0, 1fr) auto 5.5em 18px; padding: 12px 16px; } .r-unit { font-size: 14px; } .r-time { white-space: normal; overflow: visible; } }
+/* Tablets and phones: the long words of the status line stay for screen readers but leave the row, so it fits one line. */
+@media (max-width: 1023px) {
+  .tag-long, .ann-word, .who b { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .who { padding-right: 4px; }
+}
 @media (max-width: 640px) {
   .sl-title { display: none; }
   .brand { order: 0; }
   .sl-tags { order: 1; }
   .annunciator { order: 2; margin-left: auto; }
-  .ann-word { display: none; }
   .who { order: 3; }
   .help-key { order: 5; padding: 0 10px; }
 
   .clockblock { order: 4; flex: 1 1 auto; margin-left: 0; font-size: 14px; }
-  .tag-long { display: none; }
   .tag { min-height: 28px; padding: 0 8px; font-size: 13px; }
   .brand span { display: none; }
-  .who b { display: none; }
-  .who { padding-right: 4px; }
   .today { padding: 20px; }
   .card { padding: 18px; }
   .screen-head h1, .detail-title h1 { font-size: 24px; }

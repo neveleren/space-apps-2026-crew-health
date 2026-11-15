@@ -8,8 +8,8 @@ export const SLIDES = [
     kicker: 'NASA SPACE APPS CHALLENGE 2026 · CREATE HEALTH MONITORING SOFTWARE FOR ASTRONAUTS',
     title: 'Crew Health Console',
     html: `<div><p class="lead">Health monitoring for astronauts that speaks up only when something really needs them, and keeps working when Earth is too far to ask.</p>
-      <div class="chips"><span class="chip c0">Runs offline on a crew laptop</span><span class="chip c0">Every number says where it comes from</span><span class="chip c0">Built to NASA-STD-3001 display rules</span><span class="chip c0">Real NASA data inside</span></div></div>
-      <img class="shot" src="./img/today.png" alt="The Today screen: one dated sentence about body and mind, the reasons, and the choice of buttons">`,
+      <div class="chips"><span class="chip c0">Runs offline on a crew laptop</span><span class="chip c0">Every number says where it comes from</span><span class="chip c0">Follows NASA-STD-3001 display rules</span><span class="chip c0">Real NASA data inside</span></div></div>
+      <img class="shot" src="./img/today.png" alt="Today on a calm day: As of 15 Nov 2026, your physical and mental condition is excellent">`,
   },
   {
     kicker: 'THE PROBLEM, IN NASA\'S OWN WORDS',
@@ -29,7 +29,7 @@ export const SLIDES = [
     html: `<div><p class="quote">"As of 15 Nov 2026, your physical condition needs attention, your mental condition is excellent."</p>
       <ul class="points" style="margin-top:22px">
         <li><span>Every reading is checked on board against its normal range and the team's rules: <b>no AI needed</b>.</span></li>
-        <li><span>Changes common in flight stay quiet; values past <b>medical red limits</b> raise an urgent alert at once.</span></li>
+        <li><span>Changes common in flight stay quiet; a value past a <b>medical red limit</b> alerts the person and the crew at once, with no AI in the loop.</span></li>
         <li><span>Then a choice: <b>Details · Analyse with AI · Message the doctor</b>.</span></li>
       </ul></div>
       <img class="shot" src="./img/today-attention.png" alt="Today with a reason and the three buttons">`,
@@ -38,7 +38,7 @@ export const SLIDES = [
     kicker: 'NOTHING UNEXPLAINED',
     title: 'Every number says where it comes from',
     html: `<ul class="points">
-      <li><span>Point at any value or press <b>?</b>: what it is, what measures it on the ISS (with a link), what else could, how it reaches the program, and how <b>this</b> value was produced.</span></li>
+      <li><span>Point at any value or press <b>?</b>: what it is, what measures it on the ISS (with a link), what else could measure it, how it reaches the program, and how <b>this</b> value was produced.</span></li>
       <li><span>History before, during and after flight, the normal range, and a straight-line forecast to landing, labelled <b>not a medical model</b>.</span></li>
       <li><span>Status line always visible, NASA colour meanings, numbered "What to do" steps, alert tones from NASA's table.</span></li>
     </ul>
@@ -52,18 +52,19 @@ export const SLIDES = [
       <li><span>The team's AI support offers an anonymous talk or to tell the doctor; <b>the choice stays with the person</b>. It is not a therapist, and a fixed safety net works without the AI.</span></li>
       <li><span>Small things that help (Earth view, calls home, shared meals), a private journal, a plan for hard days, and a 3-minute reaction test modelled on <b>NASA's Reaction Self Test</b>.</span></li>
     </ul>
-    <img class="shot" src="./img/mind.png" alt="Mind support cards">`,
+    <img class="shot" src="./img/mind.png" alt="The team's AI support offer after hard days, with the choice: an anonymous session with AI or telling the doctor on Earth">`,
     src: 'Sources: NASA BMed evidence report (2025); NASA Journals study (Stuster 2010); NASA Reaction Self Test (2009); Stanley and Brown safety planning (JAMA Psychiatry 2018); APA health advisory on AI chatbots (2025)',
   },
   {
-    kicker: 'WORKS FAR FROM EARTH, CONNECTS WHERE IT CAN',
-    title: 'Offline first, honest about every connection',
+    kicker: 'SAFE, PRIVATE, CONNECTED WHERE IT CAN BE',
+    title: 'Danger reaches the crew at once; privacy stays',
     html: `<ul class="points">
-      <li><span><b>Working:</b> Bluetooth heart rate and health devices, HL7 FHIR export for medical records, real NASA OSDR Inspiration4 blood tests, NASA ISS live telemetry and NOAA space weather (Earth demos).</span></li>
-      <li><span><b>Planned, with partners:</b> EveryWear, NASA's crew medical record, the station server and NASA's delay-tolerant network.</span></li>
-      <li><span>Mission profile <b>ISS, Moon or Mars</b>; no link means messages wait in the outbox; a <b>Help</b> key works from any screen.</span></li>
+      <li><span><b>Safe:</b> past a red limit, the person and the crew are alerted at once, with no AI and no link to Earth. Crewmates see <b>one line</b>, never the record.</span></li>
+      <li><span><b>Private:</b> each person opens only their own records, with an optional PIN; messages to the doctor are sealed for the flight surgeon's key.</span></li>
+      <li><span><b>Connected:</b> Bluetooth health devices, HL7 FHIR export, NASA OSDR blood tests, live ISS cabin air (NASA ISSLive), NOAA space weather. <b>Planned with partners:</b> EveryWear, NASA's crew medical record.</span></li>
     </ul>
-    <img class="shot" src="./img/connections.png" alt="The Connections list with working, simulated and planned rows">`,
+    <div class="shots2"><img class="shot" src="./img/crew-alarm.png" alt="A crewmate's screen: Tom needs help now, blood oxygen 85 percent; go to them"><img class="shot" src="./img/connections-live.png" alt="Live rows of the Connections list: ISS cabin air from NASA ISSLive and NOAA space weather, each marked Earth demo"></div>`,
+    src: 'Sources: MedlinePlus pulse oximetry (urgent at 88% or lower); ISS crew code of conduct, 14 CFR 1214.403; Bluetooth GATT specifications; HL7 FHIR R4; NASA OSDR OSD-575 and OSD-569; NASA ISS Live! (NTRS 20130013825); NOAA SWPC',
   },
   {
     kicker: 'TRY IT',
@@ -99,7 +100,7 @@ let at = 0;
 function show(i) {
   at = Math.max(0, Math.min(SLIDES.length - 1, i));
   [...deck.children].forEach((el, k) => { el.hidden = k !== at; });
-  counter.textContent = `${at + 1} / ${SLIDES.length}`;
+  counter.textContent = `${at + 1} / ${SLIDES.length} · arrow keys`;
   try { history.replaceState(null, '', `#${at + 1}`); } catch { /* no history in some viewers */ }
 }
 function fit() {
