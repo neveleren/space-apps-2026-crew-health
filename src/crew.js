@@ -2323,7 +2323,8 @@ function openEarthBreak() {
   runEarthBreak({ onDone: (r) => { const d = loadMind(p.id); d.breaks = [r, ...d.breaks].slice(0, 50); saveMind(p.id, d); toast(r.feeling ? `Noted privately: ${r.feeling}.` : 'Break done.'); }, onCancel: () => {} });
 }
 function earlierRuns(p) {
-  const mine = stored.filter((e) => e.person === p.id && e.reading && e.reading.indicator === 'reaction' && e.reading.detail).map((e) => e.reading.detail);
+  // A drill's runs never count as the person's own earlier runs (src/drill.js).
+  const mine = stored.filter((e) => e.person === p.id && !isDrill(e) && e.reading && e.reading.indicator === 'reaction' && e.reading.detail).map((e) => e.reading.detail);
   return ui.example && !p.real ? [...exampleEarlierRuns(MISSION.launch), ...mine] : mine;
 }
 function openReactionTest(mode) {
