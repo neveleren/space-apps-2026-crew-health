@@ -303,10 +303,11 @@ const RISK_PATTERNS = [
   /\bself[- ]?harm/,
   /\b(end|ending|take|taking) (my (own )?life|it all)\b/,
   /\bwant to end it\b/,
-  /\b(want|wanna|going|ready) to die\b/,
+  // "wanna" already holds the "to": "I wanna die", "I dont wanna live".
+  /\b(want to|wanna|going to|ready to) die\b/,
   /\bwish (i|i'd) (was|were|had been) dead\b/,
   /\bbetter off (dead|without me)\b/,
-  /\b(don'?t|do not) want to (live|be alive|be here|exist|wake up)\b/,
+  /\b(don'?t|do not) (want to|wanna) (live|be alive|be here|exist|wake up)\b/,
   /\bno (reason|point) (to live|in living|living|to go on|in going on|going on)\b/,
   /\b(can'?t|cannot|can not) (go on|keep going|do this anymore)\b/,
   /\bnever wake up\b/,

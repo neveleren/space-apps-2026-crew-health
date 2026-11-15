@@ -4,6 +4,8 @@
 // and how this very value was produced. The owner's request; text and sources gathered by Claude (Anthropic), an AI system.
 //
 // Use: put data-tip="<key>" on any element; a "?" button made with tipButton() opens the same card on press.
+// An element that also has data-tip-press (the status line's tags) opens its card on a tap or a click and on
+// keyboard focus too, like a "?" button, since a touch screen cannot point at it.
 // initTips(resolve) takes a function that turns a key into the card's content (a DOM node).
 
 let pop = null;
@@ -13,6 +15,7 @@ let showTimer = 0;
 let hideTimer = 0;
 let resolve = () => null;
 const HOVER_MS = 550;
+const PRESS = '.tip-btn, [data-tip][data-tip-press]';
 
 export function tipButton(key, label) {
   const b = document.createElement('button');
@@ -71,6 +74,21 @@ function place() {
   const ph = Math.min(full, maxH);
   pop.style.left = `${Math.round(left)}px`;
   pop.style.top = `${Math.round(Math.max(area.top, Math.min(top, area.bottom - ph)))}px`;
+  markMore();
+}
+
+// A card that scrolls inside fades out at its bottom edge until it is read to the end, so the sources below are
+// not taken for missing: a strip in the card's own colour lies over the last lines (index.html .tp-fade).
+function markMore() {
+  if (!pop || pop.hidden) return;
+  const more = pop.scrollTop + pop.clientHeight < pop.scrollHeight - 4;
+  if (more && !pop.querySelector(':scope > .tp-fade')) {
+    const fade = document.createElement('div');
+    fade.className = 'tp-fade';
+    fade.setAttribute('aria-hidden', 'true');
+    pop.append(fade);
+  }
+  pop.classList.toggle('more', more);
 }
 
 function show(target, pin) {
@@ -109,6 +127,7 @@ export function initTips(resolver) {
   pop.className = 'tip-pop';
   pop.hidden = true;
   document.body.append(pop);
+  pop.addEventListener('scroll', markMore, { passive: true });
 
   document.addEventListener('pointerover', (e) => {
     if (e.pointerType === 'touch') return;
@@ -138,7 +157,7 @@ export function initTips(resolver) {
   document.addEventListener('pointerup', () => { setTimeout(() => { pressing = false; }, 0); }, true);
   document.addEventListener('pointercancel', () => { pressing = false; }, true);
   document.addEventListener('focusin', (e) => {
-    const t = e.target.closest && e.target.closest('.tip-btn');
+    const t = e.target.closest && e.target.closest(PRESS);
     if (t && !pinned && !pressing) show(t, false);
   });
   document.addEventListener('focusout', (e) => {
@@ -147,7 +166,7 @@ export function initTips(resolver) {
     hideTimer = setTimeout(() => { if (!pinned) hideTip(); }, 120);
   });
   document.addEventListener('click', (e) => {
-    const b = e.target.closest && e.target.closest('.tip-btn');
+    const b = e.target.closest && e.target.closest(PRESS);
     if (b) {
       e.preventDefault();
       e.stopPropagation();
@@ -165,6 +184,8 @@ export function initTips(resolver) {
     e.preventDefault();
     if (back.classList.contains('tip-btn')) back.focus();
   });
-  window.addEventListener('scroll', () => { if (pinned) place(); else if (current) hideTip(); }, { passive: true });
+  // A card shown for the keyboard stays when the page scrolls to bring its "?" into view (the scroll padding does
+  // that on Tab); place() closes it once the "?" is out of sight. A card shown for the pointer closes on scroll.
+  window.addEventListener('scroll', () => { if (pinned || (current && current === document.activeElement)) place(); else if (current) hideTip(); }, { passive: true });
   window.addEventListener('resize', () => hideTip());
 }

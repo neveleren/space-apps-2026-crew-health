@@ -234,6 +234,12 @@ h1 .tip-btn, h2 .tip-btn, p .tip-btn { width: 30px; height: 30px; margin-left: 2
 .now, .chart-card, .settings .card { position: relative; }
 /* A "?" card stays between the status line and the bar of keys (src/explain.js places it); a long one scrolls inside. */
 .tip-pop { position: fixed; z-index: 50; display: grid; gap: 6px; width: max-content; max-width: min(400px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow-y: auto; overscroll-behavior: contain; padding: 12px 14px; border-radius: 8px; background: var(--panel-2); color: var(--ink); border: 1px solid var(--axis); box-shadow: var(--shadow); font-size: 16px; line-height: 1.45; }
+/* While more of a card lies below, a strip in the card's own colour fades its last visible lines (src/explain.js
+   adds it), so the sources there are not taken for missing. It shares the content's grid cell and sticks to the
+   bottom edge, so nothing moves. */
+.tip-pop > * { grid-area: 1 / 1; }
+.tip-pop > .tp-fade { display: none; }
+.tip-pop.more > .tp-fade { display: block; align-self: end; position: sticky; bottom: 0; height: 48px; background: linear-gradient(to bottom, transparent, var(--panel-2) 85%); pointer-events: none; }
 .tip-pop p { margin: 0; }
 .tip-pop .tp-title { font-size: 16px; font-weight: 700; }
 .tip-pop b { font-weight: 600; }

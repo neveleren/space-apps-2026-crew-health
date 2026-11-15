@@ -506,9 +506,12 @@ function renderBar() {
   } else byId('met').textContent = p && p.real ? 'Inspiration4, 2021' : '';
   // Quiet and dark: a tag appears only when something is off.
   const tags = [];
-  if (p && !p.real && ui.example) tags.push(h('span', { class: 'tag example', 'data-tip': 't:example', tabindex: '0' }, 'Example', h('span', { class: 'tag-long' }, ' data')));
-  if (p) tags.push(h('span', { class: 'tag plain systems', 'data-tip': 's:systems', tabindex: '0', role: 'img', 'aria-label': 'Systems: automation, AI, link, doctor, saving, sound' }, icon('cpu', { size: 18 })));
-  // On a phone two or more of these fold into one tag ("3 off"), so the status line stays short; its card lists them.
+  // The tags that can take the keyboard also open their card on a tap or a click (data-tip-press, src/explain.js),
+  // because a touch screen cannot point at them.
+  if (p && !p.real && ui.example) tags.push(h('span', { class: 'tag example', 'data-tip': 't:example', 'data-tip-press': '', 'data-fk': 'tag:example', tabindex: '0' }, 'Example', h('span', { class: 'tag-long' }, ' data')));
+  if (p) tags.push(h('span', { class: 'tag plain systems', 'data-tip': 's:systems', 'data-tip-press': '', 'data-fk': 'tag:systems', tabindex: '0', role: 'img', 'aria-label': 'Systems: automation, AI, link, doctor, saving, sound' }, icon('cpu', { size: 18 })));
+  // On a phone two or more of these fold into one tag ("3 off"), so the status line stays short; a tap on it opens
+  // the systems card, which says what is off, and a screen reader hears the list.
   const off = [];
   if (p) {
     if (!ui.ship.linkToEarth) off.push(['No link to Earth', h('span', { class: 'tag stale off-tag', 'data-tip': 't:nolink' }, icon('unlink', { size: 16 }), 'No link', h('span', { class: 'tag-long' }, ' to Earth'))]);
@@ -516,7 +519,7 @@ function renderBar() {
     if (ui.muted) off.push(['Sound off', h('span', { class: 'tag off-tag', 'data-tip': 't:soundoff' }, icon('bell-off', { size: 16 }), 'Sound off')]);
   }
   tags.push(...off.map(([, tag]) => tag));
-  if (off.length >= 2) tags.push(h('span', { class: 'tag fold-off', 'data-tip': 's:systems', tabindex: '0', 'aria-label': `${off.length} off: ${off.map(([word]) => word).join(', ')}` }, icon('ban', { size: 16 }), `${off.length} off`));
+  if (off.length >= 2) tags.push(h('span', { class: 'tag fold-off', 'data-tip': 's:systems', 'data-tip-press': '', 'data-fk': 'tag:off', tabindex: '0' }, icon('ban', { size: 16 }), `${off.length} off`, h('span', { class: 'sr-only' }, `: ${off.map(([word]) => word).join(', ')}`)));
   if (p && camStop) tags.push(h('span', { class: 'tag plain', 'data-tip': 't:camon' }, icon('camera', { size: 16 }), 'Camera on'));
   byId('sys-summary').classList.toggle('folded', off.length >= 2);
   byId('sys-summary').replaceChildren(...tags);
@@ -848,7 +851,8 @@ function measureRow(owner, indicator, a, now) {
   else if (!last) kids.push(h('span', { class: 'r-none' }, 'No readings yet'));
   else {
     const raw = valueText(indicator, last.value);
-    const word = indicator === 'sleepQuality' ? `${raw} of 7` : ORDINAL[indicator] ? cap(raw) : raw;
+    // A word answer starts with a capital letter, as on the measure's own page ("Same as before flight").
+    const word = indicator === 'sleepQuality' ? `${raw} of 7` : ORDINAL[indicator] || /[a-z]/i.test(String(raw)) ? cap(String(raw)) : raw;
     const isWord = !/^[0-9.,/% -]+$/.test(String(word));
     const hasUnit = cell.kind === KIND.NUMBER && Boolean(cell.unit);
     const arrow = out && m && m.side ? icon(m.side === 'below' ? 'arrow-down' : 'arrow-up', { size: 16, stroke: 2.4, label: m.side === 'below' ? 'below the normal range' : 'above the normal range' }) : null;
@@ -2379,7 +2383,9 @@ function setScreen(name) {
   hideTip();
   ui.screen = name;
   if (name !== 'detail') ui.detail = null;
-  if (byId('panel').open) closePanel();
+  // A key pressed while a sheet is open keeps the focus: the sheet closes without sending the keyboard back to the
+  // button that opened it, which is on the screen being left.
+  if (byId('panel').open) { panelReturn = null; panelReturnSel = null; closePanel(); }
   render();
   window.scrollTo(0, 0);
 }

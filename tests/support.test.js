@@ -146,13 +146,15 @@ test('Help now opens for the common ways people say it, with any apostrophe, cas
     "I don't want to be alive anymore", 'Everyone would be better off without me', 'I want to disappear and never wake up',
     'I CANNOT GO ON', 'i  wish i  was   dead', 'I dont want to live', 'thinking about suicide', 'I feel suicidal',
     'I want to take my own life', 'no reason to live', 'I want to die', 'self-harm again', 'I can not go on',
+    // "wanna" already holds the "to"
+    'i wanna die', 'I dont wanna live anymore', 'I don’t wanna wake up tomorrow',
   ];
   for (const s of said) assert.equal(matchesRisk(s), true, s);
   assert.equal(plainText('Can’t  GO\non'), "can't go on");
 });
 
 test('the word rule stays quiet for ordinary hard days, and the card never sends anything by itself', () => {
-  for (const s of ['Long day, the crew argument about the schedule.', 'I am tired and I miss home.', 'The skill test went badly.', 'I cannot sleep.', '', null]) {
+  for (const s of ['Long day, the crew argument about the schedule.', 'I am tired and I miss home.', 'The skill test went badly.', 'I cannot sleep.', 'I wanna go home.', '', null]) {
     assert.equal(matchesRisk(s), false, String(s));
   }
   assert.equal(RISK_RULE.draft, true);
