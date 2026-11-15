@@ -320,3 +320,22 @@ test('exercise: a reading that is only recorded never changes the judgement of t
   assert.equal(new Date(it.m.runFrom).toISOString(), at(116));
   assert.equal(it.m.list[it.m.list.length - 1].context, 'exercise', 'the screen still gets every reading');
 });
+
+// ---------- final review fixes of 15 Nov 2026 (drafts): an alarm can be called off; own logs can say "tell someone" ----------
+
+test('a temperature of 35.0 °C is the urgent hypothermia limit: NEWS2 scores 35.0 or less red; MedlinePlus stays the first source', () => {
+  const m = fresh();
+  ordinaryDays(m, 110, 120);
+  put(m, 120, 'temp', 35.0, 'crew-1', { time: at(120, 9) });
+  const a = judgeOn(m, 120);
+  const it = itemOf(a, 'temp');
+  assert.equal(it.kind, 'red');
+  assert.equal(it.level, LEVEL.URGENT);
+  assert.deepEqual([it.red.when, it.red.value, it.red.source, it.red.source2, it.red.draft], ['atOrBelow', 35, 'MedlinePlus (NIH)', 'RCP NEWS2, 2017', true]);
+  assert.match(it.red.url2, /^https:\/\/www\.rcp\.ac\.uk\//);
+  assert.equal(headlineFor('1 May 2026', a), 'As of 1 May 2026, your physical condition needs help: a doctor has been called, your mental condition is excellent.');
+  const warmer = fresh();
+  ordinaryDays(warmer, 110, 120);
+  put(warmer, 120, 'temp', 35.1, 'crew-1', { time: at(120, 9) });
+  assert.notEqual(itemOf(judgeOn(warmer, 120), 'temp').kind, 'red', '35.1 is outside the norm, not past the red limit');
+});

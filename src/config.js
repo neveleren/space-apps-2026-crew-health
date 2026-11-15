@@ -153,7 +153,10 @@ export const CELLS = [
     red: [
       { when: 'atOrAbove', value: 38.0, level: 'action', ...cite(L.cdcFever), draft: true, note: 'CDC: a measured temperature of 38 °C (100.4 °F) or more is a fever. A fever is never counted as the usual rise in flight.' },
       { when: 'atOrAbove', value: 40.6, level: 'urgent', ...RED.medlineFever, draft: true, note: 'MedlinePlus: an adult with a fever of 40.6 °C (105 °F) or higher should contact a provider right away, unless it comes down readily with treatment.' },
-      { when: 'below', value: 35.0, level: 'urgent', ...RED.medlineHypothermia, draft: true, note: 'MedlinePlus: hypothermia is a dangerously low body temperature, below 35 °C (95 °F); call emergency help whenever it is suspected.' },
+      // NEWS2 Chart 1 scores 35.0 °C or less as a red 3, and NEWS2 says a single red score "should prompt an urgent
+      // review by a clinician" (RCP 2017, report pages 29 and 30; checked 15 Nov 2026), so 35.0 itself is urgent here.
+      { when: 'atOrBelow', value: 35.0, level: 'urgent', ...RED.medlineHypothermia, source2: RED.news2.source, url2: RED.news2.url, draft: true,
+        note: `MedlinePlus: hypothermia is a dangerously low body temperature, below 35 °C (95 °F); call emergency help whenever it is suspected. NEWS2 gives a single red score at 35.0 °C or less, which should prompt an urgent review by a clinician. ${NEWS2_NOTE}.` },
     ],
     norms: {
       earthGeneral: { text: '36.1 to 37.2 °C; fever from 38 °C', src: L.medlineTemp, src2: L.cdcFever },

@@ -394,7 +394,7 @@ test('red limits: each measure at its published edge, with the right level', () 
     ['bp', { sys: 89, dia: 60 }, 'action'], ['bp', { sys: 90, dia: 58 }, null], // NEWS2, started below 90 as a draft
     ['glucose', 70, null], ['glucose', 69, 'action'], ['glucose', 54, 'action'], ['glucose', 53, 'urgent'], // ADA levels 1 and 2
     ['temp', 37.9, null], ['temp', 38.0, 'action'], ['temp', 40.5, 'action'], ['temp', 40.6, 'urgent'], // CDC fever; MedlinePlus
-    ['temp', 35.0, null], ['temp', 34.9, 'urgent'], // MedlinePlus hypothermia: below 35
+    ['temp', 35.1, null], ['temp', 35.0, 'urgent'], ['temp', 34.9, 'urgent'], // NEWS2: a red 3 at 35.0 or less; MedlinePlus hypothermia: below 35
     ['pulse', 41, null], ['pulse', 40, 'urgent'], ['pulse', 130, null], ['pulse', 131, 'urgent'], // NEWS2 red values
     ['resp', 9, null], ['resp', 8, 'urgent'], ['resp', 24, null], ['resp', 25, 'urgent'], // NEWS2 red values
   ];

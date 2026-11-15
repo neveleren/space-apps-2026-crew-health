@@ -90,6 +90,18 @@ test('the medicine list comes from the kit list, with strength, unit and a known
   assert.ok(c.amounts.every((a) => a > 0));
 });
 
+test('hypothermia: 35.0 °C or less is urgent, from MedlinePlus with NEWS2 as the second source', () => {
+  const low = cell('temp').red.filter((r) => r.when === 'atOrBelow' || r.when === 'below');
+  assert.equal(low.length, 1);
+  assert.deepEqual([low[0].when, low[0].value, low[0].level, low[0].source, low[0].source2, low[0].draft], ['atOrBelow', 35, 'urgent', 'MedlinePlus (NIH)', 'RCP NEWS2, 2017', true]);
+  assert.match(low[0].url, /^https:\/\/medlineplus\.gov\//);
+  assert.match(low[0].url2, /^https:\/\/www\.rcp\.ac\.uk\//);
+  assert.match(low[0].note, /NEWS2 gives a single red score at 35\.0 °C or less/);
+  const m = make();
+  assert.equal(m.receive(r('temp', 35.0)).dest, DEST.CREW_ALARM);
+  assert.notEqual(m.receive(r('temp', 35.1)).dest, DEST.CREW_ALARM);
+});
+
 test('every threshold added here is marked as a draft', () => {
   const oct = cell('octChange');
   assert.equal(oct.draft, true);
