@@ -569,6 +569,7 @@ dialog p { margin: 0; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 <link rel="stylesheet" href="./support.css">
+<link rel="stylesheet" href="./cycle.css">
 <script>
   // The display choice is applied before anything is drawn: dark (default), light, or follow the device.
   try { const pick = localStorage.getItem('jff-theme') || 'dark'; if (pick === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', pick); } catch { /* storage blocked: dark */ }

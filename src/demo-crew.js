@@ -269,3 +269,39 @@ export function exampleLogs(crew, stories = LOG_STORY) {
   }
   return events;
 }
+
+// ----- Example cycle days for Elly, MADE UP by Claude (15 Nov 2026), so the day log shows what it keeps: the flow of
+// each day and a few symptoms, on the periods that her example log above already marks with a start and an end.
+// They are kept out of exampleFlight, so its events stay exactly as before (tests/cells.test.js); the crew screen
+// adds them while the example flight is on. The shape is a common one, not anyone's real data: heaviest on the
+// second day, then lighter, spotting on the last day; cramps on the first two days, as period pain "tends to lessen
+// after the first few days" (ACOG FAQ046); bloating or tender breasts two days before a period (ACOG FAQ057: PMS
+// symptoms come in the 5 days before a period).
+const CYCLE_FLOWS = {
+  4: ['medium', 'heavy', 'light', 'spotting'],
+  5: ['medium', 'heavy', 'medium', 'light', 'spotting'],
+  6: ['medium', 'heavy', 'medium', 'light', 'light', 'spotting'],
+};
+export function exampleCycleDays(flight) {
+  const out = [];
+  const r = rng(61);
+  const ms = (t) => new Date(t).getTime();
+  const log = flight.filter((e) => e.person === 'crew-2' && e.reading && e.reading.indicator === 'cycle').sort((a, b) => ms(a.time) - ms(b.time));
+  const push = (time, dayMs, flow, symptoms) => out.push({ v: 1, kind: 'reading', example: true, time, person: 'crew-2', state, reading: { source: 'cycle-log', indicator: 'cycle', value: { day: at(dayMs).slice(0, 10), flow, symptoms } } });
+  let start = null;
+  for (const e of log) {
+    if (e.reading.value === 'period_start') start = e;
+    if (e.reading.value !== 'period_end' || !start) continue;
+    const first = ms(start.time);
+    const flows = CYCLE_FLOWS[Math.round((ms(e.time) - first) / DAY) + 1];
+    start = null;
+    if (!flows) continue;
+    // Logged when the period ended, as one entry a day.
+    push(e.time, first - 2 * DAY, 'none', [r() < 0.5 ? 'bloating' : 'breasts']);
+    flows.forEach((flow, i) => {
+      const symptoms = [i <= 1 ? 'cramps' : null, i === 0 && r() < 0.5 ? 'backPain' : null, i === 1 && r() < 0.6 ? 'tired' : null].filter(Boolean);
+      push(e.time, first + i * DAY, flow, symptoms);
+    });
+  }
+  return out;
+}

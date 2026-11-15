@@ -44,7 +44,7 @@ export const TIPS = {
   bluetooth: { title: 'Bluetooth heart rate', lines: ['Works now with any chest strap or watch that speaks the standard Bluetooth Heart Rate profile (Chrome or Edge on a computer).', 'One reading a minute is saved for the signed-in person.'] },
   fhir: { title: 'Export for the doctor', lines: ['Works now: the last 30 days as an HL7 FHIR file with LOINC codes, the format medical record systems read.', 'Example data carry FHIR\'s official "test data" label.'] },
   osdr: { title: 'NASA OSDR', lines: ['Works now: real, de-identified Inspiration4 blood tests from NASA\'s Open Science Data Repository (OSD-575 and OSD-569).'] },
-  cycle: { title: 'Menstrual cycle', lines: ['Logged by you, private: nothing is sent unless you choose to.', 'The next date is a plain average of your last cycles, not a medical model.'] },
+  cycle: { title: 'Menstrual cycle', lines: ['Logged by you, day by day: how much you bled and your symptoms, for today or one of the 89 days before it (the last 90 days, a draft limit), never a day still to come.', 'Private: nothing is sent unless you choose to. Crewmates never see it; the doctor\'s summaries and the FHIR export leave it out. Your own "Save a copy of my data" file holds it.', 'The next date is a plain average of your last cycles, not a medical model. There are no fertility or ovulation features.'] },
 };
 
 // Where each measure comes from. Filled from cited research: what it is, what measures it on the ISS,
@@ -533,7 +533,7 @@ export const PROVENANCE = {
     "path": "Not connected yet. The test software (WinSCAT or Cognition) would hand over its result file, or the flight surgeon would enter the comparison"
   },
   "cycle": {
-    "what": "The start and end days of your period, logged privately; doctors use the cycle as a health sign, and how spaceflight affects it is still barely studied (one 157-day flight found normal cycles).",
+    "what": "Your period days with the flow of each day, spotting and symptoms, logged privately; doctors use the cycle as a health sign, and how spaceflight affects it is still barely studied (one 157-day flight found normal cycles).",
     "iss": [
       {
         "name": "No dedicated ISS cycle tracker found",
@@ -548,6 +548,11 @@ export const PROVENANCE = {
     ],
     "could": [
       {
+        "name": "Flo, a period tracker: one flow a day, spotting apart, past periods edited in the calendar",
+        "maker": "Flo Health",
+        "url": "https://help.flo.health/hc/en-us/articles/360054540452-How-do-I-log-my-menstrual-flow"
+      },
+      {
         "name": "Apple Health Cycle Tracking",
         "maker": "Apple",
         "url": "https://support.apple.com/en-us/120356"
@@ -558,7 +563,7 @@ export const PROVENANCE = {
         "url": "https://www.accessdata.fda.gov/cdrh_docs/reviews/DEN170052.pdf"
       }
     ],
-    "how": "The person presses 'Period started today' and 'Period ended today'; the app counts cycle and period length and gives a plain-average next date (not a medical model). Optional extras used elsewhere: urine LH ovulation tests (used in flight by cosmonaut Anna Kikina), basal body temperature, or wrist temperature from a watch.",
+    "how": "The person presses a day on the cycle card's calendar and logs its bleeding (no bleeding, spotting, light, medium or heavy) and symptoms, for today or one of the 89 days before it (the last 90 days); the app finds the periods, counts cycle and period length, and gives a plain-average next date (not a medical model). While periods are suppressed it counts the days of breakthrough bleeding over the last 90 days. Days marked with the old buttons 'Period started today' and 'Period ended today' still count.",
     "path": "Manual, private entry on the cycle card; nothing leaves unless the person chooses."
   },
   "camera": {
