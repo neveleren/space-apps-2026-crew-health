@@ -37,7 +37,7 @@ NASA's Crew Health and Performance Integrated Data System Platform project (CHP-
 
 Two of the in-mission capabilities that every program must provide under NASA-STD-3001 Volume 1 Rev C, requirement [V1 3004] ([PDF](https://www.nasa.gov/wp-content/uploads/2023/11/nasa-std-3001-vol-1-rev-c-with-signature.pdf)).
 
-Our answer: one place for the crew's readings that the crew can see themselves; judgement on board by automation that needs no link and no AI; a message for the doctor that waits, sealed, in an outbox for the downlink (the downlink itself is not part of this prototype).
+Our answer: one place for the crew's readings that the crew can see themselves (the Medical record screen shows everything the program holds about a person, like a patient's medical card); judgement on board by automation that needs no link and no AI; a message for the doctor that waits, sealed, in an outbox for the downlink (the downlink itself is not part of this prototype).
 
 ## What the astronaut sees
 
@@ -74,11 +74,20 @@ These screenshots show the crew screen with the made-up example flight. The app'
 - Every connection says Working, Simulated or Planned, with its sources.
 - Sound and display (a sound test; dark, light or follow the device), mission profile (ISS, Moon, Mars: the signal delay), camera, "I am exercising" (turns itself off after 2 hours, draft), save a copy of your data and bring it back, the PIN, and the simulation switches.
 
+**5. Medical record.** The fifth key ("Record" on phones) opens everything the program holds about the signed-in person in one place, read only, like the patient's medical card that the Helsi app shows from Ukraine's national e-health system.
+
+- A card with who it is (made-up or real), the mission and flight day, and where the record is kept; today's sentence and alerts; a list of the sections with their counts.
+- The sections, newest first: vital signs and other measures (latest value, time, source, count), lab results (the real Inspiration4 draws, each value against its lab range), eye checks, images and tracings, medicines taken and symptoms (private), alerts and what happened to them (the red limit, the crew line, the message to the doctor, false alarms, all clears), messages to the doctor, the mind and the cycle (private), and documents (the FHIR export, a copy of everything, print or save as PDF).
+- Every item opens where it came from: the measure's page, the blood value, Messages, the cycle card.
+- Allergies, vaccinations, diagnoses, prescriptions, procedures and visits are listed as "Not in this prototype: comes from the medical record system", pointing to the planned NASA medical record row. The HL7 International Patient Summary asks its required sections (allergies, problems, medicines) to say why when they hold no data; the record does the same for all six.
+- Only the person's own records; a crewmate's screen never gets them.
+
 ## Working now, simulated, planned
 
 | Part | Status | Note |
 |---|---|---|
 | Crew screen: sign-in, Today, check-in, quick logs, all measures, charts, forecast, hand entry, messages | Working | Runs offline |
+| Medical record: everything about the person in one place, read only | Working | Allergies, vaccinations, diagnoses, prescriptions, procedures and visits are listed as not in this prototype |
 | Levels, red limits, crew alarm lines, alarm tones, Help key | Working | Every threshold is a draft for flight surgeons |
 | Mind support tools | Working | Journal and plan stay in this browser, not encrypted |
 | Camera: a hand on the chest asks "Are you okay?", a sleeping person is ignored | Working, as a demonstration | Google's models run on the computer; no video stored or sent; off after an hour |
@@ -188,7 +197,7 @@ The first three checks showed no page errors. What each test file covers, and ho
 Full detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 1. Two pages in plain JavaScript modules, no framework, no build: the crew screen (`index.html`, `src/crew.js`) and the technical view (`machine.html`, `src/ui.js`).
-2. The machine (`src/engine.js`) puts each reading in its cell (`src/config.js`), checks it against the norm and red limits, and records who gets it. The levels (`src/state-levels.js`) turn one person's history into today's sentence. The crew alarm's rules and words (`src/crew-alarm.js`), the search of the measures (`src/find.js`) and the crew's own mission dates (`src/mission.js`) are kept apart from the screen, so they can be tested without a browser.
+2. The machine (`src/engine.js`) puts each reading in its cell (`src/config.js`), checks it against the norm and red limits, and records who gets it. The levels (`src/state-levels.js`) turn one person's history into today's sentence. The crew alarm's rules and words (`src/crew-alarm.js`), the search of the measures (`src/find.js`), the crew's own mission dates (`src/mission.js`) and the sections of the medical record (`src/medrecord.js`, drawn by `src/record-view.js`) are kept apart from the screen, so they can be tested without a browser.
 3. Every reading, answer and message is an event. `src/store.js` keeps events on our server or, without it, in the browser; the machine is rebuilt from them each time a page opens.
 4. The server (`serve.mjs`, `src/security.js`, Node built-ins only) serves the pages, checks each event, appends it to the person's file and seals messages to a doctor. It never judges a reading.
 5. Bluetooth devices (`src/ble.js`), CSV files (`src/csv-import.js`), ISSLive (`src/isslive.js`), the reaction test (`src/reaction-test.js`), the camera (`src/camera.js`, `src/camera-rules.js`) and a letter to the psychologist add events the same way. The FHIR and calendar exports (`src/fhir.js`, `src/ical.js`) read them. The journal, the plan for hard days, the five steps and the Earth break (`src/support.js`, `src/earth-break.js`) stay in the browser.
@@ -202,6 +211,7 @@ These stay with the team. The thresholds in the program are marked as drafts on 
 - The AI's name; "anonymous" or "private" as the word for the session; who gives advice, the automation or the AI.
 - Anonymity before "Message the doctor"; how the program tells people apart; names for crew members 3 and 4.
 - Who analyses X-rays; the default with no doctor on board and no link to Earth.
+- Which parts of a full medical card the program should hold itself (allergies, vaccinations, diagnoses, prescriptions, procedures, visits), and which should come only from NASA's medical record; today the Medical record screen lists them as not in this prototype.
 - Converting the ISS oxygen value to the inspired value; an ISS-specific cabin pressure limit.
 - An upper heart-rate limit during exercise; a resting pulse of 40 for athletes; how long a red reading of a rarely taken measure stays.
 - The alarm timings (a look for new crew lines every 15 s, a repeat every 4 s, the spoken line every 16 s, a call for help tried again every 5 s); whether an eye self-check answer other than "no change" is attention or needs action; the symptom score (8 of 10 in 24 hours) that asks to tell the crew medical officer; the 12 hours for two sleep medicines.
