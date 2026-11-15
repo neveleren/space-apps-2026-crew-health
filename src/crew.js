@@ -1751,6 +1751,9 @@ async function falseAlarm(x) {
   const r = await addReading('camera', 'chest_grab_ok', { source: { id: 'false-alarm', indicator: 'camera' }, quiet: true, share: false });
   if (!r.ok) { toast(`Not saved: ${shortReason(r.why)}. The alarm still stands: try again.`); return; }
   const s = await shareCrewAlarm(p.id, { force: true, falseAlarm: true });
+  // A call for help of this person that is still on its way is called off too: the banner stops saying "Help was NOT
+  // sent: tell the crew in person now", and no "Your call for help is saved now" follows when it arrives.
+  if (helpCall && helpCall.person === p.id) helpCall = null;
   for (const a of alertsFor(p.id)) if (a.camera) { ui.seen.add(a.id); acked.add(a.id); }
   ui.seen.add(x.id);
   acked.add(x.id);
