@@ -785,7 +785,7 @@ export const PROVENANCE = {
         "url": "https://support.apple.com/120991"
       }
     ],
-    "how": "In a quiet module the person wears the audiometer headset, does an ear pressure check, then presses a key whenever a tone is heard; the software finds the quietest level heard at each pitch (an audiogram). This app shows one number: the average at 2000, 3000 and 4000 Hz, compared with your latest test before launch. WHO's 20 dB (an average at 500 to 4000 Hz) is only a second reference, used when no pre-flight test is on record.",
+    "how": "In a quiet module the person wears the audiometer headset, does an ear pressure check, then presses a key whenever a tone is heard; the software finds the quietest level heard at each pitch (an audiogram). This app shows one number: the average at 2000, 3000 and 4000 Hz, compared with your latest test before launch. WHO's 20 dB (an average at 500 to 4000 Hz) is only a second reference, used for tests before launch and while no pre-flight test is on record.",
     "path": "On the ISS the KUDUwave software runs on a station laptop and its results go to secure NASA servers and the JSC audiology clinic."
   },
   "radiation": {

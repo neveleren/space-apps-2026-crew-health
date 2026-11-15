@@ -219,8 +219,27 @@ test('hearing in the levels and on the page: attention at a shift of 10 dB, the 
   const none = make();
   put(none, 'hearing', 8, at(5));
   assert.equal(hearingState(none.history('crew-1', 'hearing')).baseline, null);
-  assert.match(hearingRangeText(none.history('crew-1', 'hearing')), /WHO; no pre-flight test on record/);
-  assert.match(hearingWords(none.history('crew-1', 'hearing')).join(' '), /No pre-flight test is on record/);
+  assert.match(hearingRangeText(none.history('crew-1', 'hearing')), /WHO, until a test in flight can be compared with your pre-flight test/);
+  assert.match(hearingWords(none.history('crew-1', 'hearing')).join(' '), /No test in flight has been compared with a pre-flight test yet/);
+});
+
+test('hearing words stay true before launch and say "made up" for an example pre-flight test', () => {
+  // A test taken before launch is itself the pre-flight test: the page must not say that none is on record.
+  const before = make({ launch: '2026-12-01T12:00:00Z', today: NOW.toISOString(), landing: '2027-05-01T12:00:00Z' });
+  put(before, 'hearing', 11, at(5));
+  const words = hearingWords(before.history('crew-1', 'hearing')).join(' ');
+  assert.doesNotMatch(words, /No pre-flight test is on record/);
+  assert.match(words, /latest test before the launch date of your mission \(Settings\)/);
+  assert.doesNotMatch(hearingRangeText(before.history('crew-1', 'hearing')), /no pre-flight test on record/);
+  // The example flight's pre-flight test is made up, also when a real test in flight is compared with it.
+  const mixed = make();
+  mixed.receive({ person: 'crew-1', source: 'audiometer', indicator: 'hearing', value: 9, time: '2026-05-01T08:00:00Z', example: true });
+  put(mixed, 'hearing', 15, at(3));
+  assert.match(hearingWords(mixed.history('crew-1', 'hearing')).join(' '), /Your pre-flight test: 9 dB HL, GMT 121\/08:00, the latest test before launch \(made up: example data\)\./);
+  const real = make();
+  put(real, 'hearing', 9, '2026-05-01T08:00:00Z');
+  put(real, 'hearing', 15, at(3));
+  assert.doesNotMatch(hearingWords(real.history('crew-1', 'hearing')).join(' '), /made up/);
 });
 
 test('the example flight: no made-up person crosses the new lines, so Today stays as it was', () => {

@@ -260,7 +260,7 @@ export const CELLS = [
     // average, so it is a rough reference here.
     normType: 'baseline-shift', norm: { shiftAtLeast: 10, fallback: { max: 20, maxExclusive: true } }, draft: true, compareWith: 'personalEarth',
     norms: {
-      earthGeneral: { text: 'WHO: normal hearing is below 20 dB, as the better-ear average at 500, 1000, 2000 and 4000 Hz; a second reference here, used only when no pre-flight test is on record', src: L.whoHearing },
+      earthGeneral: { text: 'WHO: normal hearing is below 20 dB, as the better-ear average at 500, 1000, 2000 and 4000 Hz; a second reference here, used for tests before launch and while no pre-flight test is on record', src: L.whoHearing },
       spaceGeneral: { text: 'no limit in flight; NASA checks on orbit the hearing of crew staying longer than 30 days, and flight surgeons on the ground look for significant changes', src: L.ooha2024 },
       personalEarth: { text: "NASA's criterion for a mission-related shift: an average shift of 10 dB or more at 2000, 3000 and 4000 Hz since the pre-flight hearing test; fewer than 5% of ISS crew had one. This value is that average, compared with your latest test before launch (a draft rule)", src: L.nasaHearing },
       personalSpace: none,

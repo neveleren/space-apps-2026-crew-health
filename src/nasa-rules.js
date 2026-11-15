@@ -157,20 +157,23 @@ export function hearingRule(cell = cellOf('hearing')) {
   return { shiftAtLeast: cell.norm.shiftAtLeast, whoBelow: f.max ?? null };
 }
 
-// The latest reading and the pre-flight test it was compared with; baseline null when none is on record.
+// The latest reading and the pre-flight test it was compared with. baseline is null while no test in flight has been
+// compared with one: every test is from before launch, no test before launch is on record, or no mission is set.
+// baselineExample: that pre-flight test is made-up example data, so the screen says so.
 export function hearingState(list) {
   const all = Array.isArray(list) ? list : [];
   const last = all[all.length - 1] || null;
   const based = all.filter((x) => Number.isFinite(x.baseline));
   const ref = based[based.length - 1] || null;
-  return { last, baseline: ref ? ref.baseline : null, baselineTime: ref ? ref.baselineTime : null, shift: last && Number.isFinite(last.shift) ? last.shift : null };
+  const test = ref ? all.find((x) => x && Number.isFinite(ms(x.time)) && iso(x.time) === ref.baselineTime) : null;
+  return { last, baseline: ref ? ref.baseline : null, baselineTime: ref ? ref.baselineTime : null, baselineExample: Boolean(test && test.example), shift: last && Number.isFinite(last.shift) ? last.shift : null };
 }
 
 // The normal range in words, as the screens write ranges ("below 22 dB HL, ...").
 export function hearingRangeText(list, cell = cellOf('hearing')) {
   const rule = hearingRule(cell);
   const s = hearingState(list);
-  if (s.baseline === null) return `below ${rule.whoBelow} dB HL (WHO; no pre-flight test on record to compare with)`;
+  if (s.baseline === null) return `below ${rule.whoBelow} dB HL (WHO, until a test in flight can be compared with your pre-flight test)`;
   return `below ${one(s.baseline + rule.shiftAtLeast)} dB HL, less than ${rule.shiftAtLeast} dB above your pre-flight test of ${one(s.baseline)} dB HL`;
 }
 
@@ -185,7 +188,7 @@ export function hearingBand(list, cell = cellOf('hearing')) {
 export function hearingLines(list, cell = cellOf('hearing')) {
   const rule = hearingRule(cell);
   const s = hearingState(list);
-  if (s.baseline === null) return rule.whoBelow === null ? [] : [{ v: rule.whoBelow, label: `WHO: normal hearing below ${rule.whoBelow} dB (no pre-flight test on record)` }];
+  if (s.baseline === null) return rule.whoBelow === null ? [] : [{ v: rule.whoBelow, label: `WHO: normal hearing below ${rule.whoBelow} dB (no pre-flight comparison yet)` }];
   const nasa = s.baseline + rule.shiftAtLeast;
   const out = [{ v: nasa, label: `NASA: ${rule.shiftAtLeast} dB above your pre-flight test (draft)` }];
   if (rule.whoBelow !== null && Math.abs(rule.whoBelow - nasa) >= 4) out.push({ v: rule.whoBelow, label: `WHO: ${rule.whoBelow} dB, a second reference` });
@@ -199,9 +202,10 @@ export function hearingWords(list, cell = cellOf('hearing')) {
   const out = [];
   out.push(`This value is the average of your hearing thresholds at 2000, 3000 and 4000 Hz. NASA counts an average shift of ${rule.shiftAtLeast} dB or more at these tones since the pre-flight hearing test as a mission-related shift; in ISS crews fewer than 5% had one (NASA JSC, 2015). Here it is a draft rule.`);
   if (s.baseline === null) {
-    out.push(`No pre-flight test is on record, so there is nothing of your own to compare with: the reading is compared with WHO's ${rule.whoBelow} dB for now, the second reference.`);
+    // Said this way because it holds in every case: a test before launch, no test before launch, or no mission set.
+    out.push(`No test in flight has been compared with a pre-flight test yet. The pre-flight test is your latest test before the launch date of your mission (Settings); until a test in flight can be compared with it, the reading is compared with WHO's ${rule.whoBelow} dB, the second reference.`);
   } else {
-    out.push(`Your pre-flight test: ${one(s.baseline)} dB HL, ${gmtText(s.baselineTime)}, the latest test before launch.`);
+    out.push(`Your pre-flight test: ${one(s.baseline)} dB HL, ${gmtText(s.baselineTime)}, the latest test before launch${s.baselineExample ? ' (made up: example data)' : ''}.`);
     if (s.last && s.shift !== null) {
       const words = s.shift > 0 ? `${one(s.shift)} dB above it` : s.shift < 0 ? `${one(-s.shift)} dB below it` : 'the same as it';
       out.push(`Your last test, ${one(num(s.last.value))} dB HL, is ${words}${s.shift >= rule.shiftAtLeast ? `: a shift of ${rule.shiftAtLeast} dB or more, which NASA counts as a mission-related shift` : ''}.`);
