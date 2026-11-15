@@ -2027,7 +2027,7 @@ function renderSetup() {
         h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Save a copy of my data'), h('small', {}, 'Every reading, answer and message of yours, as one file, kept as long as you like (NASA-STD-3001 Vol 1, 7001).')),
           btn('secondary small', 'Save a copy', () => exportMine(), 'file-json-2')),
         h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Bring back a copy'), h('small', {}, 'Adds the events of a saved copy that are not here yet.')),
-          h('label', { class: 'btn secondary small' }, icon('send', { size: 18 }), 'Choose a file', h('input', { type: 'file', accept: '.jsonl,.json,application/json', hidden: true, onchange: (e) => restoreMine(e.target.files[0]) })))),
+          h('label', { class: 'btn secondary small', tabindex: '0', role: 'button' }, icon('send', { size: 18 }), 'Choose a file', h('input', { type: 'file', accept: '.jsonl,.json,application/json', hidden: true, onchange: (e) => restoreMine(e.target.files[0]) })))),
       pinCard(p),
       h('section', { class: 'card' }, cornerTip('t:onboard', 'the simulation switches'), h('h2', {}, 'Simulation, for the demonstration'),
         switchRow('st-ai', 'AI is working', 'With the AI off, only the automation works.', ui.ship.aiWorks, ship('aiWorks')),
@@ -2096,6 +2096,14 @@ byId('find-clear').addEventListener('click', () => { ui.find = ''; applyFind(); 
 byId('panel-x').append(icon('x', { size: 20 }));
 byId('panel-x').addEventListener('click', () => closePanel());
 byId('ask-ok').addEventListener('cancel', (ev) => ev.preventDefault());
+// A file picker drawn as a button (a label around a hidden file input) opens with Enter or Space too.
+document.addEventListener('keydown', (ev) => {
+  const lab = ev.target && ev.target.closest ? ev.target.closest('label.btn') : null;
+  const input = lab && lab.querySelector('input[type="file"]');
+  if (!input || (ev.key !== 'Enter' && ev.key !== ' ')) return;
+  ev.preventDefault();
+  if (!input.disabled) input.click();
+});
 document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && byId('panel').open && !byId('ask-ok').open) closePanel(); });
 const clock = () => { const d = new Date(); byId('clock').textContent = `${doy(d)}/${two(d.getUTCHours())}:${two(d.getUTCMinutes())}:${two(d.getUTCSeconds())}`; };
 clock();

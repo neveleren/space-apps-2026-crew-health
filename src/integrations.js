@@ -364,7 +364,7 @@ function control(c, ctx) {
   if (a.type === 'open') return btn(a.label, () => ctx.onConnect(a.kind), a.kind === 'ical' ? 'calendar' : 'file-json-2', { disabled: blocked });
   if (a.type === 'link') return h('a', { href: a.href, target: '_blank', rel: 'noopener' }, a.label);
   if (a.type === 'import') {
-    return h('label', { class: 'btn secondary small', 'aria-disabled': blocked ? 'true' : null }, icon('file-json-2', { size: 18 }), a.label,
+    return h('label', { class: 'btn secondary small', tabindex: '0', role: 'button', 'aria-disabled': blocked ? 'true' : null }, icon('file-json-2', { size: 18 }), a.label,
       h('input', { type: 'file', accept: a.accept, hidden: true, disabled: blocked, onchange: (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) ctx.onImport(f); } }));
   }
   if (a.type === 'toggle') {
