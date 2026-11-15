@@ -10,14 +10,15 @@
 <style>
 /* Seven slides, 16:9, for the Space Apps demo. Arrow keys, space or a click move between slides; print gives one slide per page. */
 :root {
-  --bg: #0A0C0F; --panel: #14171C; --panel-2: #1C2027; --line: #343A44; --ink: #F1F3F6; --muted: #AEB6C2;
-  --cmd: #17603C; --cmd-edge: #6BE6A0; --lv1: #7FB0FF; --lv2: #FFD35A; --lv3: #FF9488; --proc: #FFC9FF; --stale: #66DCEA;
+  /* The light display, the app's default since 15 Nov 2026 (the team's wish): the same colours as index.html's light theme. */
+  --bg: #F4F6F9; --panel: #FFFFFF; --panel-2: #F2F4F6; --line: #C3C9D1; --ink: #12161B; --muted: #3F4854;
+  --cmd: #166038; --cmd-edge: #166038; --lv1: #163E96; --lv2: #6B4400; --lv3: #96140C; --proc: #7A1A83; --stale: #00525A;
   --font-body: 'Atkinson Hyperlegible Next', system-ui, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'Atkinson Hyperlegible Mono', ui-monospace, Consolas, monospace;
-  color-scheme: dark;
+  color-scheme: light;
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: #000; color: var(--ink); font-family: var(--font-body); }
+html, body { margin: 0; height: 100%; background: #D5DBE2; color: var(--ink); font-family: var(--font-body); }
 .deck { position: fixed; inset: 0; display: grid; place-items: center; }
 .slide { position: absolute; width: 1280px; height: 720px; background: var(--bg); overflow: hidden; display: grid; grid-template-rows: auto 1fr auto; padding: 48px 64px 28px; transform-origin: center center; }
 .slide[hidden] { display: none; }
