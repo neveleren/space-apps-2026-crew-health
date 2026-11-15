@@ -15,7 +15,8 @@
 // - a reading taken during exercise that is only recorded never changes the judgement of the person at rest;
 // - the straight-line forecast alerts only for slow measures, or when the line clearly outruns the daily scatter;
 // - with no fresh data the message does not say "excellent";
-// - a cabin value past the ship's own limit reaches the person's message as a ship alarm.
+// - a cabin value past the ship's own limit reaches the person's message as a ship alarm;
+// - "I am okay" after a camera or Help key alarm calls the alarm off (the record stays).
 import { STATUS } from './engine.js';
 import { forecast } from './trend.js';
 
@@ -72,7 +73,7 @@ export const RULES = {
   psycheDays: 14, // the self-reports of this many last days are looked at
   badDaysForAttention: 6, // draft: bad mood or low energy on this many of those days: "attention" (was 3, which fired on 39 to 56% of days for people with no mood problem)
   badDaysForAction: 8, // draft: ... on this many, more than half of the days: "needs action" (was 6)
-  cameraHours: 24, // a camera alarm in this many last hours makes the body "urgent"
+  cameraHours: 24, // a camera alarm in this many last hours makes the body "urgent", unless "I am okay" came after it
 };
 
 // Why the draft rules above exist, for the page. The red limits carry their own sources (config.js, "red").
@@ -221,11 +222,13 @@ function freshness({ machine, person, cells, now }) {
 }
 
 const top = (items) => items.reduce((lv, x) => Math.max(lv, x.level), LEVEL.FINE);
+const HOUR = 60 * 60 * 1000;
 
 // Everything the front side needs for one person today.
 // body, psyche: the levels and items of the headline; an item counted at once because several vital signs are
 // outside the norm together carries `together` (their indicators). info: level-fine notes for the measures' pages
-// ('stale', 'expected' = common in flight, 'watch' = outside the norm once, waiting for a repeat).
+// ('stale', 'expected' = common in flight, 'watch' = outside the norm once, waiting for a repeat, 'camera-cleared' =
+// "I am okay" called off a camera or Help key alarm).
 // fresh: whether there is fresh data to judge the body and the mind. ship: cabin values past the ship's own
 // limits, which reach every person. doctorReachable: a doctor on board, or a link to Earth.
 export function assess({ machine, person, cells, mission, now, ship = SHIP_DEFAULT }) {
@@ -252,10 +255,20 @@ export function assess({ machine, person, cells, mission, now, ship = SHIP_DEFAU
     (it.level > LEVEL.FINE ? body : info).push(it);
   }
 
-  // Camera: an alarm after the question "Are you okay?" makes the body "urgent".
-  const cam = machine.history(person.id, 'camera').filter((x) => ms(now) - ms(x.time) <= RULES.cameraHours * 60 * 60 * 1000);
-  const alarm = [...cam].reverse().find((x) => x.status === STATUS.OUT);
-  if (alarm) body.push({ kind: 'camera', level: LEVEL.URGENT, time: alarm.time, value: alarm.value });
+  // Camera: an alarm after the question "Are you okay?" (or from the Help key) makes the body "urgent", until a later
+  // "I am okay" calls it off: an answer whose camera trigger says clears (config.js), from the question or from
+  // "I am okay: false alarm". The alarm stays in the record, and info gets a 'camera-cleared' note. The camera's
+  // history is in time order, so "later" is later in the list; "asleep" calls nothing off.
+  const camCell = cells.find((c) => c.indicator === 'camera');
+  const clears = new Set(Object.entries((camCell && camCell.triggers) || {}).filter(([, t]) => t.clears).map(([value]) => value));
+  let alarm = null;
+  let cleared = null;
+  for (const x of machine.history(person.id, 'camera')) {
+    if (ms(now) - ms(x.time) > RULES.cameraHours * HOUR) continue;
+    if (x.status === STATUS.OUT) { alarm = x; cleared = null; } else if (alarm && !cleared && clears.has(x.value)) cleared = x;
+  }
+  if (alarm && !cleared) body.push({ kind: 'camera', level: LEVEL.URGENT, time: alarm.time, value: alarm.value });
+  if (alarm && cleared) info.push({ kind: 'camera-cleared', level: LEVEL.FINE, time: cleared.time, value: cleared.value, source: cleared.source, alarm: { time: alarm.time, value: alarm.value, source: alarm.source } });
 
   // Mind: bad mood or low energy on several of the last days (placeholder rule until the team sets one).
   const since = ms(now) - RULES.psycheDays * DAY;

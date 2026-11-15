@@ -102,6 +102,12 @@ test('hypothermia: 35.0 °C or less is urgent, from MedlinePlus with NEWS2 as th
   assert.notEqual(m.receive(r('temp', 35.1)).dest, DEST.CREW_ALARM);
 });
 
+test('the camera: only "I am okay" calls an alarm off', () => {
+  const triggers = Object.entries(cell('camera').triggers);
+  assert.deepEqual(triggers.filter(([, t]) => t.clears).map(([k]) => k), ['chest_grab_ok']);
+  assert.ok(triggers.every(([, t]) => !t.clears || t.action === 'ignore'), 'an alarm never clears itself');
+});
+
 test('every threshold added here is marked as a draft', () => {
   const oct = cell('octChange');
   assert.equal(oct.draft, true);

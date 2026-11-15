@@ -339,3 +339,35 @@ test('a temperature of 35.0 °C is the urgent hypothermia limit: NEWS2 scores 35
   put(warmer, 120, 'temp', 35.1, 'crew-1', { time: at(120, 9) });
   assert.notEqual(itemOf(judgeOn(warmer, 120), 'temp').kind, 'red', '35.1 is outside the norm, not past the red limit');
 });
+
+const CALM = 'As of 1 May 2026, your physical and mental condition is excellent. Keep it up, well done!';
+
+test('"I am okay" after a camera or Help key alarm calls the alarm off; the alarm stays in the record', () => {
+  const m = fresh();
+  ordinaryDays(m, 110, 120);
+  put(m, 120, 'camera', 'chest_grab_help', 'crew-1', { source: 'help-key', time: at(120, 9) });
+  assert.equal(judgeOn(m, 120).body.level, LEVEL.URGENT);
+  put(m, 120, 'camera', 'chest_grab_ok', 'crew-1', { source: 'false-alarm', time: minutesAfter(120, 9, 5) });
+  const a = judgeOn(m, 120);
+  assert.equal(a.body.level, LEVEL.FINE, 'Today and Messages calm down');
+  assert.ok(!a.body.items.some((x) => x.kind === 'camera'));
+  assert.equal(headlineFor('1 May 2026', a), CALM);
+  const note = a.info.find((x) => x.kind === 'camera-cleared');
+  assert.equal(note.level, LEVEL.FINE);
+  assert.equal(note.source, 'false-alarm');
+  assert.deepEqual([note.alarm.value, note.alarm.source], ['chest_grab_help', 'help-key']);
+  assert.equal(m.history('crew-1', 'camera').length, 2, 'the alarm stays in the record');
+  // A new alarm after the all-clear is urgent again, and "asleep" calls nothing off.
+  put(m, 120, 'camera', 'chest_grab_no_answer', 'crew-1', { source: 'camera', time: at(120, 10) });
+  put(m, 120, 'camera', 'sleeping', 'crew-1', { source: 'camera', time: minutesAfter(120, 10, 30) });
+  const again = judgeOn(m, 120);
+  assert.equal(again.body.level, LEVEL.URGENT);
+  assert.equal(again.body.items[0].value, 'chest_grab_no_answer');
+  assert.ok(!again.info.some((x) => x.kind === 'camera-cleared'));
+  // An "okay" from before the alarm calls nothing off.
+  const early = fresh();
+  ordinaryDays(early, 110, 120);
+  put(early, 120, 'camera', 'chest_grab_ok', 'crew-1', { source: 'camera', time: at(120, 8.5) });
+  put(early, 120, 'camera', 'chest_grab_no_answer', 'crew-1', { source: 'camera', time: at(120, 9) });
+  assert.equal(judgeOn(early, 120).body.level, LEVEL.URGENT);
+});

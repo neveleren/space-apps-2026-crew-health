@@ -315,10 +315,12 @@ export const CELLS = [
     // The team's confirmation layer: the person may have grabbed their chest as a joke, or the camera may be
     // wrong, so the program first asks "Are you okay?" and raises the alarm only without confirmation.
     // chest_grab is what the camera sees; the three answers below are what goes into the machine after the question.
+    // clears: "I am okay", answered to the question or with "I am okay: false alarm", calls off an earlier alarm
+    // (state-levels.js); the alarm stays in the record. "Asleep" calls nothing off.
     triggers: {
       sleeping: { action: 'ignore', code: 'camera-sleep' },
       chest_grab: { action: 'alarm', code: 'camera-chest' },
-      chest_grab_ok: { action: 'ignore', code: 'camera-chest-ok' },
+      chest_grab_ok: { action: 'ignore', code: 'camera-chest-ok', clears: true },
       chest_grab_help: { action: 'alarm', code: 'camera-chest-help' },
       chest_grab_no_answer: { action: 'alarm', code: 'camera-chest-no-answer' },
     },
