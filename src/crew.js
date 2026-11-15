@@ -214,7 +214,11 @@ const whereDoctor = () => (ui.ship.doctorOnBoard ? 'on board' : ui.ship.linkToEa
 
 // What one item of the assessment says, in plain words.
 function itemText(it, owner) {
-  if (it.kind === 'camera') return { title: 'Camera: alarm after the question "Are you okay?"', text: `${it.value === 'chest_grab_help' ? 'You answered that you need help' : 'There was no answer'}. The automation called the doctor ${whereDoctor()}.`, time: it.time };
+  if (it.kind === 'camera') {
+    const last = machine.history(owner.id, 'camera').filter((x) => x.status === STATUS.OUT).slice(-1)[0];
+    if (last && last.source === 'help-key') return { title: 'Help requested with the Help key', text: `You held the Help key. The automation called the doctor ${whereDoctor()}.`, time: it.time };
+    return { title: 'Camera: alarm after the question "Are you okay?"', text: `${it.value === 'chest_grab_help' ? 'You answered that you need help' : 'There was no answer'}. The automation called the doctor ${whereDoctor()}.`, time: it.time };
+  }
   if (it.kind === 'mood') return { title: 'Mood and energy', text: `Low check-ins in the last ${LEVEL_RULES.psycheDays} days: ${it.days} ${it.days === 1 ? 'day' : 'days'}. The planned review will look at this.`, time: null };
   const cell = it.cell;
   const last = it.m.last;
@@ -346,20 +350,21 @@ function renderNav() {
 
 function renderBar() {
   const p = ui.person ? personById[ui.person] : null;
-  byId('brand').replaceChildren(icon('orbit', { size: 20 }), h('span', {}, 'Crew Health'));
+  byId('brand').replaceChildren(icon('orbit', { size: 22, label: 'Crew Health Console' }), h('span', { class: p ? 'sr-only' : '' }, 'Crew Health'));
   byId('tabs').hidden = !p;
   byId('who-btn').hidden = !p;
+  byId('help-btn').hidden = !p || Boolean(p.real);
   if (p) {
     byId('who-avatar').textContent = p.name.slice(0, 1);
     byId('who-name').textContent = p.name;
     byId('who-btn').setAttribute('aria-label', `${p.name}. Switch person`);
   }
   const now = nowTime();
-  if (p && !p.real) byId('met').replaceChildren('Flight day ', h('strong', {}, String(Math.floor((msOf(now) - msOf(MISSION.launch)) / DAY) + 1)));
+  if (p && !p.real) byId('met').replaceChildren(h('span', { 'aria-hidden': 'true' }, 'FD '), h('span', { class: 'sr-only' }, 'Flight day '), h('strong', {}, String(Math.floor((msOf(now) - msOf(MISSION.launch)) / DAY) + 1)));
   else byId('met').textContent = p && p.real ? 'Inspiration4, 2021' : '';
   // Quiet and dark: a tag appears only when something is off.
   const tags = [];
-  if (p && !p.real && ui.example) tags.push(h('span', { class: 'tag example', 'data-tip': 't:example', tabindex: '0' }, 'Example data'));
+  if (p && !p.real && ui.example) tags.push(h('span', { class: 'tag example', 'data-tip': 't:example', tabindex: '0' }, 'Example', h('span', { class: 'tag-long' }, ' data')));
   if (p) tags.push(h('span', { class: 'tag plain systems', 'data-tip': 's:systems', tabindex: '0', role: 'img', 'aria-label': 'Systems: automation, AI, link, doctor, saving, sound' }, icon('cpu', { size: 18 })));
   if (p) {
     if (!ui.ship.linkToEarth) tags.push(h('span', { class: 'tag stale', 'data-tip': 't:nolink' }, icon('unlink', { size: 16 }), 'No link to Earth'));
@@ -1205,6 +1210,37 @@ function silenceNow(list) {
   try { if (audio) { audio.close(); audio = null; } } catch { /* none */ }
 }
 
+// ---------- the Help key ----------
+// NASA-STD-3001 Vol 2 (10178): the crew can start the emergency response by hand. Holding the key for 2 s avoids a
+// press by accident; it records "I need help" through the same path as the camera question.
+const HELP_HOLD_MS = 2000;
+function setupHelpKey() {
+  const key = byId('help-btn');
+  let timer = 0;
+  let started = 0;
+  const bar = key.querySelector('.hold');
+  const reset = () => { clearTimeout(timer); timer = 0; key.classList.remove('holding'); if (bar) bar.style.width = '0'; };
+  const start = (e) => {
+    if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+    if (e.type === 'keydown') e.preventDefault();
+    if (timer || !ui.person || personById[ui.person].real) return;
+    started = Date.now();
+    key.classList.add('holding');
+    const step = () => { if (!timer) return; if (bar) bar.style.width = `${Math.min(100, ((Date.now() - started) / HELP_HOLD_MS) * 100)}%`; requestAnimationFrame(step); };
+    timer = setTimeout(async () => {
+      reset();
+      await addReading('camera', 'chest_grab_help', { source: { id: 'help-key', indicator: 'camera' } });
+      playLevel(LEVEL.URGENT, 'Help requested');
+      toast(`Help is called: the crew on board and the doctor ${ui.ship.doctorOnBoard ? 'on board' : ui.ship.linkToEarth ? 'on Earth' : 'when the link is back'}.`);
+      setScreen('alerts');
+    }, HELP_HOLD_MS);
+    requestAnimationFrame(step);
+  };
+  key.addEventListener('pointerdown', start);
+  key.addEventListener('keydown', start);
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel', 'keyup', 'blur']) key.addEventListener(ev, () => { if (timer) { reset(); toast('Hold the Help key for 2 seconds to call for help.'); } });
+}
+
 // ---------- camera: the team's question "Are you okay?" ----------
 const ASK_SECONDS = 20; // how long the question waits for an answer before the alarm (Claude's technical choice)
 let asking = null;
@@ -1526,6 +1562,8 @@ function render() {
 
 // ---------- start ----------
 initTips(tipContent);
+setupHelpKey();
+byId('help-btn').dataset.tip = 't:help';
 byId('met').dataset.tip = 't:flightday';
 byId('clock').parentElement.dataset.tip = 't:gmt';
 byId('alerts-btn').dataset.tip = 't:messages';
