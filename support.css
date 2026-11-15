@@ -260,3 +260,5 @@ html.sup-noscroll, html.sup-noscroll body { overflow: hidden; }
 .ai-part .ai-rules summary:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .ai-part .ai-rules ul { margin: 6px 0 8px; padding-left: 20px; display: grid; gap: 4px; font-size: 15px; }
 .ai-part .ai-rules .note { font-size: 14px; }
+.ai-part .ai-rules .ai-space-title { margin: 8px 0 0; font-weight: 700; }
+.ai-part .ai-rules .ai-nasa { color: var(--muted); white-space: nowrap; }

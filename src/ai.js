@@ -22,11 +22,40 @@ export const GENERATION = Object.freeze({ analyse: { max_tokens: 300, temperatur
 const st = { phase: 'idle', engine: null, source: null, error: null, loading: null, lastSpeed: null, listeners: new Set() };
 export const aiState = () => ({ phase: st.phase, source: st.source, error: st.error, lastSpeed: st.lastSpeed });
 
+// ---------- the mode, for the status line (space rule E, "mode-visible" in src/ai-rules.js) ----------
+// NASA-STD-3001 Vol 2 [V2 10161] (the automation's state and mode) and [V2 10162] (notice of a mode change).
+// 'off' (the Settings switch), 'loading', 'rules-only' (this browser cannot run it, or it failed or stopped),
+// 'ready', or 'idle' (on; it starts when an AI panel asks). Listeners hear every change (src/crew.js redraws).
+const modeListeners = new Set();
+export const onAiMode = (fn) => { modeListeners.add(fn); return () => modeListeners.delete(fn); };
+function modeChanged() { for (const f of modeListeners) { try { f(); } catch { /* the listener's own error */ } } }
+export function aiMode(on = true) {
+  if (!on) return 'off';
+  if (st.phase === 'loading') return 'loading';
+  if (st.phase === 'failed' || (support && !support.ok)) return 'rules-only';
+  if (st.phase === 'ready') return 'ready';
+  return 'idle';
+}
+// The one plain notice at a change of mode, or null when there is nothing to say.
+export function modeNotice(from, to) {
+  if (!from || from === to) return null;
+  if (to === 'off') return 'The AI is off. Everything else works: the automation decides the levels.';
+  if (to === 'loading') return 'The AI is starting on this computer. Everything else works.';
+  if (to === 'ready') return 'The AI is ready.';
+  if (to === 'rules-only') {
+    if (from === 'loading') return 'The AI could not start: rules only now. Everything else works.';
+    if (from === 'ready') return 'The AI stopped: rules only now. Everything else works.';
+    return 'This browser cannot run the AI: rules only now. Everything else works.';
+  }
+  if (to === 'idle' && from === 'off') return 'The AI is on. It starts when you open an AI panel.';
+  return null;
+}
+
 // ---------- can this browser run it? ----------
 let support = null;
 export async function aiSupport(nav = globalThis.navigator) {
   if (support) return support;
-  const no = (why, code) => (support = { ok: false, why, code });
+  const no = (why, code) => { support = { ok: false, why, code }; modeChanged(); return support; };
   if (!globalThis.isSecureContext) return no('This page is not opened from a secure address (https or this computer), so the browser does not allow WebGPU.', 'insecure');
   if (!nav || !nav.gpu) return no('This browser has no WebGPU, which the AI needs. Chrome or Edge on a computer have it.', 'no-webgpu');
   let adapter = null;
@@ -78,6 +107,7 @@ export function startAi({ onProgress = () => {} } = {}) {
   st.phase = 'loading';
   st.error = null;
   st.off = false;
+  modeChanged();
   st.loading = (async () => {
     const source = await modelSource();
     const webllm = await import(ENGINE);
@@ -97,11 +127,13 @@ export function startAi({ onProgress = () => {} } = {}) {
     if (st.off) { try { await engine.unload(); } catch { /* gone */ } throw new Error('The AI was turned off.'); }
     st.engine = engine;
     st.phase = 'ready';
+    modeChanged();
     return engine;
   })().catch((e) => {
     st.phase = st.off ? 'idle' : 'failed';
     st.error = st.off ? 'The AI is off.' : plainError(e);
     st.engine = null;
+    modeChanged();
     throw new Error(st.error);
   }).finally(() => { st.loading = null; st.listeners.clear(); });
   return st.loading;
@@ -126,6 +158,7 @@ async function lose(e) {
   st.engine = null;
   st.phase = 'failed';
   st.error = plainError(e);
+  modeChanged();
   if (engine) { try { await engine.unload(); } catch { /* already gone */ } }
   return new Error(st.error);
 }
@@ -136,6 +169,7 @@ export async function stopAi() {
   st.off = true;
   st.engine = null;
   st.phase = 'idle';
+  modeChanged();
   if (e) { try { await e.unload(); } catch { /* already gone */ } }
 }
 // Forget the talk: the engine keeps nothing of it after this.

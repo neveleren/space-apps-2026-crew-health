@@ -5,7 +5,7 @@
 // without it. Styles: support.css (.ai-*). Rules: src/ai-rules.js. Engine: src/ai.js.
 import { h, fill, btn, supIcon } from './support.js';
 import { AI_MODEL } from './ai-model.js';
-import { visibleRules, heldCounts, ruleById } from './ai-rules.js';
+import { visibleRules, spaceRules, heldCounts, ruleById } from './ai-rules.js';
 import { aiSupport, aiState, modelSource, isStored, startAi, askAi, interrupt, forgetTalk } from './ai.js';
 
 // The person said yes on this page: the model is then stored, and later panels start it without asking again.
@@ -16,12 +16,16 @@ let talk = null;
 const reduceMotion = () => Boolean(globalThis.matchMedia && globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches);
 const LABEL = 'AI draft, not a diagnosis; the levels come from the automation';
 
-// "Rules this AI follows": the short list, open by default, with where the full list lives.
+// "Rules this AI follows": the short list, open by default, with where the full list lives. Under it a second
+// list, "How this AI works in space": the rules marked space: true, in plain words with their NASA IDs.
 export function rulesList(kind) {
   const held = Object.values(heldCounts()).reduce((n, x) => n + (Number(x) || 0), 0);
+  const space = spaceRules(kind);
   return h('details', { class: 'ai-rules', open: true },
     h('summary', {}, 'Rules this AI follows'),
     h('ul', {}, ...visibleRules(kind).map((r) => h('li', {}, r.short))),
+    space.length ? h('p', { class: 'ai-space-title' }, 'How this AI works in space') : null,
+    space.length ? h('ul', { class: 'ai-space' }, ...space.map((r) => h('li', {}, `${r.spaceShort} `, h('span', { class: 'ai-nasa' }, `(${r.nasa})`)))) : null,
     h('p', { class: 'note' }, `Code checks every answer before you see it; an answer that breaks a rule is replaced by a fixed text that names the rule.${held ? ` Held back on this computer so far: ${held} (only the number is kept, never the text).` : ''} The full list, with where each rule comes from, is in src/ai-rules.js.`));
 }
 
@@ -69,8 +73,11 @@ const msgNode = (role, text, { held = null, label = LABEL } = {}) => h('div', { 
   h('p', { class: 'ai-text' }, text));
 
 // host: the element to draw in. kind: 'analyse' or 'session'. ctx: { level, red, data } for 'analyse'.
+// space(): where the crew is now, asked at every question: { mission, linkDown, doctorOnBoard } (src/ai-rules.js).
 // onRisk(): opens Help now (the session's own card). helpNow(): returns a Help now card (the analyse panel).
-export function renderAi(host, { kind, ctx = {}, onRisk = null, helpNow = null } = {}) {
+export function renderAi(host, { kind, ctx = {}, space = null, onRisk = null, helpNow = null } = {}) {
+  // The link or the profile can change while the panel is open, so each question gets them as they are now.
+  const ctxNow = () => ({ ...ctx, ...(typeof space === 'function' ? space() : {}) });
   const place = kind === 'session' ? 'session' : 'analyse';
   const body = h('div', { class: 'ai-body' });
   const root = h('div', { class: `ai-part ${reduceMotion() ? 'still' : ''}` }, body, rulesList(kind));
@@ -126,7 +133,7 @@ export function renderAi(host, { kind, ctx = {}, onRisk = null, helpNow = null }
       send.disabled = true;
       stop.hidden = false;
       try {
-        const res = await askAi({ kind: 'session', history: mine.history, ctx: {}, onText: (t) => { const n = out.querySelector('.ai-text'); n.textContent = plainMd(t); n.classList.remove('pending'); } });
+        const res = await askAi({ kind: 'session', history: mine.history, ctx: ctxNow(), onText: (t) => { const n = out.querySelector('.ai-text'); n.textContent = plainMd(t); n.classList.remove('pending'); } });
         if (talk !== mine) return;
         if (res.risk) {
           // Layer 1: the model never answers these words; Help now opens first.
@@ -177,7 +184,7 @@ export function renderAi(host, { kind, ctx = {}, onRisk = null, helpNow = null }
       out.querySelector('.ai-text').classList.add('pending');
       answer.append(out);
       try {
-        const res = await askAi({ kind: 'analyse', history: mine.history, ctx, onText: (t) => { const n = out.querySelector('.ai-text'); n.textContent = plainMd(t); n.classList.remove('pending'); } });
+        const res = await askAi({ kind: 'analyse', history: mine.history, ctx: ctxNow(), onText: (t) => { const n = out.querySelector('.ai-text'); n.textContent = plainMd(t); n.classList.remove('pending'); } });
         if (talk !== mine) return;
         if (res.risk) {
           mine.history.pop();

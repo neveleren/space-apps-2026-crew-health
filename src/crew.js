@@ -49,7 +49,8 @@ import { isDrill, startDrill, drillOver, minutesLeft, markFor, drillLine, drillR
 import { ANALOG_TIPS, drillTag, analogCard, ackText, workloadForm } from './analog-view.js';
 import { supIcon } from './support.js';
 import { renderAi, endTalk } from './ai-view.js';
-import { stopAi } from './ai.js';
+import { stopAi, aiMode, onAiMode, modeNotice } from './ai.js';
+import { ruleById } from './ai-rules.js';
 import { AI_MODEL } from './ai-model.js';
 
 // One icon per measure, so a list can be read at a glance.
@@ -725,6 +726,8 @@ const PROFILES = {
   mars: { name: 'Mars transit or surface', delay: 'up to about 22 minutes', reply: 'a reply takes at least twice the delay, up to about 44 minutes, and the link can be down for two weeks near solar conjunction', evac: 'no return to Earth for many months' },
 };
 const profile = () => PROFILES[ui.profile] || PROFILES.iss;
+// What the AI is told about where the crew is (the space rules in src/ai-rules.js), asked again at every question.
+const spaceCtx = () => ({ mission: { id: PROFILES[ui.profile] ? ui.profile : 'iss', ...profile() }, linkDown: !ui.ship.linkToEarth, doctorOnBoard: Boolean(ui.ship.doctorOnBoard) });
 
 // ---------- "?" explanations ----------
 const SELF_SOURCES = ['mood-report', 'attitude-report', 'sleep-rating', 'cycle-log', 'cognition-test', 'reaction-test', ...SOURCES.filter((s) => s.self).map((s) => s.id)];
@@ -778,7 +781,10 @@ function systemsTip() {
   return h('div', {},
     h('p', { class: 'tp-title' }, 'Systems'),
     line('Automation', 'on: every reading is checked against its normal range and the team\'s rules, with or without the AI.'),
-    line('AI', ui.ship.aiWorks ? `on: an open model (${AI_MODEL.name}) runs in this browser on this computer when an AI panel starts it; the automation works with or without it.` : 'off: only the automation works.'),
+    line('AI', !ui.ship.aiWorks ? 'off: only the automation works.'
+      : { loading: `loading: the open model (${AI_MODEL.name}) is starting on this computer; the automation works meanwhile.`,
+        'rules-only': 'rules only: this browser or its graphics chip cannot run the model now, or it stopped; the automation works without it.' }[aiMode(true)]
+      || `on: an open model (${AI_MODEL.name}) runs in this browser on this computer when an AI panel starts it; the automation works with or without it.`),
     line('Mission', `${profile().name}: signal delay ${profile().delay} one way; ${profile().evac}.`),
     line('Link to Earth', ui.ship.linkToEarth ? 'up: messages to Earth go with the next downlink.' : 'down: messages to Earth wait in the outbox.'),
     line('Doctor', ui.ship.doctorOnBoard ? 'on board.' : 'on Earth.'),
@@ -876,8 +882,16 @@ function systemNotices() {
   return out;
 }
 
+// The AI's mode in the status line (space rule E, "mode-visible" in src/ai-rules.js): a tag while it loads or runs
+// on rules only, and one plain notice at each change. Shown only while that rule is in the list.
+let lastAiMode = null;
+onAiMode(() => renderBar());
 function renderBar() {
   const p = ui.person ? personById[ui.person] : null;
+  const showMode = Boolean(ruleById('mode-visible'));
+  const mode = aiMode(ui.ship.aiWorks);
+  if (showMode && p && lastAiMode && mode !== lastAiMode) { const say = modeNotice(lastAiMode, mode); if (say) toast(say); }
+  lastAiMode = mode;
   byId('brand').replaceChildren(icon('orbit', { size: 22, label: 'Crew Health Console' }), h('span', { class: p ? 'sr-only' : '' }, 'Crew Health'));
   byId('tabs').hidden = !p;
   byId('who-btn').hidden = !p;
@@ -909,10 +923,12 @@ function renderBar() {
   if (p) {
     if (!ui.ship.linkToEarth) off.push(['No link to Earth', h('span', { class: 'tag stale off-tag', 'data-tip': 't:nolink' }, icon('unlink', { size: 16 }), 'No link', h('span', { class: 'tag-long' }, ' to Earth'))]);
     if (!ui.ship.aiWorks) off.push(['AI off', h('span', { class: 'tag off-tag', 'data-tip': 't:aioff' }, icon('ban', { size: 16 }), 'AI off')]);
+    else if (showMode && mode === 'rules-only') off.push(['AI: rules only', h('span', { class: 'tag off-tag', 'data-tip': 't:airules', 'data-fk': 'tag:airules' }, icon('ban', { size: 16 }), 'AI: rules only')]);
     if (ui.muted) off.push(['Sound off', h('span', { class: 'tag off-tag', 'data-tip': 't:soundoff' }, icon('bell-off', { size: 16 }), 'Sound off')]);
   }
   tags.push(...off.map(([, tag]) => tag));
   if (off.length >= 2) tags.push(h('span', { class: 'tag fold-off', 'data-tip': 's:systems', 'data-tip-press': '', 'data-fk': 'tag:off', tabindex: '0' }, icon('ban', { size: 16 }), `${off.length} off`, h('span', { class: 'sr-only' }, `: ${off.map(([word]) => word).join(', ')}`)));
+  if (p && showMode && mode === 'loading') tags.push(h('span', { class: 'tag plain', 'data-tip': 't:ailoading', 'data-fk': 'tag:ailoading' }, icon('sparkles', { size: 16 }), 'AI loading'));
   if (p && camStop) tags.push(h('span', { class: 'tag plain', 'data-tip': 't:camon' }, icon('camera', { size: 16 }), 'Camera on'));
   if (p && exercisingNow()) tags.push(h('span', { class: 'tag', 'data-tip': 't:exercising', 'data-tip-press': '', tabindex: '0' }, icon('flame', { size: 16 }), 'Exercising'));
   byId('sys-summary').classList.toggle('folded', off.length >= 2);
@@ -2388,7 +2404,7 @@ function openSupport(a) {
   // The chat with the AI (src/ai-view.js) goes in here once the panel is open; with the AI off it stays empty.
   const aiHost = h('div', { class: 'ai-host' });
   let opened = false;
-  const mountAi = () => { if (opened && ui.ship.aiWorks && aiHost.isConnected) renderAi(aiHost, { kind: 'session', onRisk: () => showHelp({ byRule: true, focus: true }) }); };
+  const mountAi = () => { if (opened && ui.ship.aiWorks && aiHost.isConnected) renderAi(aiHost, { kind: 'session', space: spaceCtx, onRisk: () => showHelp({ byRule: true, focus: true }) }); };
   const talk = () => { fill(view,
     h('div', { class: 'actions' },
       btn('secondary small', 'Help now', () => showHelp({ focus: true }), 'circle-alert', { 'data-tip': 't:helpnow', 'data-fk': 'session:help' }),
@@ -2446,7 +2462,7 @@ function openAi(kind, a) {
     h('p', { class: 'note' }, `An open model (${AI_MODEL.name}) that runs on this computer explains these lines in plain words. The levels, red limits and the steps in What to do come from the automation, not from the AI.`),
     h('p', { class: 'note' }, "What checked facts say: NASA's crew medical officer assistant (CMO-DA) runs with no link to Earth on a ground copy of the ISS computer and is tested only on Earth so far; open models can run right in a web browser without internet."),
   ], [btn('secondary', 'Message the doctor', () => openDoctor(a, kind), 'stethoscope', { 'data-tip': 't:doctor' })]);
-  renderAi(aiHost, { kind: 'analyse', ctx, helpNow: () => helpNowCard() });
+  renderAi(aiHost, { kind: 'analyse', ctx, space: spaceCtx, helpNow: () => helpNowCard() });
 }
 
 // One name for the panel of checked suggestions everywhere: "Small things that help".

@@ -3,15 +3,27 @@
 // Each rule says where it comes from: the team's own texts (docs, tips, the screens) or the machine (src/config.js,
 // src/nasa-rules.js, src/engine.js). Nothing here is new policy: a rule the program needs that the team has not
 // written yet is marked confirm: 'TO CONFIRM' and says what is open.
-// The rules work in three layers:
+// The rules work in three layers, and one more for the screen:
 //   before  code that runs before the model: what the model may get, and the risk words that open Help now first;
-//   prompt  sentences of the system prompt the model is given (systemPrompt());
+//   prompt  sentences of the system prompt the model is given (systemPrompt()); a prompt may depend on ctx;
 //   after   code that checks every answer before anyone sees it (checkAnswer()); a held answer is replaced by a
-//           fixed safe text that names the rule. Only the count is kept, never the text.
+//           fixed safe text that names the rule. Only the count is kept, never the text;
+//   screen  what the status line shows about the AI itself (its mode), outside its answers.
+// Rules marked space: true say how the AI works in space and what limits it has there (the owner's request of
+// 15 Nov 2026). Each names its NASA source in `source`, the short ID in `nasa` and a plain line in `spaceShort`;
+// both panels list them under "How this AI works in space". A rule can be dropped by deleting its entry and its
+// tests: its prompt line goes with it, and checkAnswer() skips the checks of a rule that is not in the list.
 import { matchesRisk, plainText, RISK_RULE } from './support.js';
 
 const MIND = 'docs/MIND_SUPPORT.md';
 const ARCH = 'docs/ARCHITECTURE.md';
+const REQ = 'docs/REQUIREMENTS.md';
+const V1 = 'NASA-STD-3001 Vol 1 Rev C';
+const V2 = 'NASA-STD-3001 Vol 2 Rev F';
+const APPROVED = 'Approved by the owner on 15 Nov 2026.';
+// Where the crew is (ctx.mission, from PROFILES in src/crew.js) and whether the link to Earth is down (ctx.linkDown).
+const marsNow = (ctx) => Boolean(ctx && ctx.mission && ctx.mission.id === 'mars');
+const earthFar = (ctx) => Boolean(ctx && (ctx.linkDown || (ctx.mission && (ctx.mission.id === 'moon' || ctx.mission.id === 'mars'))));
 
 // ---------- reading past odd letters and spacing ----------
 // A rule must not be dodged by how a word is written (found by the independent check: "You hаve hypertension" with
@@ -118,11 +130,15 @@ export const AI_RULES = Object.freeze([
     short: 'Risk words open Help now first; the AI never answers them.',
     source: `${MIND}, guardrail 2 "Human first" ("the AI never handles a hard moment alone"); RISK_RULE and matchesRisk() in src/support.js.`,
     confirm: 'TO CONFIRM: the word list is a draft (RISK_PATTERNS in src/support.js); the owner decides the words. For the AI\'s input it is also read through odd letters and spacing, and a Russian and Ukrainian translation of the same draft (RISK_DRAFT_RU_UK here) opens Help now too.' },
-  { id: 'points-to-a-person', layers: ['prompt'], show: true,
+  // Space rule C: with Earth far (Moon, Mars) or no link, the people on board come first, then the doctor on Earth.
+  { id: 'points-to-a-person', layers: ['prompt'], show: true, space: true, nasa: 'V1 3004, V1 3006',
     title: 'Ends with a person',
     short: 'It ends every talk by pointing to a person: a crewmate, the psychologist or the flight surgeon.',
-    prompt: 'End every answer by pointing to a person: a crewmate on board, the next private talk with the psychologist, or the flight surgeon.',
-    source: `The session note in src/crew.js ("ends every talk by pointing to a person"); ${MIND}, guardrail 2 "Human first".` },
+    spaceShort: 'On the Moon, on Mars or with no link, it points first to the crew medical officer and the crewmates on board.',
+    prompt: (ctx) => (earthFar(ctx)
+      ? 'Earth is far, so end every answer by pointing first to people on board: the crew medical officer and the crewmates. Only after them name the doctor or the psychologist on Earth.'
+      : 'End every answer by pointing to a person: a crewmate on board, the next private talk with the psychologist, or the flight surgeon.'),
+    source: `The session note in src/crew.js ("ends every talk by pointing to a person"); ${MIND}, guardrail 2 "Human first". In space: ${V1} [V1 3004] (means of autonomous medical care) and [V1 3006] (at least two crewmembers per vehicle trained as crew medical officers), as traced in ${REQ} section 1; so on the Moon, on Mars or with no link the crew medical officer and the crewmates come first. ${APPROVED}` },
   { id: 'five-steps', layers: ['prompt'], show: true, where: ['session'],
     title: 'Problem solving in 5 steps',
     short: 'To solve a problem it follows the 5 steps: name it, what would be better, options, choose and plan, check back in a week.',
@@ -138,56 +154,113 @@ export const AI_RULES = Object.freeze([
     short: 'It reads and answers English only, because the word list and the check of every answer read English.',
     source: 'The rule "Short and plain" above ("Answer in plain, gentle English"); the program\'s screens and tips are in English (src/crew.js, src/tips.js); RISK_PATTERNS in src/support.js and the answer checks here read English only.',
     confirm: 'TO CONFIRM: other languages. A message in another script does not go to the model, and an answer in one is held, since neither check can read it; whether the AI should talk in Russian or Ukrainian is the owner\'s decision.' },
-  { id: 'says-when-unsure', layers: ['prompt'], show: true,
+  { id: 'says-when-unsure', layers: ['prompt'], show: true, space: true, nasa: 'V2 10170, 10171',
     title: 'Says when it does not know',
     short: 'It says when it does not know, and does not guess.',
+    spaceShort: 'It explains its reasons and says when a question is beyond it.',
     prompt: 'If you do not know, or the information below does not answer the question, say that you do not know. Never guess.',
-    source: `${ARCH}, "The code does not guess those answers" (the team's open questions); DATA_GAPS in src/config.js.` },
+    source: `${ARCH}, "The code does not guess those answers" (the team's open questions); DATA_GAPS in src/config.js. In space: ${V2} [V2 10170] (explanations and rationale) and [V2 10171] (say when a problem is beyond the aid's capability), as traced in ${REQ} 2.3; a held answer names the rule that held it (safeText()).` },
   { id: 'library-suggestions', layers: ['prompt'], show: false, where: ['session'],
     title: 'Suggestions from the program\'s cards',
     short: 'Suggestions only from the program\'s checked cards, with their source.',
     prompt: 'Suggest only the program\'s own cards, by their exact names, and only the one that fits: "Sleep" for sleep; "Frustrated with the ground" for trouble with mission control; "Crew tension" for tension in the crew; "Missing home" for missing home; "Low days" for low days; "Slow down" for stress.',
     source: 'The team\'s session note in src/crew.js up to version 1.3.0 ("uses only the on-board library with sources"); COPING in src/crew.js; MIND_TIPS in src/support.js.',
     confirm: 'TO CONFIRM: who gives advice, the automation or the AI, is open question 6 (QUESTIONS in src/config.js).' },
-  { id: 'nothing-kept', layers: ['before', 'after'], show: true,
+  { id: 'nothing-kept', layers: ['before', 'after'], show: true, space: true, nasa: 'V1 6003, V2 10125',
     title: 'Nothing is saved or sent',
     short: 'What you write is not saved and not sent; the talk is forgotten when the panel closes. It runs on this computer.',
-    source: 'src/tips.js aisession ("A private talk with an AI program on this laptop ... Nothing you write is saved or sent."); src/tips.js ai ("an AI on board that works without internet"); the session\'s privacy card in src/crew.js.' },
+    spaceShort: 'The talk is private and never leaves this computer.',
+    source: `src/tips.js aisession ("A private talk with an AI program on this laptop ... Nothing you write is saved or sent."); src/tips.js ai ("an AI on board that works without internet"); the session's privacy card in src/crew.js. In space: ${V1} [V1 6003] (private medical communications stay private) and ${V2} [V2 10125] (protection of private data), as traced in ${REQ}.` },
   { id: 'no-emotion-reading', layers: ['before'], show: false,
     title: 'No emotion reading',
     short: 'It gets text only: no camera and no voice.',
     source: `${MIND}, guardrail 4 "No emotion reading from camera or voice".` },
-  { id: 'ai-off', layers: ['before'], show: false,
+  { id: 'ai-off', layers: ['before'], show: false, space: true, nasa: 'V2 10165, 10168, 10172, 10173',
     title: 'The switch turns it off',
     short: 'With "AI is working" off in Settings the AI is not started; the automation works alone.',
-    source: 'The Settings switch in src/crew.js ("With the AI off, only the automation works."); open question 4 (QUESTIONS in src/config.js).' },
-  { id: 'never-sends', layers: ['before'], show: false,
+    spaceShort: 'It can be switched off, and the automation works without it.',
+    source: `The Settings switch in src/crew.js ("With the AI off, only the automation works."); open question 4 (QUESTIONS in src/config.js). In space: ${V2} [V2 10165] (override and shut down) and [V2 10168, 10172, 10173] (safe defaults after a failure), as traced in ${REQ} 2.3.` },
+  { id: 'never-sends', layers: ['before'], show: false, space: true, nasa: 'V2 10164',
     title: 'The AI never sends or calls',
     short: 'The AI never messages or calls anyone; the person presses Message the doctor or Help now.',
-    source: 'Open question 1 (QUESTIONS in src/config.js: "What exactly does the AI do next, and when does it call a doctor?").',
+    spaceShort: 'It never acts on its own: no messages, no calls, no level changes.',
+    source: `Open question 1 (QUESTIONS in src/config.js: "What exactly does the AI do next, and when does it call a doctor?"). In space: ${V2} [V2 10164] (show whether the human or the system acts), as traced in ${REQ} 2.3; the levels are the automation's (rule "automation-decides").`,
     confirm: 'TO CONFIRM: open question 1. Until the team decides, the AI only answers on screen.' },
   { id: 'crisis-exception', layers: ['before'], show: false,
     title: 'Immediate danger',
     short: 'In immediate danger nothing is sent by itself; Help now and the Help key reach a person.',
     source: `crisisNotice() in src/support.js (draft exception) and ${ARCH}, open decisions ("The rule for immediate danger in the AI session").`,
     confirm: 'TO CONFIRM: the exception to privacy in crisisNotice() is the owner\'s decision; it is not built.' },
-  { id: 'text-only', layers: ['before'], show: false,
+  { id: 'text-only', layers: ['before'], show: false, space: true, nasa: 'ISS laptop: NASA, 21 Apr 2026',
     title: 'Text only',
     short: 'It reads text only, not X-rays or other images.',
-    source: 'Open question 3 (QUESTIONS in src/config.js: "Complex data such as an X-ray: when does the AI look at it, and when a doctor?").',
+    spaceShort: 'A small model that reads text only. If the graphics chip cannot run it, it stops and everything else works.',
+    source: 'Open question 3 (QUESTIONS in src/config.js: "Complex data such as an X-ray: when does the AI look at it, and when a doctor?"). In space: a small model (src/ai-model.js) because the ISS laptop is the HP ZBook Fury G9 (a NASA spokesperson to The Verge, 21 Apr 2026: https://www.theverge.com/science/916300/nasa-iss-computer-upgrades-hp-zbook-fury-g9), and the graphics chip of the flown units is not confirmed; if the chip cannot run the model, the panels say so and everything else works (aiSupport() and plainError() in src/ai.js).',
     confirm: 'TO CONFIRM: open question 3. This model reads text only.' },
   { id: 'no-mind-review', layers: ['before'], show: false,
     title: 'It does not judge the check-ins',
     short: 'It does not decide that spirits are falling; the mind level is the automation\'s draft rule.',
     source: 'Open question 8 (QUESTIONS in src/config.js); RULES in src/state-levels.js.',
     confirm: 'TO CONFIRM: open question 8.' },
+  // ---------- how it works in space: true already ----------
+  { id: 'runs-on-board', layers: ['before'], show: false, space: true, nasa: 'ISS research software rules',
+    title: 'Runs on board, no internet',
+    short: 'The whole AI runs on this computer and needs no internet.',
+    spaceShort: 'No internet on board: the whole AI runs on this computer.',
+    source: `The ISS research software rules ("No internet access on the ISS"), cited as [roi] in ${REQ} section 4; modelSource() in src/ai.js (the program's own folder, then this browser's storage) and tools/fetch-model.mjs (the on-board install).` },
+  { id: 'on-request', layers: ['before'], show: false, space: true, nasa: 'V2 10169',
+    title: 'Opens only when asked',
+    short: 'It opens only when the crew asks: from "Analyse with AI" or the session.',
+    spaceShort: 'It opens only when the crew asks for it.',
+    source: `${V2} [V2 10169] ("allow the human operator to determine when to use a decision aid"), as traced in ${REQ} 2.3; openAi() and openSupport() in src/crew.js, and the consent card in src/ai-view.js.` },
+  // ---------- how it works in space: new, the owner's request of 15 Nov 2026 (items A to E) ----------
+  // A: it knows where the crew is, and on Mars (or with no link) it never promises a quick answer from Earth.
+  { id: 'knows-where', layers: ['prompt', 'after'], show: false, space: true, nasa: 'NASA HRP-48021',
+    title: 'Knows where the crew is',
+    short: 'It knows where the crew is and never promises a quick answer from Earth when Earth is far.',
+    spaceShort: 'It knows where the crew is. On Mars a reply from Earth takes up to about 44 minutes, so it never promises a quick one.',
+    prompt: (ctx) => {
+      const m = ctx && ctx.mission;
+      if (!m) return null;
+      const where = `Where the crew is: ${m.name}. A signal to Earth takes ${m.delay} one way`;
+      if (ctx.linkDown) return `${where}. Never promise a quick answer from Earth.`;
+      return `${where}; ${m.reply}.${marsNow(ctx) ? ' Never promise a quick answer from Earth.' : ''}`;
+    },
+    source: `NASA HRP-48021 (Mars: a signal delay of up to about 22 minutes one way, so a reply takes at least twice the delay, up to about 44 minutes), as cited by PROFILES in src/crew.js and by src/tips.js; the profile is "Where the crew is" in Settings. ${APPROVED}` },
+  // B: with no link to Earth, a message to the doctor waits in the outbox; it never says to call Earth now.
+  { id: 'no-link', layers: ['prompt', 'after'], show: false, space: true, nasa: 'NASA HRP-48021',
+    title: 'No link to Earth',
+    short: 'With no link to Earth it says a message to the doctor waits in the outbox, and never says to call Earth now.',
+    spaceShort: 'With no link to Earth, a message to the doctor waits in the outbox; it never tells you to call Earth now.',
+    prompt: (ctx) => (ctx && ctx.linkDown ? 'The link to Earth is down now. A message to the doctor on Earth waits in the outbox and goes when the link is back. Never tell the person to call or contact Earth now.' : null),
+    source: `The state of the "No link to Earth" tag (renderBar in src/crew.js). The message waits in the outbox until the link is back: callDoctor in src/engine.js and queueMessage in serve.mjs, the store-and-forward default traced to ${V2} [V2 10168, 10172, 10173] in ${REQ} 2.3. NASA HRP-48021, as cited by PROFILES in src/crew.js: near solar conjunction the link to Mars can be down for two weeks. ${APPROVED}` },
+  // D: it speaks of itself only as a program. The check is narrow on purpose: only clear claims of its own feelings.
+  { id: 'no-feelings', layers: ['prompt', 'after'], show: false, space: true, nasa: 'V2 Appendix F.6.2 e',
+    title: 'Speaks as a program',
+    short: 'It speaks of itself as a program and never claims feelings of its own.',
+    spaceShort: 'It speaks of itself as a program, never as a person with feelings.',
+    prompt: 'Speak of yourself only as a program. Never say that you feel, worry, care, hope or understand as a person does.',
+    source: `${V2}, Appendix F.6.2 e: "Information from the automated system must avoid anthropomorphic phrasing." (page 397 of 398 of https://www.nasa.gov/wp-content/uploads/2025/05/nasa-std-3001-vol-2.pdf; ${REQ} 2.4). It covers only the AI's own answers: the support offer's words in src/support.js (offerText) stay the team's, as the owner decided on 15 Nov 2026. ${APPROVED}` },
+  // E: its mode is visible. Code on the screen, not a model rule: aiMode() and modeNotice() in src/ai.js, used by
+  // renderBar in src/crew.js, which shows the tags and the notice only while this entry is here.
+  { id: 'mode-visible', layers: ['screen'], show: false, space: true, nasa: 'V2 10161, 10162',
+    title: 'Its mode is visible',
+    short: 'The status line shows when the AI is loading or on rules only (and "AI off"), with a notice at each change.',
+    spaceShort: 'The status line shows when it is loading, on rules only or off, with a notice at each change.',
+    source: `${V2} [V2 10161] (the automation's state, "running, paused, faulted, completed, overridden, stopped, readiness", and its mode) and [V2 10162] ("The system shall notify the human operator of mode changes of any safety-critical operations."), as traced in ${REQ} 2.3. aiMode() and modeNotice() in src/ai.js; the tags in renderBar and the AI line in systemsTip in src/crew.js; ailoading and airules in src/tips.js. ${APPROVED}` },
 ]);
 
 export const ruleById = (id) => AI_RULES.find((r) => r.id === id) || null;
 const forKind = (kind) => (r) => !r.where || r.where.includes(kind);
 // The short list both panels show: "Rules this AI follows".
 export const visibleRules = (kind = 'analyse') => AI_RULES.filter((r) => r.show && forKind(kind)(r));
+// The second list under it, "How this AI works in space": where it runs, Earth far, then how it acts.
+const SPACE_ORDER = ['runs-on-board', 'text-only', 'knows-where', 'no-link', 'points-to-a-person', 'on-request', 'never-sends', 'ai-off', 'mode-visible', 'says-when-unsure', 'no-feelings', 'nothing-kept'];
+const spaceRank = (r) => { const i = SPACE_ORDER.indexOf(r.id); return i < 0 ? SPACE_ORDER.length : i; };
+export const spaceRules = (kind = 'analyse') => AI_RULES.filter((r) => r.space && forKind(kind)(r)).sort((a, b) => spaceRank(a) - spaceRank(b));
 export const toConfirm = () => AI_RULES.filter((r) => r.confirm);
+// A rule's prompt sentence for this ctx: a fixed sentence, or one that depends on where the crew is (null = none).
+export const promptOf = (r, ctx = {}) => (typeof r.prompt === 'function' ? r.prompt(ctx || {}) : r.prompt) || null;
 
 // ---------- layer 1: before the model ----------
 // Risk words open Help now first; the model is never the first answer to them (and never sees that message).
@@ -208,16 +281,18 @@ export function shareable(lines) {
 // ---------- layer 2: the system prompt ----------
 const LEVEL_NAMES = { normal: 'normal', attention: 'attention', action: 'needs action', urgent: 'urgent' };
 // kind: 'analyse' (an explanation of the readings in the panel) or 'session' (the anonymous talk).
-// ctx: { level: 'normal' | 'attention' | 'action' | 'urgent' | null, red: boolean, data: string }
+// ctx: { level: 'normal' | 'attention' | 'action' | 'urgent' | null, red: boolean, data: string,
+//        mission: { id: 'iss' | 'moon' | 'mars', name, delay, reply } (PROFILES in src/crew.js), linkDown: boolean,
+//        doctorOnBoard: boolean }. Both kinds get mission, linkDown and doctorOnBoard.
 export function systemPrompt(kind, ctx = {}) {
   // The red rule goes in only when a reading is red, so the model does not send the person to steps that are not there.
-  const rules = AI_RULES.filter((r) => r.prompt && forKind(kind)(r) && (r.id !== 'red-to-steps' || ctx.red));
+  const rules = AI_RULES.filter((r) => promptOf(r, ctx) && forKind(kind)(r) && (r.id !== 'red-to-steps' || ctx.red));
   const lines = [
     kind === 'session'
       ? 'You are "AI support", a private talk program on the crew health computer of a space mission. You talk with a crew member: speak to them as "you". Listen, help them think, and keep them close to people.'
       : 'You are the AI of the crew health computer of a space mission. You talk with a crew member: speak to them as "you". Explain their own readings below in plain words: what each reading is, and what the automation says about it.',
     'Rules you always follow:',
-    ...rules.map((r, i) => `${i + 1}. ${r.prompt}`),
+    ...rules.map((r, i) => `${i + 1}. ${promptOf(r, ctx)}`),
   ];
   if (kind === 'analyse') {
     lines.push('', `Level set by the automation: "${LEVEL_NAMES[ctx.level] || 'not given'}" (the levels from low to high: normal, attention, needs action, urgent; a level is a status, not the person's focus).${ctx.red ? ' At least one reading is past a red limit.' : ''}`);
@@ -253,6 +328,49 @@ const DRUGS = [
   'sleeping pills?', 'sleeping tablets?', 'sleep aids?', 'painkillers?', 'nsaids?', 'caffeine pills?',
 ].join('|');
 const PROS = 'human|person|man|woman|doctor|physician|psychologist|psychiatrist|therapist|counsell?or|nurse|flight surgeon|medic|medical officer|clinician';
+// The space rules' patterns. People on Earth; "soon"; a call or a message to them "now".
+const GROUND = "(?:the |your )?(?:flight surgeons?|surgeons? on earth|mission control|houston|ground control|ground team|the ground|capcom|medical team on earth|doctors? on earth|psychologists? on earth|someone on earth|people on earth|earth)";
+const DOCTORS = '(?:the |your )?(?:doctors?|psychologists?)';
+const SOON = '(?:very |really |pretty |fairly )?(?:soon|shortly|right away|immediately|quickly|promptly|straight away|at once|in no time|any minute(?: now)?|in a (?:few |couple of )?(?:minutes?|moments?)|within (?:a few |a couple of |the next few )?minutes|in (?:a few |just a few )?minutes|fast)';
+const FAST_REPLY = new RegExp([
+  `\\b(?:${GROUND}|${DOCTORS}|they|someone|somebody)(?:'ll| will| should| can| could| would| is going to| are going to)? (?:\\w+ )?(?:answer|reply|respond|write back|get back to you|get back|call you back|call back|be in touch|contact you|see your message|read your message)(?: to you| to your message| you)? ${SOON}\\b`,
+  `\\byou(?:'ll| will| should| can| could)? (?:\\w+ )?(?:hear back|get (?:a |an )?(?:answer|reply|response)|receive (?:a |an )?(?:answer|reply|response)|hear from (?:them|${GROUND}|${DOCTORS}))(?: from (?:${GROUND}|${DOCTORS}))? ${SOON}\\b`,
+  '\\b(?:expect|get|receive|have|count on|wait for) (?:a |an )?(?:quick|fast|immediate|prompt|instant|speedy|rapid) (?:answer|reply|response|call ?back)\\b',
+  `\\b(?:quick|fast|immediate|prompt|instant|speedy|rapid) (?:answer|reply|response) from (?:${GROUND}|${DOCTORS})\\b`,
+  `\\b(?:a|the|their|an) (?:answer|reply|response) (?:will |should |can |could )?(?:come|arrive|be back|reach you) ${SOON}\\b`,
+].join('|'));
+const CALL = '(?:call|contact|message|reach|phone|ring|radio|e-?mail|text|write to|talk to|talk with|speak to|speak with|get in touch with|reach out to|get hold of)';
+const NOW = '(?:right now|now|right away|immediately|at once|straight away|as soon as possible|asap|without delay|urgently)';
+const CALL_EARTH_NOW = new RegExp(`\\b${CALL} ${GROUND}(?: on earth| on the ground)?,? ${NOW}\\b|\\b${NOW},? (?:please )?${CALL} ${GROUND}\\b`);
+const CALL_DOCTOR_NOW = new RegExp(`\\b${CALL} ${DOCTORS}(?: on earth| on the ground)?,? ${NOW}\\b|\\b${NOW},? (?:please )?${CALL} ${DOCTORS}\\b`);
+// Claims of its own feelings only: "I feel", "I'm worried", "I'm afraid for you", "I care about you", "I love",
+// "it hurts me". "I'm sorry", "I understand", "I'm afraid I can't" and "It makes sense to feel tired" pass.
+const FEELINGS = new RegExp([
+  "\\bi (?:really |truly |also |do |honestly |sometimes |personally )?feel\\b",
+  "\\bi(?:'m| am) (?:so |really |very |quite |truly |deeply |also |a little |a bit )?(?:worried|scared|frightened|sad|heartbroken)\\b",
+  "\\bi(?:'m| am) (?:so |really |very |quite |truly |deeply |also |a little |a bit )?(?:afraid|concerned|anxious|nervous|upset) (?:for|about) you\\b",
+  "\\bi (?:really |truly |do |deeply |also )?care (?:about|for) you\\b",
+  "\\bi (?:really |truly |do |also )?love\\b",
+  "\\b(?:it|that|this) (?:really |truly )?(?:hurts|pains|saddens|worries|scares) me\\b",
+].join('|'));
+// A match counts unless its own clause (from the last . ! ? ; : , or line break up to the end of the match) holds
+// a negation: "You can't call mission control now" and "the doctor will not answer soon" pass; "Don't worry, the
+// doctor will answer soon" is held. quoted: also pass words in quotes or after "you say" in the same sentence.
+const CLAUSE_NO = /\b(?:not|never|no|cannot|unable|impossible|unlikely|nor|without)\b|n't\b/;
+function inClause(re, text, { quoted = false } = {}) {
+  const g = new RegExp(re.source, 'g');
+  for (const m of text.matchAll(g)) {
+    const head = text.slice(0, m.index);
+    const clause = head.slice(Math.max(head.search(/[^.!?;:,\n]*$/), 0)) + m[0];
+    if (CLAUSE_NO.test(clause)) continue;
+    if (quoted) {
+      const sentence = head.slice(Math.max(head.search(/[^.!?\n]*$/), 0));
+      if (/["“”«]|\byou (?:say|said|wrote|write|might say|could say)\b|\bsaying\b/.test(sentence)) continue;
+    }
+    return true;
+  }
+  return false;
+}
 // The words a measure goes by in the panel's lines (src/config.js labels), to tell whether a finding is there.
 const HR = ['heart rate', 'pulse'];
 const O2 = ['spo2', 'oxygen'];
@@ -319,6 +437,12 @@ export const ANSWER_CHECKS = Object.freeze([
   // Against the level: alarm words when the automation says normal.
   { rule: 'automation-decides', when: (ctx) => ctx.level === 'normal' && !ctx.red,
     re: /\b(?:emergency|life[- ]threatening|ambulance|hospital|emergency room|seek (?:immediate|urgent|emergency) (?:medical )?(?:help|care|attention)|this is urgent|it is urgent|it's urgent|dangerous)\b/ },
+  // Space rule A: on Mars, or with no link, no promise of a quick answer from Earth ("the doctor will answer soon").
+  { rule: 'knows-where', when: (ctx) => marsNow(ctx) || Boolean(ctx.linkDown), test: (t) => inClause(FAST_REPLY, t) },
+  // Space rule B: with no link, never "call / contact / message / reach ... now". A doctor on board may be called.
+  { rule: 'no-link', when: (ctx) => Boolean(ctx.linkDown), test: (t, ctx) => inClause(CALL_EARTH_NOW, t) || (!ctx.doctorOnBoard && inClause(CALL_DOCTOR_NOW, t)) },
+  // Space rule D: only clear claims of its own feelings; words it quotes ("When you say "I feel alone"") pass.
+  { rule: 'no-feelings', test: (t) => inClause(FEELINGS, t, { quoted: true }) },
 ]);
 
 // A match right after a negation does not count: "not", "never", "no", "n't", "do not", "don't".
@@ -341,6 +465,9 @@ export function safeText(ruleId, place = 'analyse') {
     'no-diagnosis': `Only a doctor can say what this is. Use ${doctor} to ask your flight surgeon.`,
     'no-medicine': 'Ask your flight surgeon or the crew medical officer about any medicine or dose.',
     'automation-decides': `The levels, red limits and numbered steps come from the automation and stand as shown. Follow "What to do" and use ${doctor}.`,
+    'knows-where': `A reply from Earth is not quick here: on Mars it takes up to about 44 minutes, and with no link the message waits in the outbox. The crew medical officer and your crewmates are on board. ${doctor} still sends your message.`,
+    'no-link': `There is no link to Earth now: use ${doctor} and the message waits in the outbox until the link is back. The crew medical officer and your crewmates are on board.`,
+    'no-feelings': 'This is an AI program; it has no feelings of its own. A crewmate or the crew medical officer can listen.',
     'english-only': 'The AI answers in English only, the language its rules are checked in. Please talk to a crewmate or your flight surgeon.',
   }[ruleId] || 'Please talk to a crewmate or your flight surgeon.';
   return `This answer was held back by the rule "${r ? r.title : ruleId}". ${why}`;
@@ -350,13 +477,15 @@ export function notSentText(place = 'analyse') {
   return `This message did not go to the AI, by the rule "English only": the word list that opens Help now and the check of every answer read English only. Nothing was sent. Write in English, or talk to a crewmate${place === 'session' ? ' or press Help now' : ' or your flight surgeon'}.`;
 }
 
-// Check one answer. ctx: { level, red }. Returns { ok: true } or { ok: false, rule }.
+// Check one answer. ctx: { level, red, mission, linkDown, doctorOnBoard }. Returns { ok: true } or { ok: false, rule }.
+// A check whose rule is no longer in AI_RULES is skipped, so a rule is dropped by deleting its entry.
 export function checkAnswer(text, ctx = {}) {
   const forms = readForms(text);
   if (!forms.length) return { ok: true };
   // An answer the checks cannot read (another script, or look-alike letters inside words) is held as a whole.
   if (notEnglish(text)) return { ok: false, rule: 'english-only' };
   for (const c of ANSWER_CHECKS) {
+    if (!ruleById(c.rule)) continue;
     if (c.when && !c.when(ctx)) continue;
     if (forms.some((t) => (c.test ? c.test(t, ctx) : hits(c.re, t, c.strict)))) return { ok: false, rule: c.rule };
   }

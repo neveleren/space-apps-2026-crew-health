@@ -24,6 +24,8 @@ export const TIPS = {
   who: { title: 'Signed-in person', lines: ['You see only your own readings and the shared cabin air.', 'Press to switch person.'] },
   nolink: { title: 'No link to Earth', lines: ['The program keeps working on board.', 'Messages to Earth wait and go out when the link is back.'] },
   aioff: { title: 'AI off', lines: ['Only the plain automation rules work.', 'Buttons that need the AI say so.'] },
+  ailoading: { title: 'AI loading', lines: ['The AI model is starting on this computer.', 'Everything else works while it loads.'] },
+  airules: { title: 'AI: rules only', lines: ['This browser or its graphics chip cannot run the AI now, or it stopped.', 'The automation and every fixed step work as before.', 'An AI panel says why and offers to try again where it can.'] },
   soundoff: { title: 'Sound off', lines: ['The needs-action tone and the spoken question are off.', 'Urgent alarms still sound. Sound is on again at the next sign-in, or in Settings.'] },
   camon: { title: 'Camera on', lines: ['It watches for a hand held to the chest.', 'Video stays on this computer and is never stored.'] },
   today: { title: 'Your health today', lines: ['The automation compares every new reading with its normal range and the team\'s rules, then writes this one sentence about body and mind.', 'Levels: fine, attention (blue), needs action (yellow), urgent (red). The levels and thresholds are drafts; the team decides.'] },
