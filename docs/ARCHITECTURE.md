@@ -20,6 +20,7 @@ Written by Claude (Anthropic), an AI system, for team Just For Fun. The idea, th
 | Crew screen | `index.html`, `src/crew.js`, `support.css` | browser | The astronaut's own screen: Today, all measures, messages, settings |
 | Crew alarm | `src/crew-alarm.js` | browser; Node in the tests | The rules and words of the crew alarm: which line is new, the all clear, what a save became, the automatic message to the doctor, the timings (`ALARM_RULES`, drafts) |
 | Find, mission, fatigue scale | `src/find.js`, `src/mission.js`, `src/fatigue.js` | browser; Node in the tests | Find a measure by the name on its row; the crew's own mission dates and the flight day; the seven statements of the energy question and its low-day rule |
+| Doctor's drafts, NASA rules | `src/doctor-summary.js`, `src/nasa-rules.js` | browser; Node in the tests | The weekly private medical conference summary and the sections of "Message the doctor" (`pmcDraft`, `doctorSections`); the cabin CO2 before a headache and its 7-day average, body mass against its loss levels, hearing against the pre-flight test, in words and chart lines |
 | Technical view | `machine.html`, `src/ui.js` | browser | Simulated devices, the cells, who gets each reading, the log, history and forecast |
 | The machine | `src/engine.js` | browser; its value checks also run in the server; Node in the tests | Cell, norm, red limit, route, history per person |
 | Cells and norms | `src/config.js` | everywhere | Every measure with its norms, sources and red limits; the people; the simulated sources; the team's open questions |
@@ -57,7 +58,7 @@ Written by Claude (Anthropic), an AI system, for team Just For Fun. The idea, th
 
 1. The person picks a sign-in card: one of four made-up example crew members or one of four real Inspiration4 participants. If a PIN is set for that card, it is asked first (`src/privacy.js`).
 2. `openStore({ person })` asks `/api/events?person=<id>`. The answer holds this person's events, the ship's cabin readings and every crewmate's alarm lines, nothing else.
-3. `rebuild()` in `src/crew.js` makes a fresh machine and sends it, in time order, the example flight (when the "example flight" switch is on; made up and marked `example: true`) and every saved reading and review. The machine's history is never saved by itself: it is rebuilt from the events each time.
+3. `rebuild()` in `src/crew.js` makes a fresh machine (with the mission's launch, so it knows which readings came before flight) and sends it, in time order, the example flight (when the "example flight" switch is on; made up and marked `example: true`) and every saved reading and review. The machine's history is never saved by itself: it is rebuilt from the events each time.
 4. `assess()` and `headlineFor()` give the dated sentence (for example "As of <date>, your physical condition needs attention, your mental condition is excellent."); `render()` draws the screen.
 
 The technical view opens the store for everyone (`openStore()`, which reads `/api/events?all=1`): the engineering view, which a real deployment would restrict.
@@ -77,8 +78,9 @@ Each result keeps a list of steps with codes. A step marked `by: 'open'` stands 
 
 | Cell kind | What the machine checks | Status | Who gets it |
 |---|---|---|---|
-| `number` | the value against the norm (`checkNorm()`: `range`, `below-both`, `min-parts`, `baseline-percent`), then the red limits (`redLimitOf()`) | `ok` or `out` | In the norm: nobody (`none`). Outside: the AI (`ai`) while the AI switch is on, otherwise `undecided` (open question 4). Past a red limit: `crew-alarm`, by automation and never the AI: the person and the crew (the crew medical officer for "needs action"), then the doctor on board, the doctor on Earth over the link, or a queued message when there is no link. A cabin value past its limit is the ship's alarm on every screen, with no doctor. |
-| `number`, norm type `record` (body mass, exercise, reaction time) | only that the number can be read | `recorded` | nobody |
+| `number` | the value against the norm (`checkNorm()`: `range`, `below-both`, `min-parts`, `baseline-percent`, `baseline-shift`), then the red limits (`redLimitOf()`) | `ok` or `out` | In the norm: nobody (`none`). Outside: the AI (`ai`) while the AI switch is on, otherwise `undecided` (open question 4). Past a red limit: `crew-alarm`, by automation and never the AI: the person and the crew (the crew medical officer for "needs action"), then the doctor on board, the doctor on Earth over the link, or a queued message when there is no link. A cabin value past its limit is the ship's alarm on every screen, with no doctor. |
+| `number`, norm type `record` (exercise, reaction time) | only that the number can be read | `recorded` | nobody |
+| `number`, norm type `baseline-shift` (hearing) | the shift from the person's own latest reading before launch (the machine gets the mission: `createMachine({ mission })`); with no such reading, or no mission, the cell's second reference (WHO's 20 dB); the shift and the test it was compared with are kept on the reading | `ok` or `out` | as any number cell |
 | `number` marked `atRest` (heart rate, breathing rate), reading marked `context: 'exercise'` | not judged against the resting norm; only red limits not marked `atRest` still count | `recorded`, or `out` past such a limit | nobody, or `crew-alarm` past such a limit |
 | `panel` (blood tests) | each analyte against the lab's own range (`checkPanel()`) | `ok` or `out` | outside: the AI, or `undecided` with the AI off |
 | `complex` (X-ray, ECG, ultrasound, OCT scan) | that something came in | `analysis` | the AI (open question 3), or `undecided` with the AI off |
@@ -208,7 +210,7 @@ What is checked on every request, and what is not protected, is in `docs/SECURIT
 
 ## How to add a new measure
 
-1. **A cell in `src/config.js` (`CELLS`).** Give it a unique `indicator`, an `id` (the team's letter, or `null`), a `label`, a `section` (`body`, `tests`, `complex`, `camera`, `psyche` or `env`), a `kind` (`KIND.NUMBER`, `PANEL`, `COMPLEX`, `CAMERA` or `SELF`) and an `effort` (`light`, `high` or `extreme`). A number cell also needs a `unit`, a `normType` with its `norm` (`range`, `below-both`, `min-parts`, `baseline-percent`, or `record` when no checked norm exists), `compareWith`, one of the four norms (`earthGeneral`, `spaceGeneral`, `personalEarth`, `personalSpace`), and `norms` with the text of each. Optional: `atRest`, `allowNegative`, `reviewByAi`, `private`, `scale`, `answers`.
+1. **A cell in `src/config.js` (`CELLS`).** Give it a unique `indicator`, an `id` (the team's letter, or `null`), a `label`, a `section` (`body`, `tests`, `complex`, `camera`, `psyche` or `env`), a `kind` (`KIND.NUMBER`, `PANEL`, `COMPLEX`, `CAMERA` or `SELF`) and an `effort` (`light`, `high` or `extreme`). A number cell also needs a `unit`, a `normType` with its `norm` (`range`, `below-both`, `min-parts`, `baseline-percent`, `baseline-shift` with `{ shiftAtLeast, fallback }` for a shift from the person's own pre-flight reading, or `record` when no checked norm exists), `compareWith`, one of the four norms (`earthGeneral`, `spaceGeneral`, `personalEarth`, `personalSpace`), and `norms` with the text of each. Optional: `atRest`, `allowNegative`, `reviewByAi`, `private`, `scale`, `answers`.
 2. **The source of the norm.** Add `{ name, url }` to the source tables at the top of `config.js` and point the norm at it with `src`. A norm without a checked source stays out: use `record`. The cells added after the night's NASA-style reviews (written by Claude in the roles of NASA reviewers, not by NASA) also say where the measure is available on the ISS (`availability`, `availabilitySrc`); a new cell should too.
 3. **Red limits, only with a published value.** `red: [{ when, value, level, source, url, note, draft: true }]`, with `when` one of `below`, `atOrBelow`, `above`, `atOrAbove` and `level` `action` or `urgent`; `part` picks one number of a pair, `atRest` skips the limit during exercise. A value just past a limit must be outside the norm.
 4. **A simulated source in `SOURCES`**, so the technical view can send it and the checks can try its presets.
@@ -249,6 +251,8 @@ What is checked on every request, and what is not protected, is in `docs/SECURIT
 | `src/inspiration4.js` | Real Inspiration4 blood tests from NASA OSDR (OSD-575, OSD-569) |
 | `src/cycle.js` | The menstrual cycle log, its checked flags and low days by phase |
 | `src/quicklog.js` | The symptom and medicine quick logs, their checks and their wording |
+| `src/doctor-summary.js` | The doctor's drafts: the weekly private medical conference summary and the sections of "Message the doctor" |
+| `src/nasa-rules.js` | The cabin CO2 before a headache and its 7-day average, body mass against its loss levels, hearing against the pre-flight test, in words and chart lines |
 | `src/support.js` | Mind support: topics, small things that help, journal, plan for hard days, five steps, mission calendar |
 | `src/reaction-test.js` | The 3-minute reaction test after NASA's Reaction Self Test (PVT-B rules) |
 | `src/earth-break.js` | The 3-minute Earth break with NASA photos and paced breathing |
@@ -306,6 +310,10 @@ These stay open. Where the code needs an answer to run, it carries a draft marke
 | A resting pulse of 40 for athletes | the red limit is "at or below 40 bpm, urgent" (NEWS2), with a note that trained athletes can rest at 40 to 60 |
 | How long a red reading of a rarely taken measure stays | it stays while it is the latest reading of that measure |
 | An ISS-specific cabin pressure limit | the red limit is NASA-STD-3001's 34.5 kPa; the ISS's own 65.3 kPa is only in the note |
+| Which hearing test is the pre-flight one, and the low tones | the latest reading before launch (`preflightOf` in `src/engine.js`); the value is the 2000 to 4000 Hz average, so low-tone shifts do not show |
+| The body mass levels | attention past a loss of 5%, needs action at 10% (`src/config.js` `bodyMass`, drafts after NASA's nutrition report) |
+| A headache with high cabin CO2 | shown with its numbers on Today, on the symptom page and in the drafts; no alert (`src/nasa-rules.js` `CO2_RULES`) |
+| Which private log lines the doctor's drafts hold | all symptoms, medicines and kit list findings of the last 7 days, under their own heading, for the person to delete (`src/doctor-summary.js`) |
 
 ## Related pages
 
