@@ -3209,11 +3209,22 @@ function goToConnection(id) {
 
 // ---------- settings ----------
 const THEMES = [['dark', 'Dark'], ['light', 'Light'], ['auto', 'Follow the device']];
-const themePick = () => { try { return localStorage.getItem('jff-theme') || 'dark'; } catch { return 'dark'; } };
+const themePick = () => { try { return localStorage.getItem('jff-theme') || 'light'; } catch { return 'light'; } };
+// What is on the screen now: "Follow the device" is the device's own choice.
+const themeNow = () => { const k = themePick(); if (k !== 'auto') return k; try { return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; } catch { return 'light'; } };
 function setTheme(k) {
   try { localStorage.setItem('jff-theme', k); } catch { /* storage blocked: this visit only */ }
   if (k === 'auto') document.documentElement.removeAttribute('data-theme');
   else document.documentElement.setAttribute('data-theme', k);
+  drawThemeKey();
+}
+// The light or dark key in the status line: one press, no trip to Settings (the team's wish).
+function drawThemeKey() {
+  const b = byId('theme-btn');
+  if (!b) return;
+  const dark = themeNow() === 'dark';
+  b.replaceChildren(icon(dark ? 'sun' : 'moon', { size: 20 }));
+  b.setAttribute('aria-label', dark ? 'Switch to the light display' : 'Switch to the dark display');
 }
 
 function switchRow(id, label, sub, checked, onchange) {
@@ -3479,6 +3490,9 @@ byId('met').dataset.tip = 't:flightday';
 byId('clock').parentElement.dataset.tip = 't:gmt';
 byId('alerts-btn').dataset.tip = 't:messages';
 byId('who-btn').dataset.tip = 't:who';
+byId('theme-btn').dataset.tip = 't:theme';
+byId('theme-btn').addEventListener('click', () => { setTheme(themeNow() === 'dark' ? 'light' : 'dark'); if (ui.screen === 'setup') keepFocus(() => render()); });
+drawThemeKey();
 byId('today-head-tip').replaceWith(tipButton('t:today', 'this message'));
 byId('keynums-tip').replaceWith(tipButton('t:keynums', 'key numbers'));
 byId('measures-tip').replaceWith(tipButton('t:measures', 'all measures'));

@@ -78,7 +78,7 @@ These screenshots show the crew screen with the made-up example flight. The app'
 ![Settings: the Connections list, each row marked Working, Simulated or Planned](presentation/img/connections.png)
 
 - Every connection says Working, Simulated or Planned, with its sources.
-- Sound and display (a sound test; dark, light or follow the device), mission profile (ISS, Moon, Mars: the signal delay), camera, "I am exercising" (turns itself off after 2 hours, draft), save a copy of your data and bring it back, the PIN, and the simulation switches.
+- Sound and display (a sound test; light, the default, dark or follow the device; a sun or moon key in the status line switches light and dark in one press), mission profile (ISS, Moon, Mars: the signal delay), camera, "I am exercising" (turns itself off after 2 hours, draft), save a copy of your data and bring it back, the PIN, and the simulation switches.
 
 **5. Medical record.** The fifth key ("Record" on phones) opens everything the program holds about the signed-in person in one place, read only, like the patient's medical card that the Helsi app shows from Ukraine's national e-health system.
 
@@ -206,8 +206,8 @@ npm test
 node tools/sbom.mjs --check
 ```
 
-- `npm test` runs Node's own test runner over 17 test files: the machine, history, camera rules, levels, cycle, server, store, PIN, supply chain, mind tools, quick logs, cells, connections, pages, crew alarm, screens and the fatigue scale. The server tests start the real server on a throwaway data folder.
-- On 15 Nov 2026 (version 1.2.0): 276 tests, 274 pass, 0 fail, 2 skipped, with Node 24.13.0. The 2 skipped tests call the real ISSLive and NOAA services.
+- `npm test` runs Node's own test runner over 24 test files: the machine, history, camera rules, levels, cycle, server, store, PIN, supply chain, mind tools, quick logs, cells, connections, pages, crew alarm, screens and the fatigue scale. The server tests start the real server on a throwaway data folder.
+- On 15 Nov 2026 (version 1.3.0): 385 tests, 383 pass, 0 fail, 2 skipped, with Node 24.13.0. The 2 skipped tests call the real ISSLive and NOAA services.
 - We also walk the pages in headless Chromium with Playwright. These scripts are kept outside this repository and are not part of `npm test`. Last run, 15 Nov 2026, against commit `09e93ae` (the merged review fixes), each on a fresh data folder:
 
 | Browser check | Steps | Result |

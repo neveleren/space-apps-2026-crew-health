@@ -2,7 +2,7 @@
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-Ysg0sd74si1nYZC7AF/J2lizibw1HoTLOUJn/DjAfik='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; worker-src 'self' blob:; font-src 'self'; connect-src 'self' https://services.swpc.noaa.gov https://kauai.ccmc.gsfc.nasa.gov https://osdr.nasa.gov https://visualization.osdr.nasa.gov https://api.nasa.gov https://push.lightstreamer.com; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-ECCdJiebq8KkypVZON1Iz9nqV5v6JjRH7h4lnFwIq6s='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; worker-src 'self' blob:; font-src 'self'; connect-src 'self' https://services.swpc.noaa.gov https://kauai.ccmc.gsfc.nasa.gov https://osdr.nasa.gov https://visualization.osdr.nasa.gov https://api.nasa.gov https://push.lightstreamer.com; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Crew Health Console</title>
 <meta name="claude:viewport-fit-sides" content="cover">
@@ -93,6 +93,9 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .who { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px 0 4px; border-radius: 20px; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer; white-space: nowrap; }
 .help-key { position: relative; overflow: hidden; display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px; border-radius: 6px; border: 2px solid var(--lv3-stripe); background: transparent; color: var(--lv3); font-weight: 700; cursor: pointer; user-select: none; touch-action: none; }
 .help-key b { position: relative; }
+/* One press between the light and the dark display; Settings, Display also offers Follow the device. */
+.theme-btn { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 40px; height: 40px; border-radius: 20px; border: 1px solid var(--line); background: var(--panel-2); color: var(--ink); cursor: pointer; }
+.theme-btn:hover { background: var(--panel); }
 .help-key svg { position: relative; }
 .help-key .hold { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--lv3-fill); }
 .help-key.holding { color: var(--ink); }
@@ -641,8 +644,8 @@ dialog p { margin: 0; }
 <link rel="stylesheet" href="./support.css">
 <link rel="stylesheet" href="./cycle.css">
 <script>
-  // The display choice is applied before anything is drawn: dark (default), light, or follow the device.
-  try { const pick = localStorage.getItem('jff-theme') || 'dark'; if (pick === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', pick); } catch { /* storage blocked: dark */ }
+  // The display choice is applied before anything is drawn: light (default), dark, or follow the device.
+  try { const pick = localStorage.getItem('jff-theme') || 'light'; if (pick === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', pick); } catch { document.documentElement.setAttribute('data-theme', 'light'); }
 </script>
 </head>
 <body>
@@ -654,6 +657,7 @@ dialog p { margin: 0; }
     <span class="clockblock"><span id="met"></span><span>GMT <strong id="clock">--:--:--</strong></span></span>
     <span class="sl-tags" id="sys-summary"></span>
     <button type="button" class="annunciator" id="alerts-btn" hidden></button>
+    <button type="button" class="theme-btn" id="theme-btn" aria-label="Switch to the dark display"></button>
     <button type="button" class="who" id="who-btn" hidden><span class="avatar" id="who-avatar"></span><b id="who-name"></b></button>
     <button type="button" class="help-key" id="help-btn" hidden aria-label="Help: hold for 2 seconds to call for help"><span class="hold" aria-hidden="true"></span><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/><path d="M12 8v8M8 12h8"/></svg><b>Help</b></button>
   </div>
