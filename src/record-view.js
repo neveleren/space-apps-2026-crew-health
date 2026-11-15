@@ -200,7 +200,8 @@ export function drawRecord(host, model, on = {}) {
     if (s.table && s.table.length) {
       parts.push(h('details', { class: 'more' },
         h('summary', { 'data-fk': `rec:table:${s.id}` }, icon('chevron-right', { size: 18 }), `Daily check-ins, the last ${RECORD_RULES.mindDays} days`),
-        h('div', {}, h('div', { class: 'table-wrap' }, h('table', {},
+        // The table scrolls inside its frame, so the frame takes the keyboard too (WCAG 2.1.1).
+        h('div', {}, h('div', { class: 'table-wrap', tabindex: '0', role: 'region', 'aria-label': 'Daily check-ins, a table that scrolls', 'data-fk': `rec:tablewrap:${s.id}` }, h('table', {},
           h('caption', { class: 'sr-only' }, `Daily check-ins of the last ${RECORD_RULES.mindDays} days, newest first`),
           h('thead', {}, h('tr', {}, ...['Day (GMT)', 'Mood', 'Energy', 'Sleep', 'Low day'].map((x) => h('th', { scope: 'col' }, x)))),
           h('tbody', {}, ...s.table.map((r) => h('tr', {}, h('td', {}, fmtDay(`${r.day}T12:00:00Z`)), h('td', {}, r.mood ? cap(r.mood) : '-'), h('td', {}, r.energy || '-'), h('td', {}, r.sleep || '-'), h('td', {}, r.low ? 'Yes' : 'No')))))),
