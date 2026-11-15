@@ -29,10 +29,18 @@
 .tip-pop .sup.sup-tipcard { gap: 6px; }
 .tip-pop .sup-tipcard .sup-src { font-size: 13px; }
 
-/* Private things say so, with a lock. */
-.sup .sup-private { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line); }
+/* Private things say so, with a lock, and say truly who can read them. */
+.sup .sup-private { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; padding: 10px 12px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line); }
+.sup .sup-private > span { flex: 1 1 220px; min-width: 0; }
 .sup .sup-private b { font-weight: 700; }
 .sup .sup-private .icon { flex: none; margin-top: 2px; color: var(--muted); }
+
+/* Help now inside a tool (the word rule), the line a request sends, and the letter's emergency line. */
+.sup .sup-risk:empty { display: none; }
+.sup .sup-risk { display: grid; gap: 8px; }
+.sup .sup-quote { margin: 0; padding: 8px 12px; border-left: 3px solid var(--axis); background: var(--panel-2); }
+.sup .sup-urgent { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.sup .sup-confirm-send { display: grid; gap: 8px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel-2); }
 
 /* Text boxes and ticks, the same look inside a card or inside the side sheet. */
 .sup textarea.sup-textarea { display: block; width: 100%; min-height: 96px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--axis); background: var(--bg); color: var(--ink); font: inherit; line-height: 1.45; resize: vertical; }
