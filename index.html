@@ -465,8 +465,11 @@ details.more > div { padding: 0 0 16px; display: grid; gap: 12px; }
 /* Printing the record (or saving it as a PDF): the record alone, every list open, in dark ink on white. */
 @media print {
   :root, :root[data-theme] {
-    --bg: #FFFFFF; --panel: #FFFFFF; --panel-2: #FFFFFF; --line: #8A929C; --ink: #000000; --muted: #2B3138; --axis: #5A6470;
-    --lv1: #163E96; --lv2: #6B4400; --lv2-stripe: #A87400; --lv3: #96140C; --lv3-stripe: #B3221A; --stale: #00525A; --off: #3F4854; --link: #000000; --cmd-soft: #FFFFFF;
+    --bg: #FFFFFF; --panel: #FFFFFF; --panel-2: #F2F4F6; --line: #8A929C; --ink: #000000; --muted: #2B3138; --axis: #5A6470;
+    --cmd: #166038; --cmd-ink: #FFFFFF; --cmd-soft: #E3F2E8; --cmd-edge: #166038; --focus: #0E8A47; --link: #000000;
+    --lv1: #163E96; --lv1-fill: #EAF0FC; --lv2: #6B4400; --lv2-fill: #FFF2C7; --lv2-stripe: #A87400;
+    --lv3: #96140C; --lv3-fill: #FDE8E5; --lv3-stripe: #B3221A; --on-lv3: #FFFFFF;
+    --stale: #00525A; --stale-fill: #E3F5F7; --off: #3F4854; --proc: #7A1A83;
     color-scheme: light;
   }
   body { background: #FFFFFF; color: #000000; font-size: 12pt; }

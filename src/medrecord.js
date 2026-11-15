@@ -440,7 +440,7 @@ export function buildRecord({ person, history, events = [], unsent = [], statusO
     const cycle = cyclePart(ctx);
     if (cycle) add('cycle', entryRows(['cycle'], ctx), { empty: 'Nothing logged.', facts: cycle.facts, flags: cycle.flags });
     add('documents', [
-      { kind: 'doc', key: 'doc:fhir', id: 'fhir', title: 'Export for medical records (HL7 FHIR R4)', detail: 'Your number readings of the last 30 days, with LOINC codes and UCUM units, the way medical record systems read them; made-up data carry the HTEST test label. The private logs (medicines, symptoms, mind, cycle) are not in it.', action: 'Make the FHIR file' },
+      { kind: 'doc', key: 'doc:fhir', id: 'fhir', title: 'Export for medical records (HL7 FHIR R4)', detail: 'Your number readings of the last 30 days, with LOINC codes and UCUM units, the way medical record systems read them; made-up data carry the HTEST test label. The private logs (medicines, symptoms, mind, cycle) are not in it.', action: 'Show the FHIR file' },
       { kind: 'doc', key: 'doc:copy', id: 'copy', title: 'A copy of all your records', detail: 'Every reading, answer and message of yours, and the ship\'s cabin readings, as one file (JSON lines). It holds the private parts too, so keep it safe. The made-up example flight is not part of it.', action: 'Save a copy' },
     ]);
   }
