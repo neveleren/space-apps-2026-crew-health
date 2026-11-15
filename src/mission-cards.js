@@ -99,7 +99,7 @@ export function renderRecoveryCard(host, { rec, checkedIn = false, on = {} }) {
     h('p', {}, h('b', {}, 'Recovery against your pre-flight levels')),
     h('ul', { class: 'reasons phase-lines' }, ...rec.rows.map((r) => line(r, () => on.open && on.open(r.key)))),
     factsBox(rec.expect, 'What to expect after landing'),
-    h('p', { class: 'note' }, 'Information, not judged here: each reading still meets its own normal range and red limits. An ISS study followed sleep and the reaction test before, during and after six-month missions (Jones et al., 2022), so the check-in, the sleep log and the reaction test go on after landing.'));
+    h('p', { class: 'note' }, 'Information, not judged here: each reading is still checked against its own normal range and red limits. An ISS study followed sleep and the reaction test before, during and after six-month missions (Jones et al., 2022), so the check-in, the sleep log and the reaction test go on after landing.'));
   host.className = 'card phase-card';
   host.hidden = false;
 }

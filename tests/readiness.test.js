@@ -159,7 +159,7 @@ test('plain words: every line names its sources, the drafts say so, nothing clai
   assert.match(lines[0].text, /a draft/);
   assert.match(lines[1].text, /a draft rule/);
   assert.match(lines[1].text, /Its FDA label says: "Tell patients to wait for at least 8 hours after dosing before driving or engaging in other activities requiring full mental alertness\."/);
-  assert.match(lines[1].text, /no FDA drug label/);
+  assert.match(lines[1].text, /dietary supplement, regulated less strictly by the FDA/);
   assert.ok(lines[1].src.includes(READINESS_SOURCES.zolpidem) && lines[1].src.includes(READINESS_SOURCES.melatonin));
   for (const n of Object.values(MEDICINE_NOTES)) assert.ok(!LONG_DASHES.test(n.text));
   const msg = readinessMessage({ ...r, task: { ...task, example: true } }, { name: 'Elly', when: startsIn(r.hoursTo) });

@@ -122,7 +122,9 @@ const KIT = (CELLS.find((c) => c.indicator === 'medicines') || { kit: [] }).kit;
 // What a public source says about a medicine the card lists. The kit list's own note is quoted for the others.
 export const MEDICINE_NOTES = Object.freeze({
   zolpidem: Object.freeze({ text: 'Its FDA label says: "Tell patients to wait for at least 8 hours after dosing before driving or engaging in other activities requiring full mental alertness." It adds that impairment "can be present despite feeling fully awake."', src: READINESS_SOURCES.zolpidem }),
-  melatonin: Object.freeze({ text: 'Melatonin has no FDA drug label: in the United States it is a dietary supplement. In short-term studies only mild side effects were reported, sleepiness among them (NCCIH, 2024).', src: READINESS_SOURCES.melatonin }),
+  // NCCIH's own words: in the U.S. melatonin is "considered a dietary supplement", "regulated less strictly by the Food
+  // and Drug Administration (FDA)" than prescription or over-the-counter drugs (checked again on 15 Nov 2026).
+  melatonin: Object.freeze({ text: 'In the United States melatonin is a dietary supplement, regulated less strictly by the FDA than prescription or over-the-counter drugs. In short-term studies only mild side effects were reported, sleepiness among them (NCCIH, 2024).', src: READINESS_SOURCES.melatonin }),
 });
 
 // Everything the card shows before one task, for one person, at now. The inputs are as the machine keeps them:
