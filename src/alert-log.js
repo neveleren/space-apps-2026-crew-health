@@ -16,7 +16,8 @@ import { CELLS } from './config.js';
 // Mark as read or Mark all as read, which acknowledges too; "false-alarm" is "I am okay: false alarm".
 export const LOG_STEPS = Object.freeze(['shown', 'acknowledged', 'read', 'cleared', 'false-alarm', 'rated']);
 // How it was acknowledged: Mark as read on one message, Mark all as read, the Messages key (status line or the key
-// bar), Silence on the alarm banner, "Silence all sounds" on Messages.
+// bar), Silence on the alarm banner, "Silence all sounds" on Messages. What counts as acknowledging is a draft: the
+// team decides (the Messages key, for one, acknowledges every alert listed).
 export const ACK_WAYS = Object.freeze(['mark-read', 'mark-all-read', 'messages-key', 'banner-silence', 'silence-all']);
 // What the alert is about, without the measure: the person's body, mind, the camera, the Help key, the ship's cabin
 // air, or a crewmate's alarm line.

@@ -2578,8 +2578,12 @@ function logRead(items, how) { for (const f of readDue(items.map(factsOf), logOf
 // The workload of an urgent alarm on the Bedford scale ([V2 5007]), asked once it was acknowledged (a draft rule).
 function openWorkload(x) {
   const facts = factsOf(x);
+  const person = ui.person;
   openPanel('Workload of this alarm', [workloadForm({ onSave: async (n) => {
     const res = await logStep(facts, 'rated', { rating: n });
+    // A rating that was not saved can be given again (logStep tries each step once per sign-in), so "Try again later"
+    // holds and the next try is never answered with "already rated".
+    if (res && !res.ok) logTried.delete(`${person}|${facts.id}|rated`);
     closePanel();
     toast(!res ? 'This alarm was already rated.' : res.ok ? `${savedWord(res, 'Saved in your record')}: workload ${n} of 10.` : `Not saved: ${shortReason(res.why)}. Try again later.`);
     render();
