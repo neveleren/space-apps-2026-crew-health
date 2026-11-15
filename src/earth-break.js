@@ -21,7 +21,7 @@ import { h, btn, supIcon, badge, sourceLine, openOverlay, SRC, BADGE } from './s
 export const BREAK_SCENES = [
   { id: 'rain', label: 'Rain', alt: 'Rain falling on a forest trail with puddles and green leaves', video: 'rain.mp4', poster: 'rain.jpg', sound: 'rain.mp3', by: { video: 'Allen Y', sound: 'BurghRecords' } },
   { id: 'field', label: 'Fields', alt: 'A wheat field moving in the wind under a cloudy blue sky', video: 'field.mp4', poster: 'field.jpg', sound: 'field.mp3', by: { video: 'M, Khorik', sound: 'Kinoton' } },
-  { id: 'city', label: 'City', alt: 'A town at dusk seen from above, its lights coming on', video: 'city.mp4', poster: 'city.jpg', sound: 'city.mp3', by: { video: '梁启首', sound: 'flood-mix' } },
+  { id: 'city', label: 'City', alt: 'A city at dusk seen from above, its lights coming on', video: 'city.mp4', poster: 'city.jpg', sound: 'city.mp3', by: { video: '梁启首', sound: 'flood-mix' } },
   { id: 'cafe', label: 'Cafe', alt: 'Inside a quiet cafe with wooden tables and hanging plants', video: 'cafe.mp4', poster: 'cafe.jpg', sound: 'cafe.mp3', by: { video: 'Peggy Anke', sound: 'priesjensen' } },
   { id: 'sea', label: 'Sea', alt: 'Small waves washing onto a sandy beach in the evening light', video: 'sea.mp4', poster: 'sea.jpg', sound: 'sea.mp3', by: { video: 'Sajjad Naqvi', sound: 'derjuli' } },
   { id: 'forest', label: 'Forest', alt: 'Sunlight through tall pine trees in a green forest', video: 'forest.mp4', poster: 'forest.jpg', sound: 'forest.mp3', by: { video: 'Dmitry Marchenkov', sound: 'BurghRecords' } },
@@ -220,8 +220,12 @@ function createSound({ base, fadeS, onProblem, onPlay }) {
       master.gain.setValueAtTime(master.gain.value, now);
       master.gain.linearRampToValueAtTime(v, now + rampS);
     },
-    // Wakes the sound up after a key or a press, when the browser held it back until the person did something.
-    resume() { if (!closed && ctx.state === 'suspended') ctx.resume().catch(() => {}); },
+    // Wakes the sound up after a key or a press, when the browser held it back until the person did something,
+    // and when the page is back in sight after pause(). Both ask whatever the state reads: a suspend or resume
+    // still on its way leaves the old state showing, and the browser carries out the requests in order.
+    resume() { if (!closed && ctx.state !== 'closed') ctx.resume().catch(() => {}); },
+    // Holds the sound where it is while the page is out of sight (see runEarthBreak).
+    pause() { if (!closed && ctx.state !== 'closed') ctx.suspend().catch(() => {}); },
     state: () => ctx.state,
     fadeAll(s) { token += 1; fadeOut(current, s); current = null; },
     close() {
@@ -283,7 +287,7 @@ export function runEarthBreak({ onDone, onCancel, durationS = BREAK_RULES.durati
     for (const v of vids) { try { v.pause(); v.removeAttribute('src'); v.load(); } catch { /* nothing to stop */ } }
     if (sound) sound.close();
   };
-  const close = () => { if (closed) return; closed = true; cancelAnimationFrame(raf); stopMedia(); layer.close(); };
+  const close = () => { if (closed) return; closed = true; cancelAnimationFrame(raf); document.removeEventListener('visibilitychange', onVisibility); stopMedia(); layer.close(); };
   const layer = openOverlay({
     cls: `sup-eb${still ? ' still' : ''}`,
     labelledby: 'sup-eb-title',
@@ -343,6 +347,23 @@ export function runEarthBreak({ onDone, onCancel, durationS = BREAK_RULES.durati
   // Some browsers hold sound back until the person presses something; any key or press here wakes it up.
   layer.root.addEventListener('pointerdown', () => { if (sound) sound.resume(); });
   layer.root.addEventListener('keydown', () => { if (sound) sound.resume(); });
+  // While the page is out of sight (another tab or app in front, the screen off), the sound and the video hold, so
+  // nothing plays where the person can neither see nor stop it (the break's own timer runs only while the page is
+  // drawn, so the break could not end on time out of sight); the 3 minutes keep counting, and both go on when the
+  // page is back. TO CONFIRM (the team): hold while out of sight, rather than play on.
+  function onVisibility() {
+    if (closed) return;
+    if (document.visibilityState === 'hidden') {
+      if (sound) sound.pause();
+      for (const v of vids) { try { v.pause(); } catch { /* nothing to hold */ } }
+      return;
+    }
+    if (asked) return;
+    if (sound) sound.resume();
+    const v = vids.find((x) => x.classList.contains('shown'));
+    if (v) { const p = v.play(); if (p && typeof p.catch === 'function') p.catch(() => {}); }
+  }
+  document.addEventListener('visibilitychange', onVisibility);
 
   function paintScenes() {
     for (const [key, b] of sceneBtns) {

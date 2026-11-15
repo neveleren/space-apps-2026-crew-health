@@ -193,6 +193,9 @@ html.sup-noscroll, html.sup-noscroll body { overflow: hidden; }
 .sup .sup-eb-credit:empty { display: none; }
 .sup .sup-eb-ask { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(440px, calc(100% - 32px)); display: grid; gap: 12px; padding: 20px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); }
 .sup .sup-eb-ask .link { justify-self: start; }
+/* In a short window (a phone held sideways) the question and its sources can be taller than the screen: the box
+   then stays inside it and scrolls, so nothing is cut off. */
+.sup .sup-eb-ask { max-height: calc(100% - 24px); overflow-y: auto; }
 @media (max-width: 640px) {
   .sup .sup-eb-circle { width: 84px; height: 84px; }
   .sup .sup-eb-pacer { bottom: max(70px, calc(env(safe-area-inset-bottom, 0px) + 62px)); gap: 6px; padding: 12px 12px 10px; }
@@ -223,5 +226,6 @@ html.sup-noscroll, html.sup-noscroll body { overflow: hidden; }
   .sup .sup-eb-count { font-size: 32px; }
   .sup .sup-eb-how { font-size: 13px; }
   .sup .sup-eb-credit { bottom: max(8px, env(safe-area-inset-bottom, 0px)); font-size: 12px; }
+  .sup .sup-eb-ask { gap: 8px; padding: 14px 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .sup .sup-eb-video { transition: none; } }
