@@ -60,7 +60,7 @@ export const SLIDES = [
     title: 'Danger reaches the crew in seconds; privacy stays',
     html: `<ul class="points">
       <li><span><b>Safe:</b> past a red limit, the person is alerted at once and every crew screen in use within seconds, with no AI and no link to Earth; a message to the doctor is written by itself. Crewmates see <b>one line</b>, never the record.</span></li>
-      <li><span><b>Private:</b> each person opens only their own records, with an optional PIN; messages to the doctor are sealed for the flight surgeon's key.</span></li>
+      <li><span><b>Private:</b> each person opens only their own medical record, everything in one place, with an optional PIN; messages to the doctor are sealed for the flight surgeon's key.</span></li>
       <li><span><b>Connected:</b> Bluetooth health devices, HL7 FHIR export, NASA OSDR blood tests, live ISS cabin air (NASA ISSLive), NOAA space weather. <b>Planned with partners:</b> EveryWear, NASA's crew medical record.</span></li>
     </ul>
     <div class="shots2"><img class="shot" src="./img/crew-alarm.png" alt="A crewmate's screen: Tom needs help now, blood oxygen 85 percent; go to them"><img class="shot" src="./img/connections-live.png" alt="Live rows of the Connections list: ISS cabin air from NASA ISSLive and NOAA space weather, each marked Earth demo"></div>`,
@@ -73,7 +73,7 @@ export const SLIDES = [
     html: `<ul class="points">
       <li><span>Built after <b>NASA-STD-3001</b> Vol 1 and Vol 2 Rev F, with a requirements map; software TRL 3 to 4 by our own assessment.</span></li>
       <li><span>Automatic tests and an end-to-end walk through every screen; Apache-2.0; no internet needed on board.</span></li>
-      <li><span>Next: a HERA analog test with flight surgeons, measuring false alarms and crew minutes per day.</span></li>
+      <li><span>Ready for a NASA analog test such as HERA: every alert is logged with its time to acknowledge, drills never count, and a de-identified study export is built in.</span></li>
     </ul>
     <p class="links" style="margin-top:28px">Live: <a href="https://neveleren.github.io/space-apps-2026-crew-health/">neveleren.github.io/space-apps-2026-crew-health</a><br>Code: <a href="https://github.com/neveleren/space-apps-2026-crew-health">github.com/neveleren/space-apps-2026-crew-health</a></p>
     <p class="src" style="margin-top:16px">The idea and every decision: the team's human member. Code, research and these slides: drafted with SI (Claude, Anthropic) and checked against the cited sources. Example crew data are made up.</p>`,
