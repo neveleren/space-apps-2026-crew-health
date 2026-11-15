@@ -680,7 +680,9 @@ export function renderJournal(host, { entries = [], onSave, onToggleTalk, onSend
         ? h('div', { class: 'sup-letter' },
           h('label', { for: ids.letter, class: 'sup-label' }, 'Your letter. Change anything you like.'),
           letter,
-          h('p', { class: 'note' }, linkNow ? 'It goes in the outbox and leaves with the next downlink. Only your psychologist reads it.' : 'There is no link to Earth now: it waits in the outbox and goes when the link is back. Only your psychologist reads it.'),
+          // Who may open it depends on the outbox the screen uses (today the flight surgeon's), so the box says
+          // only where it goes; "only your psychologist reads it" needs a recipient and key of its own first.
+          h('p', { class: 'note' }, linkNow ? 'It goes in the outbox and leaves with the next downlink, addressed to your psychologist.' : 'There is no link to Earth now: it waits in the outbox and goes when the link is back, addressed to your psychologist.'),
           h('div', { class: 'actions' }, btn('primary', 'Send', send, 'send'), btn('secondary', 'Cancel', () => { letterOpen = false; draw(); })))
         : h('div', { class: 'actions' }, btn('secondary', 'Send as a private letter to my psychologist', () => { letter.value = letterText(list); letterOpen = true; draw(); letter.focus(); }, 'mail', { disabled: talk.length ? null : true, 'data-tip': 'mind:letter' })));
     const sorted = [...list].sort((a, b) => msOf(b.time) - msOf(a.time));
