@@ -26,6 +26,25 @@ export const NORM_KINDS = [
   { key: 'personalSpace', title: 'Personal, space' },
 ];
 
+// Sources of the cells added after the two NASA panel reviews of 15 Nov 2026 (symptoms, medicines, exercise,
+// eyes). Each was opened and checked by Claude on 2026-11-15; what each one supports is said where it is used.
+const L2 = {
+  lsah2017: { name: 'NASA HRP evidence report, 2017', url: 'https://ntrs.nasa.gov/api/citations/20170004604/downloads/20170004604.pdf' },
+  sas2025: { name: 'NASA OCHMO-MTB-004 Rev A, 2025', url: 'https://www.nasa.gov/wp-content/uploads/2025/09/ochmo-mtb-004-space-adaptation-sickness-sas.pdf' },
+  law2014: { name: 'Law et al., 2014', url: 'https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:24806559%20AND%20SRC:MED&resultType=core&format=json' },
+  pmc2025: { name: 'NASA podcast 377, 2025', url: 'https://www.nasa.gov/podcasts/houston-we-have-a-podcast/mission-control-crew-health-consoles' },
+  doseTracker: { name: 'Wotring and Smith, 2019', url: 'https://www.frontiersin.org/10.3389/conf.fphys.2018.26.00047/event_abstract' },
+  wotring2015: { name: 'Wotring, 2015', url: 'https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:26187345%20AND%20SRC:MED&resultType=core&format=json' },
+  kit2015: { name: 'NASA ISS medical kit list, 9 Apr 2015', url: 'https://www.governmentattic.org/19docs/NASA-ISSmedicalEmergManual_2016.pdf' },
+  inventory2024: { name: 'Gilkey et al., NASA, 2024', url: 'https://ntrs.nasa.gov/api/citations/20240004905/downloads/ISSRDC%20Abstract%20submission%20submit.pdf' },
+  everyWear: { name: 'ESA, 2026', url: 'https://blogs.esa.int/orion/2026/04/06/everywear-from-earth-orbit-to-the-moon/' },
+  exercise2023: { name: 'NASA HRP evidence report, 2023', url: 'https://ntrs.nasa.gov/api/citations/20220019338/downloads/Evidence%20report%20aerobic%20and%20muscle_FINAL%209-21-22%20Pubpress%20accepted_v2.pdf' },
+  exercise2024: { name: 'NASA, 2024', url: 'https://www.nasa.gov/missions/station/iss-research/astronaut-exercise/' },
+  cdcActivity: { name: 'CDC', url: 'https://www.cdc.gov/physical-activity-basics/guidelines/adults.html' },
+  sans2023: { name: 'Brunstetter et al., NASA, 2023', url: 'https://ntrs.nasa.gov/api/citations/20220014606/downloads/Brunstetter%20-%20IWS%202023%20SANS%20Clinical%20Update%20-%20Abstract%20-%2023Sep22.pdf' },
+  medlineAmsler: { name: 'MedlinePlus (NIH)', url: 'https://medlineplus.gov/ency/article/003446.htm' },
+};
+
 const L = {
   medlinePulse: { name: 'MedlinePlus (NIH)', url: 'https://medlineplus.gov/ency/article/003399.htm' },
   nhlbi: { name: 'NHLBI (NIH)', url: 'https://www.nhlbi.nih.gov/health/high-blood-pressure/diagnosis' },
@@ -61,25 +80,6 @@ const L = {
 };
 
 const none = null;
-
-// Sources of the cells added after the two NASA panel reviews of 15 Nov 2026 (symptoms, medicines, exercise,
-// eyes). Each was opened and checked by Claude on 2026-11-15; what each one supports is said where it is used.
-const L2 = {
-  lsah2017: { name: 'NASA HRP evidence report, 2017', url: 'https://ntrs.nasa.gov/api/citations/20170004604/downloads/20170004604.pdf' },
-  sas2025: { name: 'NASA OCHMO-MTB-004 Rev A, 2025', url: 'https://www.nasa.gov/wp-content/uploads/2025/09/ochmo-mtb-004-space-adaptation-sickness-sas.pdf' },
-  law2014: { name: 'Law et al., 2014', url: 'https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:24806559%20AND%20SRC:MED&resultType=core&format=json' },
-  pmc2025: { name: 'NASA podcast 377, 2025', url: 'https://www.nasa.gov/podcasts/houston-we-have-a-podcast/mission-control-crew-health-consoles' },
-  doseTracker: { name: 'Wotring and Smith, 2019', url: 'https://www.frontiersin.org/10.3389/conf.fphys.2018.26.00047/event_abstract' },
-  wotring2015: { name: 'Wotring, 2015', url: 'https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:26187345%20AND%20SRC:MED&resultType=core&format=json' },
-  kit2015: { name: 'NASA ISS medical kit list, 9 Apr 2015', url: 'https://www.governmentattic.org/19docs/NASA-ISSmedicalEmergManual_2016.pdf' },
-  inventory2024: { name: 'Gilkey et al., NASA, 2024', url: 'https://ntrs.nasa.gov/api/citations/20240004905/downloads/ISSRDC%20Abstract%20submission%20submit.pdf' },
-  everyWear: { name: 'ESA, 2026', url: 'https://blogs.esa.int/orion/2026/04/06/everywear-from-earth-orbit-to-the-moon/' },
-  exercise2023: { name: 'NASA HRP evidence report, 2023', url: 'https://ntrs.nasa.gov/api/citations/20220019338/downloads/Evidence%20report%20aerobic%20and%20muscle_FINAL%209-21-22%20Pubpress%20accepted_v2.pdf' },
-  exercise2024: { name: 'NASA, 2024', url: 'https://www.nasa.gov/missions/station/iss-research/astronaut-exercise/' },
-  cdcActivity: { name: 'CDC', url: 'https://www.cdc.gov/physical-activity-basics/guidelines/adults.html' },
-  sans2023: { name: 'Brunstetter et al., NASA, 2023', url: 'https://ntrs.nasa.gov/api/citations/20220014606/downloads/Brunstetter%20-%20IWS%202023%20SANS%20Clinical%20Update%20-%20Abstract%20-%2023Sep22.pdf' },
-  medlineAmsler: { name: 'MedlinePlus (NIH)', url: 'https://medlineplus.gov/ency/article/003446.htm' },
-};
 
 export const CELLS = [
   {
