@@ -230,6 +230,8 @@ test('a drill line says DRILL within 200 characters; a real urgent sign is never
   const d = startDrill(NOW);
   assert.equal(lineDrill({ drill: d }), d.id);
   assert.equal(lineDrill({ drill: d, realSigns: 1 }), null, 'a real sign from before the drill: the line is a real alarm');
+  assert.equal(lineDrill({ drill: d, clear: true, lastWasDrill: false }), null, 'a real alarm called off during the drill: its all clear stays real');
+  assert.equal(lineDrill({ drill: d, clear: true, lastWasDrill: true }), d.id, 'a drill alarm called off during the drill: its all clear is the drill\'s');
   assert.equal(lineDrill({ ended: d, clear: true, lastWasDrill: true }), d.id, 'the all clear that ends a drill line is the drill\'s');
   assert.equal(lineDrill({ ended: d, clear: false, lastWasDrill: true }), null, 'after the drill a real line is never marked');
   assert.equal(lineDrill({ ended: d, clear: true, lastWasDrill: false }), null);

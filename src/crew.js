@@ -506,16 +506,20 @@ async function shareCrewAlarm(personId, { force = false, falseAlarm = false, dri
 
 // Every new reading goes through the machine and is saved, exactly like on the technical page. A reading that was
 // not saved leaves the screen again. share: false skips the crew alarm (the false alarm writes its own line).
-async function addReading(indicator, value, { source = null, person = ui.person, context = null, time = null, detail = null, quiet = false, retry = false, share = true, force = false } = {}) {
+// real: a reading that answers a real alarm during a drill ("I am okay: false alarm" on it) is the record's, never the
+// drill's, so the real alarm is called off in the record and does not ring again when the drill ends.
+async function addReading(indicator, value, { source = null, person = ui.person, context = null, time = null, detail = null, quiet = false, retry = false, share = true, force = false, real = false } = {}) {
   const src = source || sourceFor(indicator);
   const event = { v: 1, kind: 'reading', time: time || new Date().toISOString(), person, state: { ...ui.ship }, reading: { source: src.id, indicator, value, ...(context ? { context } : {}), ...(detail ? { detail } : {}) } };
   // A drill's reading goes into the drill's machine only, never into the record's (src/drill.js).
-  const drill = markFor(ui.drill, event.time);
+  const drill = real ? null : markFor(ui.drill, event.time);
   if (drill && drillMachine) event.drill = drill;
   const m = event.drill ? drillMachine : machine;
   m.setState(event.state);
   const entry = m.receive({ ...event.reading, person, time: event.time });
-  const res = await keep(event, { quiet, retry });
+  // The drill's machine holds the record too, so a reading of the record reaches both.
+  if (!event.drill && drillMachine) { drillMachine.setState(event.state); drillMachine.receive({ ...event.reading, person, time: event.time }); }
+  const res = await keep(event, { quiet, retry, mark: !real });
   // Not saved: the machine forgets it again; the screen was not redrawn with it, so a form keeps what was typed.
   if (!res.ok) { rebuild(); renderBar(); return { entry, ok: false, why: res.why }; }
   const shared = share ? await shareCrewAlarm(person, { force }) : null;
@@ -1958,7 +1962,8 @@ function renderAlerts() {
 async function falseAlarm(x) {
   const p = personById[ui.person];
   if (!p || p.real) return;
-  const r = await addReading('camera', 'chest_grab_ok', { source: { id: 'false-alarm', indicator: 'camera' }, quiet: true, share: false });
+  // On a real alarm during a drill the answer is real too: only a drill's own alarm is called off inside the drill.
+  const r = await addReading('camera', 'chest_grab_ok', { source: { id: 'false-alarm', indicator: 'camera' }, quiet: true, share: false, real: !x.drill });
   if (!r.ok) { toast(`Not saved: ${shortReason(r.why)}. The alarm still stands: try again.`); return; }
   logStep(factsOf(x), 'false-alarm');
   const s = await shareCrewAlarm(p.id, { force: true, falseAlarm: true });

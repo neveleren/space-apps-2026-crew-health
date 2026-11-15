@@ -64,10 +64,11 @@ export function drillLine(text, max = 200) {
 export const drillReport = (text, max = 6000) => `DRILL. ${String(text || '')}`.slice(0, max);
 
 // Which drill a crew line and its message belong to. While a drill runs: that drill, unless a real urgent sign from
-// before the drill is present, so a real alarm is never hidden behind the word DRILL. After the drill: only the all
-// clear that ends a drill's open line.
+// before the drill is present, so a real alarm is never hidden behind the word DRILL, or the line is the all clear of
+// a real line (a real alarm called off during the drill), which stays real. After the drill: only the all clear that
+// ends a drill's open line.
 export function lineDrill({ drill = null, ended = null, realSigns = 0, clear = false, lastWasDrill = false } = {}) {
-  if (drill) return realSigns > 0 ? null : drill.id;
+  if (drill) return realSigns > 0 || (clear && !lastWasDrill) ? null : drill.id;
   if (ended && clear && lastWasDrill) return typeof ended === 'string' ? ended : ended.id;
   return null;
 }
