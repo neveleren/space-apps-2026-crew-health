@@ -6,7 +6,7 @@ Night of 14 to 15 November 2026. Written by Claude (Anthropic), an AI system, fo
 
 Three words, one per row, shown as a chip in Settings:
 
-- **Working**: it really works now.
+- **Working**: it runs in the program now. A working row that has not been tried with a real device or a real file says so on the row itself, not only behind its "?": both Bluetooth rows and the CSV import.
 - **Simulated**: the program imitates it.
 - **Planned**: designed, needs the partner named in the row.
 
@@ -17,7 +17,7 @@ Code: `src/integrations.js` (the list and the Settings drawing), `src/ble.js`, `
 | Connection | Status | Standard or format | Tested tonight | Sources |
 |---|---|---|---|---|
 | Bluetooth heart rate monitor | Working | Bluetooth Heart Rate Profile; Web Bluetooth `heart_rate`, `heart_rate_measurement` (Chrome or Edge) | Byte format checked against the GATT Specification Supplement 3.126; no strap connected tonight | [HRP](https://www.bluetooth.com/specifications/specs/heart-rate-profile-1-0/), [GSS](https://btprodspecificationrefs.blob.core.windows.net/gatt-specification-supplement/GATT_Specification_Supplement.pdf), [Web Bluetooth names](https://github.com/WebBluetoothCG/registries), [MDN browser data](https://github.com/mdn/browser-compat-data/blob/main/api/Bluetooth.json) |
-| Bluetooth thermometer, blood pressure cuff, pulse oximeter | Working (not yet tried with a real device) | Health Thermometer, Blood Pressure and Pulse Oximeter profiles: `temperature_measurement` (FLOAT), `blood_pressure_measurement` (SFLOAT, mmHg or kPa), `plx_continuous_measurement`, `plx_spot_check_measurement` (SFLOAT) | Unit tests with the specifications' own byte examples (36.4 °C = FLOAT 0xFF00016C, 114 mmHg = SFLOAT 0x0072) and every flag | [HTP](https://www.bluetooth.com/specifications/specs/health-thermometer-profile-1-0/), [BLP](https://www.bluetooth.com/specifications/specs/blood-pressure-profile-1-0-1/), [PLXP](https://www.bluetooth.com/specifications/specs/pulse-oximeter-profile-1-0-1/), [PLXS 1.0.1](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/PLXS_v1.0.1/out/en/index-en.html), [PHD transcoding (FLOAT, SFLOAT)](https://www.bluetooth.com/wp-content/uploads/2019/03/PHD_Transcoding_WP_v16.pdf) |
+| Bluetooth thermometer, blood pressure cuff, pulse oximeter | Working (not yet tried with a real device) | Health Thermometer, Blood Pressure and Pulse Oximeter profiles: `temperature_measurement` (FLOAT), `blood_pressure_measurement` (SFLOAT, mmHg or kPa), `plx_continuous_measurement`, `plx_spot_check_measurement` (SFLOAT) | Unit tests with the specifications' own byte examples (36.4 °C = FLOAT 0xFF00016C, 114 mmHg = SFLOAT 0x0072) and each flag of each measurement at least once | [HTP](https://www.bluetooth.com/specifications/specs/health-thermometer-profile-1-0/), [BLP](https://www.bluetooth.com/specifications/specs/blood-pressure-profile-1-0-1/), [PLXP](https://www.bluetooth.com/specifications/specs/pulse-oximeter-profile-1-0-1/), [PLXS 1.0.1](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/PLXS_v1.0.1/out/en/index-en.html), [PHD transcoding (FLOAT, SFLOAT)](https://www.bluetooth.com/wp-content/uploads/2019/03/PHD_Transcoding_WP_v16.pdf) |
 | Export for medical records | Working | HL7 FHIR R4 Bundle (collection), LOINC, UCUM, Device and Provenance, HTEST on made-up data | 13 LOINC codes looked up in NLM's table; a generated file passed the official R4 JSON schema | [Bundle](https://hl7.org/fhir/R4/bundle.html), [vital signs](https://hl7.org/fhir/R4/observation-vitalsigns.html), [categories](https://hl7.org/fhir/R4/codesystem-observation-category.html), [Provenance](https://hl7.org/fhir/R4/provenance.html), [HTEST](https://terminology.hl7.org/CodeSystem-v3-ActReason.json), [CSA C2M2 uses FHIR](https://publications.spaceops.org/2025/download_by_id.php?id=0092) |
 | NASA OSDR: Inspiration4 blood tests | Working (saved copy, offline) | OSDR files of OSD-575 and OSD-569, built into `src/inspiration4.js` | Files API answered; both files public (below) | [OSD-575](https://osdr.nasa.gov/bio/repo/data/studies/OSD-575), [OSD-569](https://osdr.nasa.gov/bio/repo/data/studies/OSD-569), [files API](https://osdr.nasa.gov/osdr/data/osd/files/575) |
 | ISS cabin air, live (NASA ISSLive) | Working, Earth demo, off by default | Lightstreamer TLCP 2.4.0 over HTTPS, adapter set ISSLIVE, MERGE subscription | Real values read from Node and from a browser page (below) | [ISS Live!](https://ntrs.nasa.gov/citations/20130013825), [Lightstreamer example](https://github.com/Lightstreamer/Lightstreamer-example-ISSLive-client-javascript), [TLCP 2.4.0](https://lightstreamer.com/sdks/ls-generic-client/2.4.0/TLCP%20Specifications.pdf), [ISS Mimic](https://github.com/ISS-Mimic/Mimic) |
@@ -112,6 +112,16 @@ A file built from the example flight (187 readings of the last 30 days, 6 device
 
 No Bluetooth thermometer, cuff, oximeter or heart rate strap was connected tonight. The CSV formats were tested only with files written from the documents (next section).
 
+### Checked again by an independent review (15 Nov 2026, 01:26 to 01:36 GMT)
+
+- **ISSLive**, with curl and the same TLCP requests: `CONOK`, `SUBOK,1,8,4`; USLAB000058 757.94677734375 torr at TimeStamp 7657.3974 (01:23:50), USLAB000059 23.449 °C (01:26:25); the CO2 and O2 items unchanged since 2 Nov 15:01 and 14:51; AIRLOCK000049 756.36 torr; TIME_000001 at 7657.4453, that is 01:26:43, against a wall clock of 01:26:47, with the text `318/01:26:43`. `Origin: http://127.0.0.1:8080` was echoed, `Origin: null` got `*`; without `LS_cid`: `CONERR,67,LS_cid parameter missing`. The two live tests (`JFF_LIVE=1`) passed at 01:26.
+- **NOAA**: HTTP 200 with `Access-Control-Allow-Origin: *`; 2,288 rows, GOES-18 only; newest at least 10 MeV 0.2244 pfu at 01:15 (S0); 71 alerts, newest `ALTTP2` at 22:49:43 UTC on 14 Nov; no proton alert; NOAA's own S level 0 at 01:25.
+- **OSDR**: 9 and 11 files; the metabolic panel and blood count files not restricted; CORS names only `osdr.nasa.gov`.
+- **LOINC**: all 13 codes found in NLM's table with the names the file uses (9108-2 is a volume rate, so `mL/(24.h)` fits).
+- **FHIR**: files for each of the four example crew members (181 observations each) and one with every kind of source passed the R4 JSON schema with ajv 8.17.1.
+- **Bluetooth**: the field layouts, flags and special values were compared with the GATT Specification Supplement of 2026-09-09 (sections 3.34, 3.80, 3.126, 3.239, 3.242, Table 2.1) and PLXS 1.0.1 (Tables 3.3, 3.4, 3.5, 3.7); the four service and five characteristic names are in the Web Bluetooth registry and none is on its blocklist.
+- **No internet**: with a name that does not resolve and an address that never answers, both Earth demos returned `{ ok: false }` (in 0.1 s, or after the 3 s timeout given), never an exception.
+
 ## CSV files: documented or guessed
 
 | Export | Recognised by | Becomes | What is documented | What is guessed |
@@ -123,7 +133,7 @@ No Bluetooth thermometer, cuff, oximeter or heart rate strap was connected tonig
 | Svantek sound dosimeter | a column named LAeq and a date or time column | noise for the ship, one per GMT day (energy average) | only that SvanPC++ exports CSV | the whole layout |
 | Any other CSV | nothing | the person picks the time column, value column, measure and unit | | |
 
-Every imported value passes the same plausibility limits as typing it in by hand; values outside them are listed, not saved. Times without a zone are read as GMT. Cabin measures (noise) are saved for the ship, as the crew screen shows them.
+Every imported value passes the same plausibility limits as typing it in by hand; values outside them are listed, not saved. Times without a zone are read as GMT. The order of day and month is decided once for the whole column (`guessDayFirst`): a first number above 12 means day first, a second number above 12 means month first, dates with dots are day first, otherwise month first. A semicolon file with decimal commas keeps that setting on its `rows`, so the column picker path reads 64,5 as 64.5. Cabin measures (noise) are saved for the ship, as the crew screen shows them.
 
 ## Using the modules on the crew screen
 
@@ -138,7 +148,7 @@ Every connector gives readings in one shape, `{ source, indicator, value, time, 
 | CSV | `importCsv(text, { person })` gives `{ format, readings, rejected, notes }`, or `needsColumns` with `columns` and `rows`; then `columnPicker(columns, { onPick })` and `mapReadings(rows, { timeColumn, valueColumn, indicator, unit })` | `pulse`, `resp`, `spo2`, `sleep` for the person, `noise` for the ship; `csv-hexoskin`, `csv-astroskin`, `csv-actiware`, `csv-svantek` or `csv-import` |
 | FHIR | `fhirBundle({ machine, person, days: 30, example, now })` gives `{ bundle, count, skipped, period }`; `checkBundle(bundle)` lists problems; file type `FHIR_TYPE`, name `fhirFileName(id)` | |
 | Calendar | `toICalendar(planDrafts({ from, until }))`; file type `ICAL_TYPE`, name `icalFileName(id)` | |
-| "?" of a value | `sourceInfo(source, { example })` gives `{ origin, label, text, thisValue }` | |
+| "?" of a value | `sourceInfo(source, { example })` gives `{ origin, label, text, thisValue }`; the person's own answers (`mood-report`, `sleep-rating`, the reaction test and any source marked `self: true`) give origin `self` ("Your own answer"), the camera gives `device` | |
 
 ## Decisions left to the team
 

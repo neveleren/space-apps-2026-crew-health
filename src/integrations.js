@@ -93,6 +93,7 @@ export const CONNECTIONS = [
   {
     id: 'ble-heart-rate', name: 'Bluetooth heart rate monitor', status: 'working',
     what: 'Reads a chest strap or watch that speaks the standard Bluetooth Heart Rate profile, such as a Polar H10, and saves one reading a minute.',
+    caveat: 'No test with a real strap is on record yet; the byte format matches the Bluetooth specification.',
     how: 'Web Bluetooth in Chrome or Edge on a computer: service heart_rate, characteristic heart_rate_measurement.',
     tested: 'Tonight its byte format was checked against the Bluetooth GATT Specification Supplement (3.126); no strap was connected tonight.',
     action: { type: 'connect', buttons: [{ kind: 'heart-rate', label: 'Connect', connected: 'Connected' }] },
@@ -102,9 +103,10 @@ export const CONNECTIONS = [
   {
     id: 'ble-health', name: 'Bluetooth thermometer, blood pressure cuff, pulse oximeter', status: 'working',
     what: 'Reads devices that speak the standard Bluetooth Health Thermometer, Blood Pressure or Pulse Oximeter profile, the same way as the heart rate monitor.',
+    caveat: 'Not yet tried with a real device; the byte formats match the examples in the Bluetooth specifications.',
     how: 'Web Bluetooth in Chrome or Edge: temperature_measurement (FLOAT), blood_pressure_measurement (SFLOAT, mmHg or kPa), plx_continuous_measurement and plx_spot_check_measurement (SFLOAT).',
-    note: 'Not yet tried with a real device: the code passes the byte examples of the Bluetooth specifications. iPads and Safari have no Web Bluetooth.',
-    tested: 'Unit tests with the specifications\' own byte examples (36.4 °C as FLOAT 0xFF00016C, 114 mmHg as SFLOAT 0x0072) and with every flag combination.',
+    note: 'iPads and Safari have no Web Bluetooth.',
+    tested: 'Unit tests with the specifications\' own byte examples (36.4 °C as FLOAT 0xFF00016C, 114 mmHg as SFLOAT 0x0072) and with each flag of each measurement at least once.',
     action: { type: 'connect', buttons: [{ kind: 'thermometer', label: 'Thermometer' }, { kind: 'blood-pressure', label: 'Cuff' }, { kind: 'pulse-oximeter', label: 'Oximeter' }] },
     personal: true,
     sources: [S.htp, S.blp, S.plxp, S.plxs, S.gss, S.phdt, S.wbreg],
@@ -132,7 +134,7 @@ export const CONNECTIONS = [
     id: 'isslive', name: 'ISS cabin air, live (NASA ISSLive)', status: 'working', earthDemo: true,
     what: 'Real ISS cabin pressure and temperature, and the analyzer\'s last CO2 and O2 values with their age, from NASA\'s public feed.',
     how: 'Lightstreamer\'s text protocol TLCP 2.4.0 from push.lightstreamer.com, adapter set ISSLIVE, items USLAB000058, USLAB000059, USLAB000055 and USLAB000053, saved as the ship\'s cabin readings.',
-    note: 'An Earth demo: on board these values come from the station\'s own sensors. The CO2 and O2 items have not changed for days because the station moved to newer sensors that are not in the public feed. Not for operational decisions.',
+    note: 'An Earth demo: on board these values come from the station\'s own sensors. The CO2 and O2 items have not changed since 2 Nov 2026; they come from the older analyzer, and the newer sensors the station has used as its main air monitor since January 2026 are not in the public feed. Not for operational decisions.',
     tested: 'Tonight (15 Nov, GMT) from Node at 00:36, 00:56 and 01:08 and from a browser page at 01:09: cabin pressure 757.95 to 758.05 torr (101.05 kPa), cabin temperature 23.2 to 23.6 °C; CO2 2.44 torr and O2 165.85 torr, both last updated on 2 Nov 2026.',
     action: { type: 'toggle' },
     sources: [S.issLive, S.lsExample, S.tlcp, S.mimic, S.ices2026, S.std2f],
@@ -149,8 +151,9 @@ export const CONNECTIONS = [
   {
     id: 'csv-import', name: 'Import readings from a file (CSV)', status: 'working',
     what: 'Turns the time and value columns of a CSV file into readings; Hexoskin and Astroskin shirt, Philips Actiware and Svantek exports are recognised.',
+    caveat: 'Not yet tried with real exports, only with small files written from the makers\' documents; the Svantek layout is a guess.',
     how: 'CSV with commas, semicolons or tabs; the same plausibility limits as typing a value in; for any other file the person chooses the columns.',
-    note: 'The Hexoskin, Astroskin and Actiware columns come from their makers\' documents; the Svantek layout is a guess, as no public description of its columns was found.',
+    note: 'The Hexoskin, Astroskin and Actiware columns come from their makers\' documents; no public description of the Svantek columns was found.',
     tested: 'Unit tests with small files written from those documents.',
     action: { type: 'import', accept: '.csv,.txt,text/csv', label: 'Choose a file' },
     personal: true,
@@ -265,12 +268,17 @@ const KNOWN_SOURCES = {
   isslive: { origin: 'feed', label: 'NASA ISSLive public feed (Earth demo)', standard: 'Lightstreamer TLCP 2.4.0', thisValue: 'A real ISS cabin value from NASA\'s public ISSLive feed (Earth demo)' },
   manual: { origin: 'typed', label: 'Typed in by hand', standard: null, thisValue: 'Typed in by hand' },
   inspiration4: { origin: 'dataset', label: 'NASA OSDR, Inspiration4 blood tests', standard: null, thisValue: 'A real lab result from NASA OSDR (Inspiration4)' },
+  camera: { origin: 'device', label: 'This computer\'s camera model', standard: null, text: 'Seen by the camera model that runs on this computer.', thisValue: 'This computer\'s camera model' },
 };
+// The person's own answers on the crew screen (crew.js SELF_SOURCES, and any source config.js marks self: true).
+// They are in config.js SOURCES too, but they are never "simulated" answers on the crew screen.
+const OWN_ANSWERS = new Set(['mood-report', 'attitude-report', 'sleep-rating', 'cycle-log', 'cognition-test', 'reaction-test']);
 const TEXT = {
   device: 'Read by the program from a standard Bluetooth device in the browser.',
   import: 'Imported by the program from a file the device exported.',
   feed: 'Read by the program from a public data feed on Earth; on board this would come from the station\'s own sensors.',
   typed: 'Typed in by hand by the person.',
+  self: 'The person\'s own answer on the crew screen.',
   dataset: 'From NASA\'s Open Science Data Repository.',
   simulated: 'Simulated: a button on the technical view imitated this device; the value is made up.',
   example: 'Made up for the example flight, shaped like published flight studies.',
@@ -278,12 +286,13 @@ const TEXT = {
 };
 
 // sourceInfo(sourceId, { example }) -> { key, origin, label, standard, text, thisValue }
-// origin: device | import | feed | typed | dataset | simulated | example | unknown.
+// origin: device | import | feed | typed | self | dataset | simulated | example | unknown.
 export function sourceInfo(id, { example = false } = {}) {
   if (example) return { key: 'example', origin: 'example', label: 'Example flight generator of the program (made-up data)', standard: null, text: TEXT.example, thisValue: 'Made-up example data, shaped like published flight studies' };
   const known = KNOWN_SOURCES[id];
-  if (known) return { key: id, ...known, text: TEXT[known.origin] };
+  if (known) return { key: id, ...known, text: known.text || TEXT[known.origin] };
   const sim = SOURCES.find((s) => s.id === id);
+  if (OWN_ANSWERS.has(id) || (sim && sim.self)) return { key: id, origin: 'self', label: sim ? sim.label : 'The person\'s own answer', standard: null, text: TEXT.self, thisValue: 'Your own answer' };
   if (sim) return { key: id, origin: 'simulated', label: `${sim.label} (simulated)`, standard: null, text: TEXT.simulated, thisValue: `Entered on the technical view from a simulated "${sim.label}"` };
   return { key: `unknown:${id}`, origin: 'unknown', label: id ? `Source "${id}"` : 'Unknown source', standard: null, text: TEXT.unknown, thisValue: null };
 }
@@ -295,9 +304,11 @@ export function toEvents(readings, { person = null, state = {} } = {}) {
 }
 
 // Leaves out readings already saved (same person, source, measure and time), so reading a feed twice adds nothing.
+// A saved event with a time that is not a time (for example from a restored file) is compared as written, not thrown on.
+const timeKey = (t) => { const d = new Date(t); return Number.isFinite(d.getTime()) ? d.toISOString() : String(t); };
 export function onlyNew(readings, events, person = null) {
-  const have = new Set((events || []).filter((e) => e.kind === 'reading' && e.reading).map((e) => `${e.person}|${e.reading.source}|${e.reading.indicator}|${new Date(e.time).toISOString()}`));
-  return (readings || []).filter((r) => !have.has(`${r.person || person}|${r.source}|${r.indicator}|${new Date(r.time).toISOString()}`));
+  const have = new Set((events || []).filter((e) => e.kind === 'reading' && e.reading).map((e) => `${e.person}|${e.reading.source}|${e.reading.indicator}|${timeKey(e.time)}`));
+  return (readings || []).filter((r) => !have.has(`${r.person || person}|${r.source}|${r.indicator}|${timeKey(r.time)}`));
 }
 
 // ---------- drawing ----------
@@ -329,6 +340,7 @@ export function connectionTip(id) {
   return h('div', {},
     h('p', { class: 'tp-title' }, `${c.name}: ${STATUS_WORDS[c.status]}`),
     h('p', {}, c.what),
+    c.caveat ? h('p', {}, c.caveat) : null,
     line('How', c.how),
     line('Needs', c.needs ? c.needs.replace(/^needs /, '') : null),
     c.earthDemo ? line('Earth demo', 'needs the internet, off by default; the program works the same without it.') : null,
@@ -367,6 +379,8 @@ function row(c, ctx) {
   const live = ctx.state.live && ctx.state.live[c.id];
   const sub = [
     h('small', {}, live || c.what),
+    // What has not been tried yet stays on the row itself, not only behind the "?".
+    c.caveat ? h('small', {}, c.caveat) : null,
     c.earthDemo ? h('small', {}, 'Earth demo, needs the internet. Off by default.') : null,
     c.needs ? h('small', {}, c.needs.charAt(0).toUpperCase() + c.needs.slice(1)) : null,
   ];
@@ -392,7 +406,7 @@ export function renderConnections(host, { state = {}, onToggle = () => {}, onImp
     { status: 'simulated', title: 'Simulated', open: false },
     { status: 'planned', title: 'Planned, needs a partner', open: false },
   ];
-  const nodes = [h('p', { class: 'note' }, 'No NASA system is connected. Working rows work now; simulated rows are imitated; planned rows name who must agree.')];
+  const nodes = [h('p', { class: 'note' }, 'No NASA system is connected. Working rows run in this program now and say what has not been tried yet; simulated rows are imitated; planned rows name who must agree.')];
   for (const g of groups) {
     const rows = CONNECTIONS.filter((c) => c.status === g.status).map((c) => row(c, ctx));
     if (g.open) nodes.push(h('div', { class: 'conn-group' }, ...rows));

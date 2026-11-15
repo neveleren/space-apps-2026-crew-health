@@ -26,7 +26,8 @@ const SPECIAL_SFLOAT = { 0x07ff: 'NaN', 0x0800: 'NRes', 0x07fe: '+INF', 0x0802: 
 const SPECIAL_FLOAT = { 0x007fffff: 'NaN', 0x00800000: 'NRes', 0x007ffffe: '+INF', 0x00800002: '-INF', 0x00800001: 'reserved' };
 
 // mantissa x 10^exponent, rounded to the precision the exponent gives (so 364 x 10^-1 is 36.4, not 36.400000000000006).
-const scaled = (mantissa, exponent) => (exponent < 0 ? Number((mantissa * 10 ** exponent).toFixed(-exponent)) : mantissa * 10 ** exponent);
+// toFixed takes at most 100 digits; a FLOAT exponent can reach -128, which would throw on a malformed value.
+const scaled = (mantissa, exponent) => (exponent < 0 ? Number((mantissa * 10 ** exponent).toFixed(Math.min(-exponent, 100))) : mantissa * 10 ** exponent);
 
 // SFLOAT (medfloat16): 4-bit signed exponent in the top bits, 12-bit signed mantissa below.
 export function decodeSfloat(raw) {

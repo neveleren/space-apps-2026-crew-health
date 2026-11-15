@@ -95,6 +95,7 @@ const ORIGIN = {
   import: { agent: ['author', 'Author'], activity: 'Measured by a device and imported from its exported file', test: false },
   feed: { agent: ['author', 'Author'], activity: 'Read from a public data feed', test: false },
   typed: { agent: ['enterer', 'Enterer'], activity: 'Typed in by hand', test: false },
+  self: { agent: ['enterer', 'Enterer'], activity: 'The person\'s own answer on the crew screen', test: false },
   dataset: { agent: ['author', 'Author'], activity: 'Taken from NASA\'s Open Science Data Repository', test: false },
   simulated: { agent: ['author', 'Author'], activity: 'Simulated: a button on the technical view imitated a device', test: true },
   example: { agent: ['author', 'Author'], activity: 'Made up for the example flight, shaped like published flight studies', test: true },
@@ -125,9 +126,11 @@ export function fhirBundle({ machine = null, history = null, person, from = null
   const groups = new Map(); // origin key -> { info, refs, first, last }
   const observations = [];
   const skipped = [];
+  // Typed in or answered by the person: the person is the source, not a device.
+  const byPerson = (info) => info.origin === 'typed' || info.origin === 'self';
 
   const deviceFor = (info) => {
-    if (info.origin === 'typed') return null;
+    if (byPerson(info)) return null;
     if (!devices.has(info.key)) {
       const url = `urn:uuid:${uuid()}`;
       const notes = [{ text: info.text }];
@@ -155,7 +158,7 @@ export function fhirBundle({ machine = null, history = null, person, from = null
         code: { coding: m.codes.map(([code, display]) => coding(LOINC, code, display)), text: labelOf[indicator] || m.codes[0][1] },
         subject: { reference: patientUrl },
         effectiveDateTime: new Date(t).toISOString(),
-        ...(info.origin === 'typed' ? { performer: [{ reference: patientUrl }] } : {}),
+        ...(byPerson(info) ? { performer: [{ reference: patientUrl }] } : {}),
         ...(isBp
           ? { component: [
             { code: { coding: [coding(LOINC, ...m.parts.sys)] }, valueQuantity: quantity(x.value.sys, m) },
@@ -176,7 +179,7 @@ export function fhirBundle({ machine = null, history = null, person, from = null
   // One Provenance per origin: who or what produced these values, and how.
   const provenances = [...groups.values()].map((g) => {
     const origin = ORIGIN[g.info.origin] || ORIGIN.unknown;
-    const who = g.info.origin === 'typed' ? { reference: patientUrl, display: 'the person, typing the value in' } : { reference: devices.get(g.info.key).fullUrl, display: g.info.label };
+    const who = byPerson(g.info) ? { reference: patientUrl, display: g.info.origin === 'self' ? 'the person, answering' : 'the person, typing the value in' } : { reference: devices.get(g.info.key).fullUrl, display: g.info.label };
     return {
       fullUrl: `urn:uuid:${uuid()}`,
       resource: {
