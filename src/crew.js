@@ -2391,9 +2391,14 @@ function openSupport(a) {
   // A live alert region that is always there, so Help now is announced when the word rule opens it.
   const helpSlot = h('div', { class: 'help-slot', role: 'alert' });
   const showHelp = ({ byRule = false, focus = false } = {}) => {
-    if (!helpSlot.firstChild) helpSlot.replaceChildren(...[helpNowCard(), byRule ? h('p', { class: 'note' }, RISK_RULE.text) : null].filter(Boolean));
-    helpSlot.scrollIntoView({ block: 'nearest' });
+    const first = !helpSlot.firstChild;
+    if (first) helpSlot.replaceChildren(...[helpNowCard(), byRule ? h('p', { class: 'note' }, RISK_RULE.text) : null].filter(Boolean));
     if (focus) { const b = helpSlot.querySelector('.btn'); if (b) b.focus(); }
+    // Scroll after the browser has brought the caret of the box being typed in back into view (that happens after
+    // this input handler), so the card is really on screen; and only when it first opens or is asked for, so later
+    // keystrokes do not fight it. Found by the independent check of 1.4.0: with the AI part above, the card stayed
+    // off screen.
+    if (first || focus) requestAnimationFrame(() => requestAnimationFrame(() => helpSlot.scrollIntoView({ block: 'nearest' })));
   };
   const cardSlot = h('div', {});
   const openCard = (cd) => cardSlot.replaceChildren(h('div', { class: 'coping' },

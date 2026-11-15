@@ -184,8 +184,29 @@ html.sup-noscroll, html.sup-noscroll body { overflow: hidden; }
 .sup .sup-eb-volume { width: min(200px, 44vw); min-height: 32px; accent-color: var(--cmd); cursor: pointer; }
 .sup .sup-eb-volume-out { min-width: 4.5ch; font-size: 15px; color: var(--muted); }
 .sup .sup-eb-status { font-size: 14px; color: var(--muted); max-width: 52ch; }
-.sup .sup-eb-pacer { position: absolute; left: 50%; bottom: max(64px, calc(env(safe-area-inset-bottom, 0px) + 56px)); transform: translateX(-50%); width: min(360px, calc(100% - 32px)); display: grid; justify-items: center; gap: 10px; padding: 18px 16px 16px; border-radius: 14px; background: color-mix(in srgb, var(--panel) 86%, transparent); border: 1px solid var(--line); text-align: center; }
-.sup .sup-eb-circle { width: 132px; height: 132px; border-radius: 50%; border: 3px solid var(--ink); background: color-mix(in srgb, var(--cmd) 45%, transparent); transform: scale(.6); will-change: transform; }
+.sup .sup-eb-pacer { position: absolute; left: 50%; bottom: max(64px, calc(env(safe-area-inset-bottom, 0px) + 56px)); transform: translateX(-50%); width: min(360px, calc(100% - 32px)); display: grid; justify-items: center; gap: 10px; padding: 18px 16px 16px; border-radius: 14px; background: color-mix(in srgb, var(--panel) 78%, transparent); -webkit-backdrop-filter: blur(14px) saturate(130%); backdrop-filter: blur(14px) saturate(130%); border: 1px solid var(--line); text-align: center; }
+/* The breathing circle: a glass bead with a soft aura, no dark outline (the owner's request, 15 Nov 2026). Light
+   catches its upper left, its colour gathers at the lower right, and a glow around it grows and shrinks with the
+   breath (the glow belongs to the circle, so the breath's scale moves it too). The white highlights read on both
+   displays; the tint comes from the display's own focus colour. */
+.sup .sup-eb-circle {
+  --eb-aura: color-mix(in srgb, var(--focus) 62%, #8fe8ff);
+  --eb-glow-near: 22px; --eb-glow-far: 60px;
+  width: 132px; height: 132px; border-radius: 50%; margin: 12px 0 8px;
+  border: 1px solid rgba(255, 255, 255, .38);
+  background:
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, .95) 0, rgba(255, 255, 255, .5) 9%, rgba(255, 255, 255, 0) 32%),
+    radial-gradient(circle at 68% 78%, color-mix(in srgb, var(--eb-aura) 60%, transparent) 0, transparent 58%),
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--eb-aura) 14%, rgba(255, 255, 255, .16)) 0, color-mix(in srgb, var(--eb-aura) 30%, transparent) 70%, color-mix(in srgb, var(--eb-aura) 52%, transparent) 100%);
+  box-shadow:
+    inset 0 2px 6px rgba(255, 255, 255, .55),
+    inset 0 -10px 22px color-mix(in srgb, var(--eb-aura) 38%, transparent),
+    0 0 var(--eb-glow-near) 3px color-mix(in srgb, var(--eb-aura) 62%, transparent),
+    0 0 var(--eb-glow-far) 14px color-mix(in srgb, var(--eb-aura) 34%, transparent),
+    0 0 calc(var(--eb-glow-far) * 2) calc(var(--eb-glow-near) * 1.2) color-mix(in srgb, var(--eb-aura) 14%, transparent);
+  -webkit-backdrop-filter: blur(4px) saturate(150%); backdrop-filter: blur(4px) saturate(150%);
+  transform: scale(.6); will-change: transform;
+}
 .sup .sup-eb-word { font-size: 24px; font-weight: 600; }
 .sup .sup-eb-count { font-size: 48px; font-weight: 500; line-height: 1; }
 .sup .sup-eb-how { font-size: 15px; color: var(--muted); }
@@ -197,7 +218,7 @@ html.sup-noscroll, html.sup-noscroll body { overflow: hidden; }
    then stays inside it and scrolls, so nothing is cut off. */
 .sup .sup-eb-ask { max-height: calc(100% - 24px); overflow-y: auto; }
 @media (max-width: 640px) {
-  .sup .sup-eb-circle { width: 84px; height: 84px; }
+  .sup .sup-eb-circle { width: 84px; height: 84px; margin: 8px 0 4px; --eb-glow-near: 14px; --eb-glow-far: 38px; }
   .sup .sup-eb-pacer { bottom: max(70px, calc(env(safe-area-inset-bottom, 0px) + 62px)); gap: 6px; padding: 12px 12px 10px; }
   .sup .sup-eb-word { font-size: 20px; }
   .sup .sup-eb-how { font-size: 14px; }
@@ -221,7 +242,7 @@ html.sup-noscroll, html.sup-noscroll body { overflow: hidden; }
   .sup .sup-eb-chip { min-height: 32px; padding: 0 10px 0 8px; font-size: 14px; }
   .sup .sup-eb-volume { min-height: 24px; }
   .sup .sup-eb-pacer { bottom: max(46px, calc(env(safe-area-inset-bottom, 0px) + 40px)); gap: 4px; padding: 8px 12px; }
-  .sup .sup-eb-circle { width: 56px; height: 56px; }
+  .sup .sup-eb-circle { width: 56px; height: 56px; margin: 4px 0 2px; --eb-glow-near: 9px; --eb-glow-far: 22px; }
   .sup .sup-eb-word { font-size: 18px; }
   .sup .sup-eb-count { font-size: 32px; }
   .sup .sup-eb-how { font-size: 13px; }
