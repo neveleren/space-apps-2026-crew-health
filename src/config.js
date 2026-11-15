@@ -340,6 +340,7 @@ export const CELLS = [
   },
   {
     id: null, section: 'psyche', indicator: 'weighing', effort: 'light', label: 'What is weighing on you', kind: KIND.SELF, reviewByAi: false, private: true,
+    topics: ['home', 'crew', 'ground', 'workload', 'sleep', 'monotony', 'health', 'nothing'],
     normText: 'optional topics picked at the morning check-in; private; used only to choose which help to offer (the topics follow what NASA psychologists cover in private conferences)',
   },
   {

@@ -383,6 +383,39 @@ test('private names, origins, fetch metadata and content types', () => {
   for (const t of [undefined, '', 'text/plain', 'application/jsonx', 'application/x-www-form-urlencoded', 'text/plain; application/json']) assert.equal(isJson(t), false, String(t));
 });
 
+test('crew alarms reach every crewmate, without the rest of the record', async () => {
+  await withServer(async (srv) => {
+    const t = minutes(-10);
+    assert.equal((await postJson(srv, event('crew-2', 75, t))).status, 204);
+    assert.equal((await postJson(srv, { v: 1, kind: 'alarm', time: t, person: 'crew-2', alarm: { text: 'Elly needs help now: Oxygen saturation 85 %.' } })).status, 204);
+    const got = (await getJson(srv, '/api/events?person=crew-1')).value;
+    assert.deepEqual(got.map((e) => `${e.person}:${e.kind}`), ['crew-2:alarm'], 'only the alarm line of crew-2');
+    assert.equal((await postJson(srv, { v: 1, kind: 'alarm', time: t, person: 'crew-2', alarm: { text: 'x', extra: 1 } })).status, 400);
+    assert.equal((await postJson(srv, { v: 1, kind: 'alarm', time: t, person: 'crew-2', alarm: { text: 'x'.repeat(201) } })).status, 400);
+  });
+});
+
+test('the new answers are kept in their checked shapes, and nothing else', () => {
+  const now = Date.parse('2026-11-15T12:00:00.000Z');
+  const t = '2026-11-15T11:00:00.000Z';
+  const rd = (indicator, value, extra = {}) => ({ v: 1, kind: 'reading', time: t, person: 'crew-1', reading: { source: 'x', indicator, value, ...extra } });
+  assert.equal(eventProblem(rd('weighing', ['home', 'crew']), { now }), null);
+  assert.match(eventProblem(rd('weighing', ['home', 'home']), { now }), /topics/);
+  assert.match(eventProblem(rd('weighing', ['party']), { now }), /topics/);
+  assert.equal(eventProblem(rd('symptoms', { symptom: 'headache', severity: 4 }), { now }), null);
+  assert.match(eventProblem(rd('symptoms', { symptom: 'headache', severity: 11 }), { now }), /symptom/);
+  assert.equal(eventProblem(rd('medicines', { medicine: 'ibuprofen', amount: 1 }), { now }), null);
+  assert.match(eventProblem(rd('medicines', { medicine: 'unknown', amount: 1 }), { now }), /medicine/);
+  assert.deepEqual(cleanEvent(rd('symptoms', { symptom: 'headache', severity: 4, junk: 'x'.repeat(50) })).reading.value, { symptom: 'headache', severity: 4 });
+  assert.equal(eventProblem(rd('pulse', 150, { context: 'exercise' }), { now }), null);
+  assert.match(eventProblem(rd('pulse', 150, { context: 'sleep' }), { now }), /exercise/);
+  const detail = { median: 301, lapses: 1, falseStarts: 0, count: 60, durationS: 180, mode: 'full', score: 98 };
+  assert.equal(eventProblem(rd('cognition', 301, { detail }), { now }), null);
+  assert.match(eventProblem(rd('cognition', 301, { detail: { ...detail, trials: [] } }), { now }), /reaction test/);
+  assert.match(eventProblem(rd('pulse', 70, { detail }), { now }), /reaction test/);
+  assert.deepEqual(cleanEvent(rd('cognition', 301, { detail })).reading.detail, detail);
+});
+
 test('the event check and the stored copy', () => {
   const now = Date.parse('2026-11-15T12:00:00.000Z');
   const e = event('crew-1', 70, '2026-11-15T12:04:00.000Z');

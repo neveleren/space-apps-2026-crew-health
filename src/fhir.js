@@ -63,6 +63,8 @@ export const NOT_EXPORTED = {
   cabinPressure: 'cabin air belongs to the ship, not to one person\'s record',
   cabinTemp: 'cabin air belongs to the ship, not to one person\'s record',
   noise: 'cabin noise belongs to the ship, not to one person\'s record',
+  exercise: 'minutes a day on the exercise devices: no LOINC code was checked for it',
+  octChange: 'a change against the person\'s own pre-flight eye scan, not one measured value',
 };
 
 export const LOINC_SOURCES = Object.values(MEASURES).flatMap((m) => [...m.codes, ...Object.values(m.parts || {})]).map(([code, name]) => ({ code, name, url: LOOKUP(code) }));
