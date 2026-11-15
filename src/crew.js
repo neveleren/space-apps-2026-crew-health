@@ -1509,7 +1509,7 @@ function privateLogCard(p, now) {
   const since = msOf(now) - 14 * DAY;
   const rows = [...machine.history(p.id, 'symptoms'), ...machine.history(p.id, 'medicines')].filter((x) => msOf(x.time) >= since).sort((x, y) => msOf(y.time) - msOf(x.time)).slice(0, 6);
   return h('section', { class: 'group', 'data-terms': 'symptom symptoms headache medicine medicines pill log private' },
-    h('div', { class: 'group-head' }, h('h2', {}, 'Your private log'), h('p', {}, PRIVATE_NOTE)),
+    h('div', { class: 'group-head' }, h('h2', {}, 'Your private log ', tipButton('t:privatelog', 'your private log')), h('p', {}, PRIVATE_NOTE)),
     h('section', { class: 'card' },
       rows.length ? h('ul', { class: 'links mind-log' }, ...rows.map((x) => h('li', {}, h('span', {}, logText(x.indicator || (x.value && x.value.symptom ? 'symptoms' : 'medicines'), x.value) || valueText('symptoms', x.value)), h('span', { class: 'mono muted' }, `GMT ${gmtDOY(x.time)}`)))) : h('p', { class: 'muted' }, 'Nothing logged in the last 14 days.'),
       h('div', { class: 'actions' }, btn('secondary small', 'Log a symptom', () => openSymptomLog(), 'stethoscope'), btn('secondary small', 'I took a medicine', () => openMedicineLog(), 'pill'))));
