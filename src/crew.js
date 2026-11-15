@@ -10,14 +10,18 @@ import { INSPIRATION4 } from './inspiration4.js';
 import { openStore } from './store.js';
 import { exampleFlight, MISSION } from './demo-crew.js';
 import { drawHistory, drawTable, fmtDate, fmtGMT } from './history-view.js';
-import { assess, assessShip, measureState, headline, LEVEL, LEVEL_WORD, EXPECTED, RULES as LEVEL_RULES } from './state-levels.js';
+import { assess, assessShip, measureState, headline, headlineFor, topLevel, LEVEL, LEVEL_WORD, EXPECTED, RULES as LEVEL_RULES, RULE_NOTES, SLOW_MEASURES } from './state-levels.js';
 import { RULES as CAM_RULES } from './camera-rules.js';
 import { icon } from './icons.js';
 import { initTips, tipButton, hideTip } from './explain.js';
 import { TIPS, PROVENANCE } from './tips.js';
+import { symptomLog, medicineLog, logText, PRIVATE_NOTE } from './quicklog.js';
+import { topicSignal, offerText, renderTopicChips, renderTips, renderJournal, renderPlan, renderSteps, renderCalendar, nextUp, supportTip, TALK_REQUEST_TEXT } from './support.js';
+import { runReactionTest, compareToOwn, exampleEarlierRuns } from './reaction-test.js';
+import { runEarthBreak } from './earth-break.js';
 
 // One icon per measure, so a list can be read at a glance.
-const ICON_FOR = { pulse: 'heart-pulse', bp: 'activity', glucose: 'droplet', temp: 'thermometer', spo2: 'droplets', sleep: 'moon', resp: 'wind', fluid: 'glass-water', bodyMass: 'scale', eyePressure: 'eye', hearing: 'ear', radiation: 'radiation', vo2max: 'heart', strength: 'dumbbell', bone: 'bone', camera: 'camera', mood: 'smile', attitude: 'battery', sleepQuality: 'bed', cognition: 'brain', cycle: 'calendar-heart', xray: 'scan-line', ecg: 'chart-line', ultrasound: 'waves', co2: 'cloud-fog', cabinTemp: 'thermometer', cabinO2: 'orbit', cabinPressure: 'gauge', noise: 'volume-2', blood: 'test-tube' };
+const ICON_FOR = { pulse: 'heart-pulse', bp: 'activity', glucose: 'droplet', temp: 'thermometer', spo2: 'droplets', sleep: 'moon', resp: 'wind', fluid: 'glass-water', bodyMass: 'scale', eyePressure: 'eye', hearing: 'ear', radiation: 'radiation', vo2max: 'heart', strength: 'dumbbell', bone: 'bone', camera: 'camera', mood: 'smile', attitude: 'battery', sleepQuality: 'bed', cognition: 'brain', cycle: 'calendar-heart', xray: 'scan-line', ecg: 'chart-line', ultrasound: 'waves', exercise: 'flame', visionCheck: 'eye', octChange: 'eye', octScan: 'scan-line', symptoms: 'stethoscope', medicines: 'pill', co2: 'cloud-fog', cabinTemp: 'thermometer', cabinO2: 'orbit', cabinPressure: 'gauge', noise: 'volume-2', blood: 'test-tube' };
 const NAV = [['home', 'Today', 'house'], ['measures', 'All measures', 'list'], ['alerts', 'Messages', 'bell'], ['setup', 'Settings', 'settings']];
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -59,10 +63,14 @@ const lower = (s) => s.charAt(0).toLowerCase() + s.slice(1);
 const msOf = (t) => (t instanceof Date ? t.getTime() : new Date(t).getTime());
 const LV_CLASS = ['lv0', 'lv1', 'lv2', 'lv3'];
 
+// One short notice at a time: a new one replaces the old, and a longer one stays longer.
+let lastToast = null;
 function toast(text) {
-  const node = h('div', { class: 'toast', role: 'status' }, text);
+  if (lastToast) lastToast.remove();
+  const node = h('div', { class: 'toast', id: 'toast', role: 'status' }, text);
   document.body.append(node);
-  setTimeout(() => node.remove(), 3600);
+  lastToast = node;
+  setTimeout(() => { node.remove(); if (lastToast === node) lastToast = null; }, Math.max(3600, 70 * String(text).length));
 }
 
 // Per-device conveniences only (the switches of the situation, the muted sound, seen alerts).
@@ -71,7 +79,7 @@ function loadPrefs() {
   try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { return {}; }
 }
 function savePrefs() {
-  try { localStorage.setItem(KEY, JSON.stringify({ ship: ui.ship, muted: ui.muted, seen: [...ui.seen], example: ui.example })); } catch { /* storage blocked: the page still works */ }
+  try { localStorage.setItem(KEY, JSON.stringify({ ship: ui.ship, muted: ui.muted, seen: [...ui.seen], example: ui.example, profile: ui.profile })); } catch { /* storage blocked: the page still works */ }
 }
 
 // ---------- state ----------
@@ -87,12 +95,13 @@ const ui = {
   muted: Boolean(prefs.muted),
   example: prefs.example !== false,
   seen: new Set(prefs.seen || []),
-  checkin: { mood: null, attitude: null, sleepQuality: null },
+  checkin: { mood: null, attitude: null, sleepQuality: null, weighing: [] },
   checkinOpen: false,
   find: '',
   backTo: 'measures',
   stepsDone: {},
   openGroups: new Set(),
+  profile: prefs.profile || 'iss',
 };
 let store = null;
 let stored = [];
@@ -127,9 +136,9 @@ async function keep(event) {
 }
 
 // Every new reading goes through the machine and is saved, exactly like on the technical page.
-async function addReading(indicator, value, { source = null, person = ui.person } = {}) {
+async function addReading(indicator, value, { source = null, person = ui.person, context = null, time = null, detail = null } = {}) {
   const src = source || sourceFor(indicator);
-  const event = { v: 1, kind: 'reading', time: new Date().toISOString(), person, state: { ...ui.ship }, reading: { source: src.id, indicator, value } };
+  const event = { v: 1, kind: 'reading', time: time || new Date().toISOString(), person, state: { ...ui.ship }, reading: { source: src.id, indicator, value, ...(context ? { context } : {}), ...(detail ? { detail } : {}) } };
   machine.setState(event.state);
   const entry = machine.receive({ ...event.reading, person, time: event.time });
   await keep(event);
@@ -203,17 +212,26 @@ function normShort(cell, owner) {
 const CAMERA_TEXT = { sleeping: 'asleep', chest_grab: 'hand on chest', chest_grab_ok: 'answered "okay"', chest_grab_help: 'answered "need help"', chest_grab_no_answer: 'no answer' };
 function valueText(indicator, value) {
   if (value === null || value === undefined) return '';
+  const logged = logText(indicator, value);
+  if (logged !== null && logged !== undefined) return logged;
+  if (indicator === 'cognition' && Number.isFinite(Number(value)) && typeof value !== 'string') return `${Math.round(Number(value))} ms`;
   if (indicator === 'bp' && typeof value === 'object') return `${value.sys}/${value.dia}`;
   if (indicator === 'camera') return CAMERA_TEXT[value] || String(value);
   if (indicator === 'bone' && typeof value === 'object') return `${value.hipSpine}% and ${value.neck}%`;
   return fmtVal(value);
 }
 
-const whereDoctor = () => (ui.ship.doctorOnBoard ? 'on board' : ui.ship.linkToEarth ? 'on Earth' : 'nowhere: no doctor on board and no link to Earth; what then is still the team\'s open question');
+const whereDoctor = () => (ui.ship.doctorOnBoard ? 'on board' : ui.ship.linkToEarth ? 'on Earth' : 'when the link is back; until then the crew on board and the crew medical officer were alerted (a draft default; the team decides)');
+// The words of a red limit: "at or below 88", "above 180".
+const limitWords = (red) => `${({ atOrBelow: 'at or below', atOrAbove: 'at or above', below: 'below', above: 'above' })[red.when] || red.when} ${red.value}`;
 
 // What one item of the assessment says, in plain words.
 function itemText(it, owner) {
-  if (it.kind === 'camera') return { title: 'Camera: alarm after the question "Are you okay?"', text: `${it.value === 'chest_grab_help' ? 'You answered that you need help' : 'There was no answer'}. The automation called the doctor ${whereDoctor()}.`, time: it.time };
+  if (it.kind === 'camera') {
+    const last = machine.history(owner.id, 'camera').filter((x) => x.status === STATUS.OUT).slice(-1)[0];
+    if (last && last.source === 'help-key') return { title: 'Help requested with the Help key', text: `You held the Help key. The automation called the doctor ${whereDoctor()}.`, time: it.time };
+    return { title: 'Camera: alarm after the question "Are you okay?"', text: `${it.value === 'chest_grab_help' ? 'You answered that you need help' : 'There was no answer'}. The automation called the doctor ${whereDoctor()}.`, time: it.time };
+  }
   if (it.kind === 'mood') return { title: 'Mood and energy', text: `Low check-ins in the last ${LEVEL_RULES.psycheDays} days: ${it.days} ${it.days === 1 ? 'day' : 'days'}. The planned review will look at this.`, time: null };
   const cell = it.cell;
   const last = it.m.last;
@@ -223,6 +241,7 @@ function itemText(it, owner) {
     return { title: cell.label, text: `The last reading, ${v}, is still within the normal range, but the line through the readings leaves it ${c.side === 'below' ? 'downwards' : 'upwards'} around ${fmtDate(c.date)}, before landing on ${fmtDate(MISSION.landing)}.`, time: last.time };
   }
   const side = it.m.side === 'below' ? 'below' : 'above';
+  if (it.kind === 'red') return { title: owner && owner.id === SHIP.id ? `${it.level >= LEVEL.URGENT ? 'Ship emergency' : 'Ship caution'}: ${lower(cell.label)}` : cell.label, text: `${v}: ${limitWords(it.red)}${it.red.part ? ` (${it.red.part})` : ''}, the ${it.level >= LEVEL.URGENT ? 'urgent' : 'needs-action'} limit (${it.red.source}).`, time: last.time };
   if (it.kind === 'standard') return { title: cell.label, text: `${v}: ${side} the NASA standard (${normShort(cell, owner)}).`, time: last.time };
   if (it.kind === 'expected') return { title: cell.label, text: `${v}: ${side} the usual range on Earth (${rangeText(cell, owner)}). ${it.expected.text}`, time: last.time };
   return { title: cell.label, text: `${v}: ${side} the normal range (${rangeText(cell, owner)})${it.m.streak > 1 ? `, ${it.m.streak} readings in a row` : ''}. Reading of ${fmtDT(last.time)}.`, time: last.time };
@@ -230,6 +249,10 @@ function itemText(it, owner) {
 
 // What to do, by the program's rules (shown in magenta, like NASA's electronic procedures).
 function procedureFor(it) {
+  const reachable = ui.ship.doctorOnBoard || ui.ship.linkToEarth;
+  if (it.kind === 'red' && it.cell && it.cell.section === 'env') return ['Follow the ship\'s own procedure for this alarm; this screen only mirrors the ship.', 'The crew and mission control decide.'];
+  if (it.kind === 'red' && it.level >= LEVEL.URGENT) return ['Automation: your crewmates and the crew medical officer have been alerted.', 'You: repeat the reading now if you can, at rest.', reachable ? 'Automation: the doctor has been called.' : 'Automation: the message to the doctor waits for the next link.', 'Crew medical officer: open the emergency procedure for this sign.'];
+  if (it.kind === 'red') return ['You: repeat the reading now, at rest if you can.', 'You: if it stays past the limit, tell the crew medical officer.', reachable ? 'You: message the doctor with the "Message the doctor" button.' : 'Automation: the message to the doctor waits for the next link.'];
   switch (it.kind) {
     case 'camera': return ['The automation has already called the doctor.', 'If the alarm was a mistake, tell the doctor with "Message the doctor".', 'The question "Are you okay?" and its waiting time can be changed in the rules.'];
     case 'standard': return ['Repeat the test in the next few days.', 'Show the result to the doctor: the "Message the doctor" button.', 'NASA standard: at least 80% of your own pre-flight level.'];
@@ -240,8 +263,18 @@ function procedureFor(it) {
   }
 }
 
+// ---------- mission profile ----------
+// Where the crew is decides how far help is. Delays are one way; sources: NASA HRP-48021 (Mars, up to about
+// 22 minutes one way, with two-week blackouts near solar conjunction) and the Earth-Moon distance (about 1.3 s).
+const PROFILES = {
+  iss: { name: 'ISS, low Earth orbit', delay: 'under a second', reply: 'a reply can come within minutes', evac: 'a return to Earth is possible within hours' },
+  moon: { name: 'Moon (orbit or surface)', delay: 'about 1.3 seconds', reply: 'a reply can come within minutes', evac: 'a return to Earth takes days' },
+  mars: { name: 'Mars transit or surface', delay: 'up to about 22 minutes', reply: 'a reply takes at least twice the delay, up to about 44 minutes, and the link can be down for two weeks near solar conjunction', evac: 'no return to Earth for many months' },
+};
+const profile = () => PROFILES[ui.profile] || PROFILES.iss;
+
 // ---------- "?" explanations ----------
-const SELF_SOURCES = ['mood-report', 'attitude-report', 'sleep-rating', 'cycle-log', 'cognition-test'];
+const SELF_SOURCES = ['mood-report', 'attitude-report', 'sleep-rating', 'cycle-log', 'cognition-test', 'reaction-test', ...SOURCES.filter((s) => s.self).map((s) => s.id)];
 function thisValue(owner, last) {
   if (!last) return 'No reading yet.';
   const r = last;
@@ -290,6 +323,7 @@ function systemsTip() {
     h('p', { class: 'tp-title' }, 'Systems'),
     line('Automation', 'on: every reading is checked against its normal range and the team\'s rules, with or without the AI.'),
     line('AI', ui.ship.aiWorks ? 'the route is on, but no AI model is connected in this version.' : 'off: only the automation works.'),
+    line('Mission', `${profile().name}: signal delay ${profile().delay} one way; ${profile().evac}.`),
     line('Link to Earth', ui.ship.linkToEarth ? 'up: messages to Earth go with the next downlink.' : 'down: messages to Earth wait in the outbox.'),
     line('Doctor', ui.ship.doctorOnBoard ? 'on board.' : 'on Earth.'),
     line('Saved', saved),
@@ -298,6 +332,7 @@ function systemsTip() {
 function tipContent(key) {
   if (key === 's:systems') return systemsTip();
   const [kind, a1, a2] = String(key).split(':');
+  if (kind === 'mind') return supportTip(a1);
   if (kind === 'm') return measureTip(a1, a2);
   if (kind === 'b') return bloodTip(a1, a2);
   const t = TIPS[a1];
@@ -332,22 +367,36 @@ function renderNav() {
   }, icon(ic, { size: 22 }), h('span', {}, label))));
 }
 
+// Every crew screen shows when a crewmate needs help now: an urgent red limit or a camera or Help alarm.
+// Only the name and the measure, nothing else (ISS crew code of conduct: disclosure for immediate crew safety).
+function crewAlerts(now) {
+  const out = [];
+  for (const c of CREW) {
+    if (c.id === ui.person) continue;
+    const a = assess({ machine, person: c, cells: CELLS, mission: MISSION, now });
+    const it = a.body.items.find((x) => x.level >= LEVEL.URGENT && (x.kind === 'red' || x.kind === 'camera'));
+    if (it) out.push(`${c.name} needs help now: ${it.kind === 'red' ? `${it.cell.label} ${valueText(it.cell.indicator, it.m.last.value)} ${it.cell.unit || ''}`.trim() : 'an alarm was raised'}.`);
+  }
+  return out;
+}
+
 function renderBar() {
   const p = ui.person ? personById[ui.person] : null;
-  byId('brand').replaceChildren(icon('orbit', { size: 20 }), h('span', {}, 'Crew Health'));
+  byId('brand').replaceChildren(icon('orbit', { size: 22, label: 'Crew Health Console' }), h('span', { class: p ? 'sr-only' : '' }, 'Crew Health'));
   byId('tabs').hidden = !p;
   byId('who-btn').hidden = !p;
+  byId('help-btn').hidden = !p || Boolean(p.real);
   if (p) {
     byId('who-avatar').textContent = p.name.slice(0, 1);
     byId('who-name').textContent = p.name;
     byId('who-btn').setAttribute('aria-label', `${p.name}. Switch person`);
   }
   const now = nowTime();
-  if (p && !p.real) byId('met').replaceChildren('Flight day ', h('strong', {}, String(Math.floor((msOf(now) - msOf(MISSION.launch)) / DAY) + 1)));
+  if (p && !p.real) byId('met').replaceChildren(h('span', { 'aria-hidden': 'true' }, 'FD '), h('span', { class: 'sr-only' }, 'Flight day '), h('strong', {}, String(Math.floor((msOf(now) - msOf(MISSION.launch)) / DAY) + 1)));
   else byId('met').textContent = p && p.real ? 'Inspiration4, 2021' : '';
   // Quiet and dark: a tag appears only when something is off.
   const tags = [];
-  if (p && !p.real && ui.example) tags.push(h('span', { class: 'tag example', 'data-tip': 't:example', tabindex: '0' }, 'Example data'));
+  if (p && !p.real && ui.example) tags.push(h('span', { class: 'tag example', 'data-tip': 't:example', tabindex: '0' }, 'Example', h('span', { class: 'tag-long' }, ' data')));
   if (p) tags.push(h('span', { class: 'tag plain systems', 'data-tip': 's:systems', tabindex: '0', role: 'img', 'aria-label': 'Systems: automation, AI, link, doctor, saving, sound' }, icon('cpu', { size: 18 })));
   if (p) {
     if (!ui.ship.linkToEarth) tags.push(h('span', { class: 'tag stale', 'data-tip': 't:nolink' }, icon('unlink', { size: 16 }), 'No link to Earth'));
@@ -369,6 +418,10 @@ function renderBar() {
     else box.replaceChildren(icon(LEVEL_ICON[top], { size: 18 }), h('span', { class: 'ann-word' }, 'Messages'), h('b', {}, unseen ? `${unseen} new` : String(list.length)));
     box.setAttribute('aria-label', list.length ? `Messages: ${list.length}, ${unseen} new, highest level ${LEVEL_WORD[top]}` : 'No messages');
   }
+  const banner = byId('crew-banner');
+  const alerts = p && !p.real ? crewAlerts(nowTime()) : [];
+  banner.hidden = !alerts.length;
+  banner.replaceChildren(...alerts.map((t) => h('p', {}, icon('octagon-alert', { size: 18 }), h('b', {}, t), ' Go to them; the crew medical officer has the steps.')));
   renderNav();
 }
 
@@ -401,29 +454,32 @@ function renderHome() {
   if (p.real) return renderRealHome(p);
   const now = nowTime();
   const a = assess({ machine, person: p, cells: CELLS, mission: MISSION, now });
-  const top = Math.max(a.body.level, a.psyche.level);
+  const top = topLevel(a);
   byId('today').className = `card today ${LV_CLASS[top]}`;
   byId('today-label').textContent = 'Your health today';
   byId('today-time').textContent = `Updated GMT ${gmtDOY(now)}`;
-  byId('today-title').textContent = headline(fmtDate(now), a.body.level, a.psyche.level);
+  byId('today-title').textContent = headlineFor(fmtDate(now), a);
   const chips = [];
+  if (a.ship && a.ship.level) chips.push(chip(a.ship.level, `Ship: ${LEVEL_WORD[a.ship.level]}`));
   if (a.body.level) chips.push(chip(a.body.level, `Body: ${LEVEL_WORD[a.body.level]}`));
   if (a.psyche.level) chips.push(chip(a.psyche.level, `Mind: ${LEVEL_WORD[a.psyche.level]}`));
+  for (const x of (a.fresh && a.fresh.missing) || []) chips.push(staleChip(x.days === null ? `No ${lower(x.label)} yet` : `No new ${lower(x.label)} for ${x.days} days`));
   byId('today-chips').replaceChildren(...chips);
   byId('today-chips').hidden = !chips.length;
 
   // The short explanation, in the same order as Messages: level first, then outside the range now, then forecasts.
-  const all = [...a.body.items, ...a.psyche.items].sort((x, y) => y.level - x.level);
+  const all = [...(a.ship ? a.ship.items : []), ...a.body.items, ...a.psyche.items].sort((x, y) => y.level - x.level);
   const items = all.length === 4 ? all : all.slice(0, 3);
   const short = (it) => {
     if (it.kind === 'camera') return 'The automation called the doctor';
     if (it.kind === 'mood') return `${it.days} low days in the last two weeks`;
     if (it.kind === 'forecast') return `Forecast: in the normal range now, may leave it around ${fmtDate(it.m.forecast.crossing.date)}`;
+    if (it.kind === 'red') return `${valueText(it.cell.indicator, it.m.last.value)} ${it.cell.unit || ''}: ${limitWords(it.red)}, the ${it.level >= LEVEL.URGENT ? 'urgent' : 'needs-action'} limit`.replace(/ +:/, ':');
     const v = `${valueText(it.cell.indicator, it.m.last.value)} ${it.cell.unit || ''}`.trim();
     const where = it.kind === 'standard' ? 'the NASA standard' : 'the normal range';
     return `${v}, ${it.m.side === 'below' ? 'below' : 'above'} ${where}${it.m.streak > 1 && it.kind === 'out' ? ` in the last ${it.m.streak} readings` : ''}${it.kind === 'expected' ? ' (common in flight)' : ''}`;
   };
-  const name = (it) => (it.cell ? it.cell.label : it.kind === 'mood' ? 'Mood and energy' : 'Camera');
+  const name = (it) => (it.cell ? (it.cell.section === 'env' ? `${it.cell.label} (ship)` : it.cell.label) : it.kind === 'mood' ? 'Mood and energy' : 'Camera');
   const open = (it) => (it.cell ? openDetail(it.cell.indicator) : it.kind === 'mood' ? openDetail('mood') : setScreen('alerts'));
   byId('today-reasons').hidden = !items.length;
   byId('today-reasons').replaceChildren(
@@ -451,6 +507,7 @@ function renderHome() {
   byId('today-note').hidden = true;
 
   renderCheckin(p, now, top);
+  renderComingUp(p, now);
   const keys = KEY_NUMBERS.filter((ind) => cellBy[ind] && machine.history(p.id, ind).length).slice(0, 4);
   byId('keynum-rows').replaceChildren(...keys.map((ind) => measureRow(p, ind, a, now)));
   renderGroups(p, a, now);
@@ -468,14 +525,84 @@ function mindChoice(p, a, primaryFirst) {
   const choices = h('div', { class: 'actions' },
     aiButton('Start an anonymous session with AI', 'psyche', a, primaryFirst),
     btn('secondary', 'Tell the doctor on Earth', () => openDoctor(a, 'psyche'), 'stethoscope', { 'data-tip': 't:tellDoctor' }),
-    btn('secondary', 'Advice and articles', () => openAdvice(), 'list', { 'data-tip': 't:advice' }));
+    btn('secondary', 'Small things that help', () => openAdvice(), 'list', { 'data-tip': 't:advice' }));
   if (offerDismissed.has(p.id)) return h('div', { class: 'advice' }, choices);
   return h('div', { class: 'advice' },
-    h('p', { class: 'who-says' }, 'AI psychologist · not connected yet'),
-    h('blockquote', {}, `Hey ${p.name}, I noticed from your check-ins that the last days have been hard. How about talking anonymously about what is bothering you? Or, if you wish, I can send the results of these check-ins to the doctor.`),
+    h('p', { class: 'who-says' }, 'AI support (not a psychologist) · not connected yet'),
+    h('blockquote', {}, offerText(p.name, topicSignal(machine.history(p.id, 'weighing'), nowTime()))),
     choices,
     h('div', { class: 'actions' }, btn('secondary small', 'Not now', () => { offerDismissed.add(p.id); renderHome(); })),
     h('p', { class: 'note' }, "The team's idea: this conversation is not recorded or read, and the AI is there day and night, unlike doctors. Which AI it is, the team decides."));
+}
+
+// ---------- coming up: what is due, from the medical routine of an ISS flight ----------
+// Cadences: private medical conference weekly and private psychological conference every two weeks (NASA BHP and
+// CHP-IDSP, 2024 and 2025); thinking test monthly (NASA OCHMO-TB-016, WinSCAT); eye checks on flight days 30 and 90
+// and 30 days before return (NASA JSC 2018). The dates below are an example schedule, marked as such.
+function renderComingUp(p, now) {
+  const card = byId('comingup');
+  if (!p || p.real || !ui.example) { card.hidden = true; return; }
+  const day = Math.floor((msOf(now) - msOf(MISSION.launch)) / DAY) + 1;
+  const toLanding = Math.max(0, Math.ceil((msOf(MISSION.landing) - msOf(now)) / DAY));
+  const landingDay = day + toLanding;
+  const every = (n, offset = 0) => { const d = (n - ((day + offset) % n)) % n; return d === 0 ? n : d; };
+  const eyeDays = [30, 90, landingDay - 30].filter((d) => d > day);
+  const items = [
+    { ic: 'stethoscope', what: 'Private medical conference with your flight surgeon (weekly)', in: every(7, 3), act: () => openPmc(p), actLabel: 'Prepare' },
+    { ic: 'message-square', what: 'Private talk with your psychologist (every 2 weeks)', in: every(14, 5) },
+    { ic: 'zap', what: 'Thinking test (monthly)', in: every(30, 11), act: () => openReactionTest('full'), actLabel: 'Start' },
+    eyeDays.length ? { ic: 'scan-line', what: 'Eye check: vision, retina scan (OCT)', in: eyeDays[0] - day } : { ic: 'scan-line', what: 'Eye check after landing', in: toLanding + 1 },
+  ].sort((a, b) => a.in - b.in).slice(0, 3);
+  const when = (n) => (n === 1 ? 'tomorrow' : `in ${n} days`);
+  byId('comingup-note').textContent = nextUp(day) || 'Example schedule';
+  byId('comingup-list').replaceChildren(...items.map((it) => h('li', {}, icon(it.ic, { size: 18 }), h('span', {}, it.what, it.act ? [' ', btn('secondary small', it.actLabel || 'Prepare', it.act, null, it.actLabel === 'Prepare' ? { 'data-tip': 't:pmc' } : {})] : null), h('span', { class: 'when' }, when(it.in)))));
+  card.hidden = false;
+}
+
+// A one-page summary of the last 7 days for the private medical conference; the person edits it and decides.
+function pmcSummary(p, now) {
+  const since = msOf(now) - 7 * DAY;
+  const lines = [`For my private medical conference. ${p.name}, flight day ${Math.floor((msOf(now) - msOf(MISSION.launch)) / DAY) + 1}, the last 7 days:`];
+  const nums = ['pulse', 'bp', 'spo2', 'temp', 'resp', 'sleep', 'fluid'];
+  for (const ind of nums) {
+    const cell = cellBy[ind];
+    if (!cell) continue;
+    const list = machine.history(p.id, ind).filter((x) => msOf(x.time) >= since);
+    if (!list.length) continue;
+    if (ind === 'bp') {
+      const sys = list.map((x) => Number(x.value.sys));
+      const dia = list.map((x) => Number(x.value.dia));
+      lines.push(`- Blood pressure: ${list.length} readings, ${Math.min(...sys)}/${Math.min(...dia)} to ${Math.max(...sys)}/${Math.max(...dia)} mmHg${list.some((x) => x.status === STATUS.OUT) ? ', some outside the normal range' : ''}.`);
+      continue;
+    }
+    const v = list.map((x) => Number(x.value)).filter(Number.isFinite);
+    if (!v.length) continue;
+    const avg = v.reduce((s, x) => s + x, 0) / v.length;
+    const r = (x) => (Math.abs(x) >= 100 ? String(Math.round(x)) : fmtVal(x));
+    lines.push(`- ${cell.label}: ${v.length} readings, average ${r(avg)} ${cell.unit || ''}, from ${r(Math.min(...v))} to ${r(Math.max(...v))}${list.some((x) => x.status === STATUS.OUT) ? ', some outside the normal range' : ''}.`.replace(/ +\./g, '.').replace(/ +,/g, ','));
+  }
+  const count = (ind, val) => machine.history(p.id, ind).filter((x) => msOf(x.time) >= since && x.value === val).length;
+  const moods = ['good', 'fair', 'bad'].map((v) => `${count('mood', v)} ${v}`).join(', ');
+  lines.push(`- Check-ins: mood ${moods}; energy ${count('attitude', 'energetic')} energetic, ${count('attitude', 'sluggish')} sluggish.`);
+  const active = alertsFor(p.id).filter((x) => x.system !== 'Ship');
+  if (active.length) lines.push(`- Flagged by the program: ${active.map((x) => `${x.title} (${LEVEL_WORD[x.level]})`).join('; ')}.`);
+  lines.push('', 'What I want to talk about:', '');
+  return lines.join('\n');
+}
+function openPmc(p) {
+  const area = h('textarea', { 'aria-label': 'Summary for the private medical conference' });
+  area.value = pmcSummary(p, nowTime());
+  openPanel('Prepare for your private medical conference', [
+    h('p', {}, 'A summary of your last 7 days, drafted by the automation. Change anything; add what you want to talk about. Nothing is sent unless you press Send.'),
+    area,
+    h('p', { class: 'note' }, 'NASA flight surgeons hold a private medical conference with each crew member every week, about 15 minutes.'),
+  ], [btn('primary', 'Send to my flight surgeon', async () => {
+    const to = ui.ship.doctorOnBoard ? 'doctor-onboard' : 'doctor-earth';
+    await keep({ v: 1, kind: 'report', time: new Date().toISOString(), person: ui.person, state: { ...ui.ship }, report: { to, text: area.value.slice(0, 6000), topic: 'pmc' } });
+    closePanel();
+    toast(to === 'doctor-earth' ? (ui.ship.linkToEarth ? 'Saved in the outbox: it goes with the next downlink.' : 'Saved in the outbox: it goes when the link is back.') : 'Saved for the doctor on board.');
+    render();
+  }, 'send')]);
 }
 
 // ---------- morning check-in ----------
@@ -492,12 +619,17 @@ function renderCheckin(p, now, top = LEVEL.FINE) {
   byId('ci-start-slot').replaceChildren(...(open ? [] : [done.length
     ? btn('secondary small', 'Change', () => { ui.checkinOpen = true; renderCheckin(p, now, top); })
     : btn(top === LEVEL.FINE ? 'primary' : 'secondary', 'Start', () => { ui.checkinOpen = true; renderCheckin(p, now, top); })]));
+  byId('ci-extra').replaceChildren(
+    btn('secondary small', 'Log a symptom', () => openSymptomLog(), 'stethoscope', { 'data-tip': 't:symptomlog' }),
+    btn('secondary small', 'I took a medicine', () => openMedicineLog(), 'pill', { 'data-tip': 't:medicinelog' }),
+    btn('secondary small', 'Mind support', () => openMindSupport(), 'sparkles', { 'data-tip': 't:mindsupport' }));
   const seg = (id, key, options) => byId(id).replaceChildren(...options.map(([value, label]) => h('button', {
     type: 'button', 'aria-pressed': String(ui.checkin[key] === value), onclick: () => { ui.checkin[key] = ui.checkin[key] === value ? null : value; renderCheckin(p, now, top); },
   }, ui.checkin[key] === value ? icon('check', { size: 16 }) : null, label)));
   seg('ci-mood', 'mood', [['bad', 'Bad'], ['fair', 'Fair'], ['good', 'Good']]);
   seg('ci-attitude', 'attitude', [['sluggish', 'Sluggish'], ['energetic', 'Energetic']]);
   seg('ci-sleep', 'sleepQuality', [1, 2, 3, 4, 5, 6, 7].map((n) => [n, String(n)]));
+  if (open) renderTopicChips(byId('ci-topics'), { selected: ui.checkin.weighing || [], onChange: (ids) => { ui.checkin.weighing = ids; } });
   const any = Boolean(ui.checkin.mood || ui.checkin.attitude || ui.checkin.sleepQuality);
   byId('ci-send').setAttribute('aria-disabled', any ? 'false' : 'true');
 }
@@ -508,7 +640,8 @@ async function sendCheckin() {
   if (c.mood) await addReading('mood', c.mood);
   if (c.attitude) await addReading('attitude', c.attitude);
   if (c.sleepQuality) await addReading('sleepQuality', c.sleepQuality);
-  ui.checkin = { mood: null, attitude: null, sleepQuality: null };
+  if (c.weighing && c.weighing.length) await addReading('weighing', c.weighing);
+  ui.checkin = { mood: null, attitude: null, sleepQuality: null, weighing: [] };
   ui.checkinOpen = false;
   toast('Check-in saved. The planned review will look at it.');
   render();
@@ -522,7 +655,6 @@ function measureRow(owner, indicator, a, now) {
   const last = machine.history(owner.id, indicator).slice(-1)[0] || null;
   const item = a ? [...a.body.items, ...a.psyche.items].find((x) => x.cell && x.cell.indicator === indicator) : null;
   let level = item ? item.level : LEVEL.FINE;
-  if (owner === SHIP && last && last.status === STATUS.OUT) level = LEVEL.ATTENTION;
   const m = cell.kind === KIND.NUMBER ? measureState({ machine, person: owner, cell, mission: MISSION, now }) : null;
   const stale = Boolean(m && m.stale);
   const out = Boolean(last && last.status === STATUS.OUT);
@@ -544,6 +676,11 @@ function measureRow(owner, indicator, a, now) {
   if (forecast) kids.push(h('span', { class: 'r-state lvc1' }, icon('info', { size: 14 }), 'Forecast: may leave the range'));
   else if (level) kids.push(h('span', { class: `r-state lvc${level}` }, icon(LEVEL_ICON[level], { size: 14 }), LEVEL_TITLE[level]));
   else if (stale && last) kids.push(h('span', { class: 'r-state lvc-stale' }, icon('clock', { size: 14 }), `Old data, ${ageText(last.time, now)}`));
+  else if (a && a.info) {
+    const note = a.info.find((x) => x.cell && x.cell.indicator === indicator && (x.kind === 'expected' || x.kind === 'watch'));
+    if (note && note.kind === 'expected') kids.push(h('span', { class: 'r-state muted', 'data-tip': `m:${indicator}:${owner.id}` }, icon('circle-check', { size: 14 }), 'Common in flight'));
+    if (note && note.kind === 'watch') kids.push(h('span', { class: 'r-state muted' }, icon('clock', { size: 14 }), `Watching: ${note.m.streak} of ${note.needed}`));
+  }
   kids.push(icon('chevron-right', { size: 18, cls: 'chev' }));
   return rowWrap(h('button', { type: 'button', class: `row ${level ? LV_CLASS[level] : stale ? 'stale' : ''}`, 'data-ind': indicator, 'data-tip': `m:${indicator}:${owner.id}`, onclick: () => openDetail(indicator) }, ...kids), `m:${indicator}:${owner.id}`, cell.label);
 }
@@ -621,7 +758,9 @@ function cycleCard(p, now) {
 const GROUPS = [
   ['Vital signs', null, ['pulse', 'bp', 'spo2', 'temp', 'resp']],
   ['Sleep, food and fluid', null, ['sleep', 'fluid', 'glucose', 'bodyMass']],
-  ['Slow changes over the flight', 'Checked every few weeks, or carried over the whole flight.', ['vo2max', 'strength', 'bone', 'eyePressure', 'hearing', 'radiation']],
+  ['Fitness, muscles and bones', 'Exercise every day keeps fitness and bones; the tests are every few weeks.', ['exercise', 'vo2max', 'strength', 'bone']],
+  ['Eyes and ears', 'Eyes change on long flights (SANS); checks on flight days 30 and 90 and 30 days before return.', ['visionCheck', 'octChange', 'octScan', 'eyePressure', 'hearing']],
+  ['Radiation', 'Carried over the whole career.', ['radiation']],
   ['Mind', 'Your daily check-ins.', ['mood', 'attitude', 'sleepQuality', 'cognition']],
   ['Images, tracings and camera', 'These go to the AI or a doctor.', ['xray', 'ecg', 'ultrasound', 'camera']],
 ];
@@ -631,8 +770,8 @@ const WORDS = {
   temp: 'temperature fever temp', resp: 'breathing respiration breaths', sleep: 'sleep hours rest', fluid: 'water drink fluid hydration',
   glucose: 'sugar glucose blood sugar', bodyMass: 'weight mass body', vo2max: 'fitness aerobic vo2 cardio exercise', strength: 'muscle strength',
   bone: 'bone density dexa', eyePressure: 'eye vision iop', hearing: 'ear hearing audiogram', radiation: 'radiation dose msv dosimeter',
-  mood: 'mood feeling', attitude: 'energy tired fatigue', sleepQuality: 'sleep quality rest', cognition: 'thinking cognition memory test',
-  xray: 'x-ray xray image', ecg: 'ecg ekg heart tracing', ultrasound: 'ultrasound echo scan image', camera: 'camera video chest sleep',
+  mood: 'mood feeling', attitude: 'energy tired fatigue', sleepQuality: 'sleep quality rest', cognition: 'thinking cognition memory test reaction reflex speed winscat',
+  xray: 'x-ray xray image', exercise: 'exercise workout training treadmill bike ared cevis', visionCheck: 'vision eye eyes amsler sans sight', octChange: 'oct retina eye eyes sans', octScan: 'oct scan eye image retina', ecg: 'ecg ekg heart tracing', ultrasound: 'ultrasound echo scan image', camera: 'camera video chest sleep',
   co2: 'co2 carbon dioxide air', cabinO2: 'oxygen o2 air', cabinPressure: 'pressure cabin air', noise: 'noise sound loud db', cabinTemp: 'temperature cabin air',
 };
 
@@ -660,7 +799,7 @@ function renderGroups(p, a, now) {
       foldable && hint ? h('p', { class: 'note' }, hint) : null,
       list);
   };
-  const blocks = GROUPS.flatMap(([title, hint, list]) => [group(title, hint, list.map(rowFor)), title === 'Mind' ? cycleCard(p, now) : null]).filter(Boolean);
+  const blocks = GROUPS.flatMap(([title, hint, list]) => [group(title, hint, list.map(rowFor)), title === 'Mind' ? cycleCard(p, now) : null, title === 'Sleep, food and fluid' ? privateLogCard(p, now) : null]).filter(Boolean);
   if (others.length) blocks.push(group('Other measures', null, others.map(rowFor)));
   blocks.push(group('Cabin air', 'Shared by the whole crew.', SHIP_CELLS.map((ind) => measureRow(SHIP, ind, shipItems, now))));
   byId('groups').replaceChildren(...blocks);
@@ -796,6 +935,7 @@ function openDetail(indicator) {
   window.scrollTo(0, 0);
 }
 
+const EXPECTED_EVERY_DAYS_ONE = ['pulse', 'bp', 'temp', 'sleep', 'resp', 'fluid', 'spo2', 'glucose'];
 const NORM_NAMES = { earthGeneral: 'General, Earth', spaceGeneral: 'General, space', personalEarth: 'Personal, Earth', personalSpace: 'Personal, space' };
 const BACK_LABEL = { home: 'Today', measures: 'All measures', alerts: 'Messages', setup: 'Settings' };
 const backButton = () => btn('secondary small back', BACK_LABEL[ui.backTo] || 'All measures', () => setScreen(ui.backTo || 'measures'), 'chevron-left');
@@ -824,11 +964,12 @@ function renderDetail() {
   const range = periodRange(allPoints);
   const now = nowTime();
   const m = cell.kind === KIND.NUMBER ? measureState({ machine, person: owner, cell, mission: MISSION, now }) : null;
-  const fc = m && m.forecast && m.forecast.line ? m.forecast : null;
+  const fc = m && m.forecast && m.forecast.line && (SLOW_MEASURES.includes(indicator) || m.clearTrend) ? m.forecast : null;
   const showTrend = Boolean(fc) && (ui.period === 'flight' || ui.period === 'all');
   const lines = [];
   if (cell.normType === 'baseline-percent') { const b = bandOf(cell, owner); if (b) lines.push({ v: b.min, label: `Limit: ${cell.norm.minPercent}% of own pre-flight level` }); }
   if (indicator === 'radiation') lines.push({ v: cell.norm.max, label: 'NASA career limit' });
+  for (const t of cell.thresholds || []) lines.push({ v: t.min, label: `${cap(t.text)}: ${t.min} ${cell.unit} (draft)` });
   if (indicator === 'bp') lines.push({ v: cell.norm.sysBelow, label: `Systolic: below ${cell.norm.sysBelow}` }, { v: cell.norm.diaBelow, label: `Diastolic: below ${cell.norm.diaBelow}` });
 
   const facts = [];
@@ -845,6 +986,10 @@ function renderDetail() {
     about.push("The forecast is a straight line through the in-flight readings (Claude's technical choice), not a validated medical model.");
   } else if (cell.kind === KIND.NUMBER) {
     facts.push(cell.onlyOnEarth ? 'Not measured in flight: only on Earth, before and after flight.' : 'To see where a measure is going, in-flight readings on at least three different days are needed.');
+  } else if (indicator === 'cognition') {
+    facts.push('Once a month NASA crews take a thinking test (WinSCAT). The 3-minute reaction test here is modelled on NASA\'s Reaction Self Test; compare only with yourself, never with others. It is not a fitness-for-duty test.');
+  } else if (cell.answers) {
+    facts.push(cell.normText);
   } else {
     facts.push('Check-ins build up and are looked at in the planned review. By which rule the AI decides that spirits are falling is still the team\'s open question.');
   }
@@ -862,7 +1007,11 @@ function renderDetail() {
   const a = assess({ machine, person: p, cells: CELLS, mission: MISSION, now });
   const lastEntry = machine.history(owner.id, indicator).slice(-1)[0] || null;
   const item = [...a.body.items, ...a.psyche.items].find((x) => x.cell && x.cell.indicator === indicator);
-  const level = owner === SHIP ? (lastEntry && lastEntry.status === STATUS.OUT ? LEVEL.ATTENTION : LEVEL.FINE) : (item ? item.level : LEVEL.FINE);
+  const shipItem = owner === SHIP ? assessShip({ machine, ship: SHIP, cells: CELLS, mission: MISSION, now }).items.find((x) => x.cell.indicator === indicator) : null;
+  const level = owner === SHIP ? (shipItem ? shipItem.level : LEVEL.FINE) : (item ? item.level : LEVEL.FINE);
+  const info = owner === SHIP ? null : (a.info || []).find((x) => x.cell && x.cell.indicator === indicator && (x.kind === 'expected' || x.kind === 'watch'));
+  if (info && info.kind === 'expected') facts.unshift(`Outside the Earth range, but common in flight: ${info.expected.text}`);
+  if (info && info.kind === 'watch') facts.unshift(`Outside the normal range in the last ${info.m.streak} reading${info.m.streak === 1 ? '' : 's'}; it becomes "attention" only if it stays outside for ${info.needed} readings in a row (a draft rule).`);
   const norm = cell.kind === KIND.NUMBER ? normShort(cell, owner) : '';
   let verdict = 'No readings yet.';
   if (lastEntry) {
@@ -886,12 +1035,19 @@ function renderDetail() {
     h('div', { class: 'detail-title' }, h('h1', {}, cell.label), owner === SHIP ? h('span', { class: 'chip neutral' }, 'Shared by the crew') : null),
     h('section', { class: `card now ${LV_CLASS[level]}` },
       cornerTip(`m:${indicator}:${owner.id}`, cell.label),
-      lastEntry ? h('div', { class: 'now-value' }, h('b', {}, shown), cell.unit && cell.kind === KIND.NUMBER ? h('span', { class: 'u' }, cell.unit) : null, arrow) : null,
+      lastEntry ? h('div', { class: `now-value${String(shown).length > 12 && !/^[\d.,\s/:+-]+$/.test(String(shown)) ? ' words' : ''}` }, h('b', {}, shown), cell.unit && cell.kind === KIND.NUMBER ? h('span', { class: 'u' }, cell.unit) : null, arrow) : null,
       h('div', { class: 'now-text' },
         h('p', { class: 'verdict' }, level ? h('span', { class: `lvc${level}` }, icon(LEVEL_ICON[level], { size: 18 }), ' ') : null, verdict, level ? h('span', { class: `lvc${level}` }, ` ${LEVEL_TITLE[level]}.`) : null),
         norm ? h('p', { class: 'meta' }, `Normal range: ${rangeText(cell, owner)}${cell.unit && cell.kind === KIND.NUMBER && cell.normType !== 'baseline-percent' ? ` ${cell.unit}` : ''}`) : null,
         lastEntry ? h('p', { class: 'meta' }, 'Last reading ', h('span', { class: 'mono' }, stamp(lastEntry.time, now))) : null)),
     alert ? h('div', { class: 'actions' }, btn('proc', 'What to do', () => openProcedure(alert), 'list-checks')) : null,
+    indicator === 'cognition' ? h('div', { class: 'actions' }, btn('primary', 'Start the 3-minute test', () => openReactionTest('full'), 'zap'), btn('secondary', 'Try a 30-second demo', () => openReactionTest('demo'), 'zap')) : null,
+    cell.answers ? h('section', { class: 'card' },
+      h('h2', {}, 'Answer now'),
+      cell.howTo ? h('ol', { class: 'links' }, ...cell.howTo.map((s) => h('li', {}, s))) : null,
+      cell.indicator === 'visionCheck' ? amslerGrid() : null,
+      h('div', { class: 'answers' }, ...cell.answers.map((ans) => btn('secondary', ans.label, async () => { await addReading(indicator, ans.value); toast(cell.tellDoctor && cell.tellDoctor.values.includes(ans.value) ? 'Saved. Worth telling your flight surgeon: use Message the doctor.' : 'Saved.'); redrawDetail(); }))),
+      cell.howToSrc ? h('p', { class: 'note' }, 'How to: ', h('a', { href: cell.howToSrc.url, target: '_blank', rel: 'noopener' }, cell.howToSrc.name)) : null) : null,
     periodBar(redrawDetail),
     h('section', { class: 'card chart-card' },
       cornerTip('t:chart', 'the chart'),
@@ -911,6 +1067,9 @@ function renderDetail() {
       more('About this measure',
         cell.effort ? h('p', {}, `Effort to measure: ${cell.effort}, on the team's scale of light, high and extreme.`) : null,
         ...about.map((x) => h('p', {}, x)),
+        cell.red && cell.red.length ? h('div', { class: 'prose' }, h('p', {}, h('b', {}, 'Red limits'), ' (drafts for the team and flight surgeons): a single reading past one raises the alert at once, without the AI.'),
+          h('ul', { class: 'links' }, ...cell.red.map((r) => h('li', {}, `${limitWords(r)}${r.part ? ` (${r.part})` : ''} ${cell.unit || ''}: ${r.level === 'urgent' ? 'urgent' : 'needs action'}. `, h('a', { href: r.url, target: '_blank', rel: 'noopener' }, r.source), r.note ? h('span', { class: 'muted' }, ` ${r.note}`) : null)))) : null,
+        EXPECTED_EVERY_DAYS_ONE.includes(indicator) ? h('p', { class: 'muted' }, RULE_NOTES.outStreakForAttention.text, ' ', h('a', { href: RULE_NOTES.outStreakForAttention.url, target: '_blank', rel: 'noopener' }, RULE_NOTES.outStreakForAttention.source)) : null,
         h('p', { class: 'muted' }, 'Which normal range it is compared with, and the sources:'),
         normsBox,
         owner === SHIP ? null : h('p', {}, h('button', { type: 'button', class: 'link', onclick: () => openArticles(indicator) }, 'Articles on this, to read without the AI'))),
@@ -932,6 +1091,28 @@ function renderDetail() {
   if (shownPts.some((pt) => pt.out)) legend.push(h('span', {}, h('span', { class: 'out-key' }), ord ? cap(LOW[indicator]) : 'Outside the normal range'));
   byId('d-legend').replaceChildren(...legend);
   byId('d-legend').hidden = !legend.length;
+}
+
+// An Amsler grid to look at for the eye self-check: a 20 by 20 grid with a dot in the centre (MedlinePlus).
+function amslerGrid() {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 200 200');
+  svg.setAttribute('class', 'amsler');
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', 'Amsler grid: look at the centre dot; all lines should look straight');
+  for (let i = 0; i <= 20; i += 1) {
+    for (const [x1, y1, x2, y2] of [[i * 10, 0, i * 10, 200], [0, i * 10, 200, i * 10]]) {
+      const l = document.createElementNS(NS, 'line');
+      l.setAttribute('x1', x1); l.setAttribute('y1', y1); l.setAttribute('x2', x2); l.setAttribute('y2', y2);
+      l.setAttribute('stroke', '#111111'); l.setAttribute('stroke-width', '1');
+      svg.append(l);
+    }
+  }
+  const dot = document.createElementNS(NS, 'circle');
+  dot.setAttribute('cx', '100'); dot.setAttribute('cy', '100'); dot.setAttribute('r', '3.5'); dot.setAttribute('fill', '#111111');
+  svg.append(dot);
+  return svg;
 }
 
 // Redraw the measure page and keep the sections the person opened.
@@ -1000,7 +1181,8 @@ function alertsFor(personId) {
   }
   for (const it of s.items) {
     const last = it.m.last;
-    out.push({ id: `ship|${it.cell.indicator}|${new Date(msOf(last.time)).toISOString().slice(0, 13)}`, level: it.level, title: `Ship: ${lower(it.cell.label)}`, text: `${valueText(it.cell.indicator, last.value)} ${it.cell.unit}: outside the normal range (${rangeText(it.cell, SHIP)}).`, time: msOf(last.time), steps: ["Check the ship system's readings.", 'The crew and mission control decide.'], indicator: it.cell.indicator, system: 'Ship' });
+    const tx = it.kind === 'red' ? itemText(it, SHIP) : { title: `Ship: ${lower(it.cell.label)}`, text: `${valueText(it.cell.indicator, last.value)} ${it.cell.unit}: outside the normal range (${rangeText(it.cell, SHIP)}).` };
+    out.push({ id: `ship|${it.cell.indicator}|${it.level}|${new Date(msOf(last.time)).toISOString().slice(0, 10)}`, level: it.level, title: tx.title, text: tx.text, time: msOf(last.time), steps: it.kind === 'red' ? procedureFor(it) : ["Check the ship system's readings.", 'The crew and mission control decide.'], indicator: it.cell.indicator, system: 'Ship' });
   }
   return out.sort((x, y) => y.level - x.level || y.time - x.time);
 }
@@ -1027,6 +1209,7 @@ function renderAlerts() {
         h('p', {}, x.text, h('span', { class: 'muted' }, ` · ${x.system}`)),
         h('div', { class: 'actions' },
           btn('proc small', 'What to do', () => openProcedure(x), 'list-checks'),
+          x.system === 'Camera' ? btn('secondary small', 'I am okay: false alarm', async () => { await addReading('camera', 'chest_grab_ok', { source: { id: 'false-alarm', indicator: 'camera' } }); toast('Noted as a false alarm. The doctor sees it in your record.'); }, 'check', { 'data-tip': 't:falsealarm' }) : null,
           x.indicator ? btn('secondary small', 'Chart', () => openDetail(x.indicator), 'chart-line') : null,
           read ? null : btn('secondary small', 'Mark as read', () => markRead(x), 'check')));
     })) : h('div', { class: 'card' }, h('p', {}, h('b', {}, 'No messages.')), h('p', { class: 'muted' }, 'You will see a message here only when something needs you.')),
@@ -1069,9 +1252,74 @@ function summaryFor(a, kind, indicator) {
   return lines.join('\n');
 }
 
+// ---------- the anonymous session: support that works with the AI off ----------
+// Coping cards: plain steps from proven methods, each with its source line (texts from the night research report).
+const COPING = [
+  { id: 'slow', topic: 'Slow down', title: 'Two minutes to slow down', steps: ['Breathe in through your nose, then breathe out more slowly than you breathed in. Repeat for two minutes.', 'Look around and name a few things you can see and hear.', 'Then pick the next small task.'], src: "CBT and mindfulness self-help; NASA's 2026 research call names CBT and mindfulness; the FDA lists 'skill of the day' coping tools as low risk." },
+  { id: 'sleep', topic: 'Sleep', title: 'Sleep tonight', steps: ['Keep the same wake-up time every day, even after a bad night.', 'Use your sleep station for sleep, not for work or screens.', 'If you lie awake and get frustrated, get up, do something calm in dim light, and go back when sleepy.', 'Avoid caffeine late in your day.'], src: "CBT for insomnia, the method behind the VA's Insomnia Coach; fully automated digital CBT-I reduced insomnia severity in 15 trials (2026)." },
+  { id: 'home', topic: 'Missing home', title: 'Missing home', steps: ['Write down what you want to say at your next family call.', 'Write a short message to send when you can.', 'Look at a photo or a recording from home.', 'Name one thing you look forward to this week.'], src: 'ISS crews have weekly private family video calls (NASA, 2024); NASA calls family contact a key support (2023).' },
+  { id: 'crew', topic: 'Crew tension', title: 'Tension in the crew', steps: ['Wait for a calm moment and ask for a few minutes in private.', 'Say what happened, how it affected you, and what you would like.', 'Listen, and repeat back what you heard.', 'If it keeps coming back, bring it to your private conference.'], src: 'HI-SEAS crews rated the conflict modules of NASA-funded self-help programs as highly acceptable (2016, 2020).' },
+  { id: 'ground', topic: 'Frustrated with the ground', title: 'Frustrated with the ground', steps: ['This is common: in Mars-500, conflicts with mission control were reported five times more often than conflicts within the crew.', 'Write it down first and read it again after sleep.', 'Raise it calmly in a planning conference or your private conference.'], src: 'Mars-500 (PLoS ONE, 2014); ISS weekly questionnaires (Kanas, 2007).' },
+  { id: 'low', topic: 'Low days', title: 'Low days', steps: ['Pick one small, doable thing you used to enjoy, and decide when.', 'Have one real conversation today, even a short one.', 'Check your sleep: in ISS crews, nights under 6 hours went with more stress.', "If low days keep coming, use 'Tell the doctor on Earth'."], src: 'CBT steps; CBT-based chatbots reduced depression symptoms in 29 trials (2026).' },
+];
+// Simple word rules, outside any AI: these words open Help now at once (APA 2025: detect and interrupt; the AI never decides alone).
+const RISK_WORDS = ['suicide', 'suicidal', 'kill myself', 'end my life', 'want to die', 'wish i was dead', 'hurt myself', 'harm myself', 'better off dead', 'no reason to live', 'cannot go on', "can't go on"];
+const matchesRisk = (text) => RISK_WORDS.some((w) => String(text || '').toLowerCase().includes(w));
+const privacyShown = new Set();
+
+function helpNowCard() {
+  return h('div', { class: 'help-now', role: 'group', 'aria-label': 'Help now' },
+    h('p', { class: 'tp-title' }, 'Help now'),
+    h('ol', { class: 'links' },
+      h('li', {}, 'Tell a crewmate now, in person.'),
+      h('li', {}, 'Ask the ground for a private medical conference with your flight surgeon or psychologist.', ui.ship.linkToEarth ? '' : ' There is no link now: the request waits in the outbox, so also tell the crew medical officer on board.'),
+      h('li', {}, 'Use your plan for hard days, written before flight with your psychologist.')),
+    h('div', { class: 'actions' },
+      btn('primary small', 'Ask for a private conference', () => openDoctor({ body: { items: [] }, psyche: { items: [] } }, 'psyche'), 'stethoscope'),
+      btn('secondary small', 'Open my plan', () => openPlan(), 'shield')),
+    h('p', { class: 'note' }, 'Fixed steps, not AI; they work with the AI off. Nothing is sent by itself. Whether anything more should happen in immediate danger is the team\'s decision.'));
+}
+
+function openSupport(a) {
+  const p = personById[ui.person];
+  const body = h('div', { class: 'support' });
+  const helpSlot = h('div', {});
+  const showHelp = () => { helpSlot.replaceChildren(helpNowCard()); helpSlot.scrollIntoView({ block: 'nearest' }); };
+  const cardSlot = h('div', {});
+  const openCard = (cd) => cardSlot.replaceChildren(h('div', { class: 'coping' },
+    h('p', { class: 'tp-title' }, cd.title),
+    h('ol', { class: 'links' }, ...cd.steps.map((s) => h('li', {}, s))),
+    h('p', { class: 'note' }, cd.src)));
+  const box = h('textarea', { 'aria-label': 'Write it out. Not saved.', placeholder: 'Write it out. This is not saved and not sent.', oninput: (e) => { if (matchesRisk(e.target.value)) showHelp(); } });
+  const talk = () => fill(body,
+    h('div', { class: 'actions' }, btn('secondary small', 'Help now', showHelp, 'circle-alert', { 'data-tip': 't:helpnow' })),
+    helpSlot,
+    h('p', {}, h('b', {}, 'What is it about?'), ' ', h('span', { class: 'muted' }, 'Pick one for a few steps that help.')),
+    h('div', { class: 'chips' }, ...COPING.map((cd) => h('button', { type: 'button', class: 'chip neutral topic', onclick: () => openCard(cd) }, cd.topic))),
+    cardSlot,
+    h('label', { class: 'log-field' }, h('span', {}, 'Write it out (not saved)'), box),
+    h('div', { class: 'actions' }, btn('secondary small', 'Forget now', () => { box.value = ''; helpSlot.replaceChildren(); toast('Cleared. Nothing was saved.'); }, 'x')),
+    h('p', {}, h('b', {}, 'Is there one person you could talk to today?'), ' A crewmate, a family call, or your next private talk with your psychologist.'),
+    h('div', { class: 'actions' }, btn('secondary small', 'Tell the doctor on Earth', () => openDoctor(a, 'psyche'), 'stethoscope', { 'data-tip': 't:tellDoctor' })),
+    h('p', { class: 'note' }, `No AI model is connected in this version${ui.ship.aiWorks ? '' : ', and the AI is off'}; everything above works without it. When one is connected it is told it is an AI and says so, gives no diagnosis or medicine advice, uses only the on-board library with sources, and ends every talk by pointing to a person.`));
+  const privacy = () => fill(body,
+    h('div', { class: 'privacy-card' },
+      h('p', { class: 'tp-title' }, 'Before you talk: how private is this?'),
+      h('ul', { class: 'links' },
+        h('li', {}, 'This is AI support: a program, not a person and not a psychologist.'),
+        h('li', {}, 'What you write here is not saved and not sent. Nobody reads it.'),
+        h('li', {}, 'Your daily check-ins are saved, like NASA\'s health monitoring, and go to the doctor only if you choose.'),
+        h('li', {}, 'Help now is always here: fixed steps to reach a person, even with the AI off.'),
+        h('li', {}, 'Whether anything more happens in immediate danger is the team\'s decision; until then nothing is sent by itself.')),
+      h('div', { class: 'actions' }, btn('primary small', 'I understand', () => { privacyShown.add(p.id); talk(); }, 'check'))));
+  if (privacyShown.has(p.id)) talk(); else privacy();
+  openPanel('Anonymous session with AI support', [h('p', { class: 'ai-badge' }, icon('sparkles', { size: 16 }), 'AI support, not a psychologist'), body]);
+}
+
 function openAi(kind, a) {
+  if (kind === 'psyche') { openSupport(a); return; }
   const summary = summaryFor(a, kind);
-  openPanel(kind === 'psyche' ? 'Anonymous session with AI' : 'Analyse with AI', [
+  openPanel('Analyse with AI', [
     h('p', {}, 'No AI is connected to this version yet. Which AI, and what exactly it does, is the team\'s decision.'),
     h('p', {}, "What checked facts say: NASA's crew medical officer assistant (CMO-DA) runs with no link to Earth on a ground copy of the ISS computer and is tested only on Earth so far; open models can run right in a web browser without internet."),
     h('p', { class: 'muted' }, kind === 'psyche' ? 'Anonymous session: these check-ins do not go to the doctor unless you press "Tell the doctor on Earth" yourself.' : 'This is what the AI would get from the automation:'),
@@ -1079,11 +1327,108 @@ function openAi(kind, a) {
   ]);
 }
 
+const backToMind = () => btn('secondary small back', 'All mind tools', () => openMindSupport(), 'chevron-left');
 function openAdvice() {
-  openPanel('Advice and articles', [
-    h('p', {}, 'Who gives advice, the automation or the AI, is still the team\'s open question. For now, checked reference material only.'),
-    articleLinks(null),
+  const host = h('div');
+  const p = personById[ui.person];
+  const a = assess({ machine, person: p, cells: CELLS, mission: MISSION, now: nowTime() });
+  const sig = topicSignal(machine.history(p.id, 'weighing'), nowTime());
+  renderTips(host, { signals: { topic: sig ? sig.id : null, lowMood: a.psyche.level > LEVEL.FINE, poorSleep: (a.info || []).some((x) => x.cell && x.cell.indicator === 'sleep') }, onOpenBreak: () => { closePanel(); openEarthBreak(); }, onOpenJournal: () => openJournal() });
+  openPanel('Mind support', [backToMind(), host, h('p', { class: 'note' }, 'Who gives advice, the automation or the AI, is still the team\'s open question. These are checked suggestions with their sources.'), h('p', {}, h('b', {}, 'Reading for people who prefer to read without the AI')), articleLinks(null)]);
+}
+
+// ---------- private mind tools: journal, plan, steps, Earth break; kept only in this browser for this person ----------
+const MIND_KEY = (id) => `jff-mind-private-v1:${id}`;
+function loadMind(id) { try { return { journal: [], plan: null, worksheets: [], breaks: [], ...JSON.parse(localStorage.getItem(MIND_KEY(id)) || '{}') }; } catch { return { journal: [], plan: null, worksheets: [], breaks: [] }; } }
+function saveMind(id, data) { try { localStorage.setItem(MIND_KEY(id), JSON.stringify(data)); return true; } catch { toast('Could not save here: this browser blocks storage.'); return false; } }
+const queueReport = async (to, text, topic) => keep({ v: 1, kind: 'report', time: new Date().toISOString(), person: ui.person, state: { ...ui.ship }, report: { to, text: String(text).slice(0, 6000), topic } });
+
+function openMindSupport() {
+  const p = personById[ui.person];
+  const day = Math.floor((msOf(nowTime()) - msOf(MISSION.launch)) / DAY) + 1;
+  const cal = h('div');
+  if (ui.example) renderCalendar(cal, { flightDay: day, onOpen: () => {} });
+  openPanel('Mind support', [
+    h('p', {}, 'Tools that work on board with no AI and no link to Earth, from NASA research and proven methods. What you write stays in this browser and is sent only if you choose.'),
+    h('div', { class: 'tool-list' },
+      btn('secondary', 'Small things that help', () => openAdvice(), 'list'),
+      btn('secondary', 'Private journal', () => openJournal(), 'message-square'),
+      btn('secondary', 'My plan for hard days', () => openPlan(), 'shield'),
+      btn('secondary', 'Work through it in 5 steps', () => openSteps(), 'list-checks'),
+      btn('secondary', 'Take a 3-minute Earth break', () => { closePanel(); openEarthBreak(); }, 'orbit'),
+      btn('secondary', 'Do the 3-minute reaction test', () => { closePanel(); openReactionTest('full'); }, 'zap'),
+      btn('secondary', 'Anonymous session with AI support', () => openSupport(assess({ machine, person: p, cells: CELLS, mission: MISSION, now: nowTime() })), 'sparkles')),
+    ui.example ? cal : null,
   ]);
+}
+function openJournal() {
+  const p = personById[ui.person];
+  const data = loadMind(p.id);
+  const host = h('div');
+  const ctl = renderJournal(host, {
+    entries: data.journal, link: ui.ship.linkToEarth,
+    onSave: (entry) => { const d = loadMind(p.id); d.journal = [entry, ...d.journal.filter((e) => e.id !== entry.id)]; if (!saveMind(p.id, d)) throw new Error('storage'); ctl && ctl.update(d.journal, { link: ui.ship.linkToEarth }); },
+    onToggleTalk: (id, on) => { const d = loadMind(p.id); d.journal = d.journal.map((e) => (e.id === id ? { ...e, talk: on } : e)); saveMind(p.id, d); ctl && ctl.update(d.journal, { link: ui.ship.linkToEarth }); },
+    onDelete: (id) => { const d = loadMind(p.id); d.journal = d.journal.filter((e) => e.id !== id); saveMind(p.id, d); ctl && ctl.update(d.journal, { link: ui.ship.linkToEarth }); },
+    onSendLetter: async (text) => { await queueReport(ui.ship.doctorOnBoard ? 'doctor-onboard' : 'doctor-earth', text, 'letter-to-psychologist'); toast(ui.ship.linkToEarth ? 'Your letter is in the outbox: it goes with the next downlink.' : 'Your letter waits in the outbox for the link.'); },
+  });
+  openPanel('Mind support', [backToMind(), host]);
+}
+function openPlan() {
+  const p = personById[ui.person];
+  const data = loadMind(p.id);
+  const host = h('div');
+  renderPlan(host, {
+    plan: data.plan, example: ui.example && !p.real, link: ui.ship.linkToEarth, doctorOnBoard: ui.ship.doctorOnBoard,
+    onSave: (plan) => { const d = loadMind(p.id); d.plan = plan; if (!saveMind(p.id, d)) throw new Error('storage'); toast('Your plan is saved in this browser only.'); },
+    onTalkNow: async (kind) => { if (kind === 'ground') { await queueReport(ui.ship.doctorOnBoard ? 'doctor-onboard' : 'doctor-earth', TALK_REQUEST_TEXT, 'talk-request'); toast('Your request for a private call is in the outbox.'); } },
+  });
+  openPanel('Mind support', [backToMind(), host]);
+}
+function openSteps() {
+  const p = personById[ui.person];
+  const data = loadMind(p.id);
+  const host = h('div');
+  renderSteps(host, { worksheet: data.worksheets[0] || null, onSave: (ws) => { const d = loadMind(p.id); d.worksheets = [ws, ...d.worksheets.filter((w) => w.id !== ws.id)].slice(0, 20); if (!saveMind(p.id, d)) throw new Error('storage'); toast('Saved in this browser only.'); } });
+  openPanel('Mind support', [backToMind(), host]);
+}
+function openEarthBreak() {
+  const p = personById[ui.person];
+  runEarthBreak({ onDone: (r) => { const d = loadMind(p.id); d.breaks = [r, ...d.breaks].slice(0, 50); saveMind(p.id, d); toast(r.feeling ? `Noted privately: ${r.feeling}.` : 'Break done.'); }, onCancel: () => {} });
+}
+function earlierRuns(p) {
+  const mine = stored.filter((e) => e.person === p.id && e.reading && e.reading.indicator === 'cognition' && e.reading.detail).map((e) => e.reading.detail);
+  return ui.example && !p.real ? [...exampleEarlierRuns(MISSION.launch), ...mine] : mine;
+}
+function openReactionTest(mode) {
+  const p = personById[ui.person];
+  runReactionTest({ mode, earlier: earlierRuns(p), onDone: async (result) => {
+    if (result.median === null || result.median === undefined) { toast('Not enough presses to give a result.'); return; }
+    await addReading('cognition', Math.round(result.median), { source: { id: 'reaction-test', indicator: 'cognition' }, detail: result });
+    const cmp = compareToOwn(result, earlierRuns(p));
+    toast(cmp && cmp.text ? cmp.text : 'Saved.');
+  }, onCancel: () => {} });
+}
+
+// ---------- quick logs: a symptom in about ten seconds, a medicine in two taps (private) ----------
+function openSymptomLog() {
+  const host = h('div');
+  symptomLog(host, { onSave: async (e) => { await addReading(e.indicator, e.value, { time: e.time }); closePanel(); toast('Logged privately.'); }, onCancel: () => closePanel() });
+  openPanel('Log a symptom', [host]);
+}
+function openMedicineLog() {
+  const host = h('div');
+  medicineLog(host, { onSave: async (e) => { await addReading(e.indicator, e.value, { time: e.time }); closePanel(); toast('Logged privately.'); }, onCancel: () => closePanel() });
+  openPanel('I took a medicine', [host]);
+}
+function privateLogCard(p, now) {
+  const since = msOf(now) - 14 * DAY;
+  const rows = [...machine.history(p.id, 'symptoms'), ...machine.history(p.id, 'medicines')].filter((x) => msOf(x.time) >= since).sort((x, y) => msOf(y.time) - msOf(x.time)).slice(0, 6);
+  return h('section', { class: 'group', 'data-terms': 'symptom symptoms headache medicine medicines pill log private' },
+    h('div', { class: 'group-head' }, h('h2', {}, 'Your private log'), h('p', {}, PRIVATE_NOTE)),
+    h('section', { class: 'card' },
+      rows.length ? h('ul', { class: 'links mind-log' }, ...rows.map((x) => h('li', {}, h('span', {}, logText(x.indicator || (x.value && x.value.symptom ? 'symptoms' : 'medicines'), x.value) || valueText('symptoms', x.value)), h('span', { class: 'mono muted' }, `GMT ${gmtDOY(x.time)}`)))) : h('p', { class: 'muted' }, 'Nothing logged in the last 14 days.'),
+      h('div', { class: 'actions' }, btn('secondary small', 'Log a symptom', () => openSymptomLog(), 'stethoscope'), btn('secondary small', 'I took a medicine', () => openMedicineLog(), 'pill'))));
 }
 
 function articleLinks(indicator) {
@@ -1130,7 +1475,7 @@ function openDoctor(a, kind, indicator = null) {
   const toText = to === 'doctor-onboard' ? 'the doctor on board' : 'the doctor on Earth';
   const area = h('textarea', { id: 'doc-text', 'aria-label': 'Message text' });
   area.value = summaryFor(a, kind, indicator) || 'Please look at my data.';
-  const status = to === 'doctor-earth' ? (ui.ship.linkToEarth ? 'The message is saved in the outbox and goes to the ground with the next downlink.' : 'There is no link to Earth: the message waits in the outbox and goes when the link is back.') : 'The message goes to the doctor on board.';
+  const status = to === 'doctor-earth' ? `${ui.ship.linkToEarth ? 'The message is saved in the outbox and goes to the ground with the next downlink.' : 'There is no link to Earth: the message waits in the outbox and goes when the link is back.'} ${profile().name}: ${profile().reply}.` : 'The message goes to the doctor on board.';
   openPanel(`Message ${toText}`, [h('p', {}, status), area, h('p', { class: 'note' }, 'The automation drafted this text from your data; you can change it.')], [
     btn('primary', 'Send', async () => {
       const event = { v: 1, kind: 'report', time: new Date().toISOString(), person: ui.person, state: { ...ui.ship }, report: { to, text: area.value.slice(0, 4000) } };
@@ -1193,6 +1538,37 @@ function silenceNow(list) {
   try { if (audio) { audio.close(); audio = null; } } catch { /* none */ }
 }
 
+// ---------- the Help key ----------
+// NASA-STD-3001 Vol 2 (10178): the crew can start the emergency response by hand. Holding the key for 2 s avoids a
+// press by accident; it records "I need help" through the same path as the camera question.
+const HELP_HOLD_MS = 2000;
+function setupHelpKey() {
+  const key = byId('help-btn');
+  let timer = 0;
+  let started = 0;
+  const bar = key.querySelector('.hold');
+  const reset = () => { clearTimeout(timer); timer = 0; key.classList.remove('holding'); if (bar) bar.style.width = '0'; };
+  const start = (e) => {
+    if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+    if (e.type === 'keydown') e.preventDefault();
+    if (timer || !ui.person || personById[ui.person].real) return;
+    started = Date.now();
+    key.classList.add('holding');
+    const step = () => { if (!timer) return; if (bar) bar.style.width = `${Math.min(100, ((Date.now() - started) / HELP_HOLD_MS) * 100)}%`; requestAnimationFrame(step); };
+    timer = setTimeout(async () => {
+      reset();
+      await addReading('camera', 'chest_grab_help', { source: { id: 'help-key', indicator: 'camera' } });
+      playLevel(LEVEL.URGENT, 'Help requested');
+      toast(`Help is called: the crew on board and the doctor ${ui.ship.doctorOnBoard ? 'on board' : ui.ship.linkToEarth ? 'on Earth' : 'when the link is back'}.`);
+      setScreen('alerts');
+    }, HELP_HOLD_MS);
+    requestAnimationFrame(step);
+  };
+  key.addEventListener('pointerdown', start);
+  key.addEventListener('keydown', start);
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel', 'keyup', 'blur']) key.addEventListener(ev, () => { if (timer) { reset(); toast('Hold the Help key for 2 seconds to call for help.'); } });
+}
+
 // ---------- camera: the team's question "Are you okay?" ----------
 const ASK_SECONDS = 20; // how long the question waits for an answer before the alarm (Claude's technical choice)
 let asking = null;
@@ -1230,6 +1606,7 @@ function askAreYouOk(person) {
   }
 }
 
+let camTimer = 0;
 async function toggleCamera() {
   const btn = byId('cam-toggle');
   if (camStop) { camStop(); camStop = null; render(); return; }
@@ -1253,6 +1630,9 @@ async function toggleCamera() {
     });
     btn.disabled = false;
     btn.textContent = 'Turn the camera off';
+    // Time-boxed by design: watching is a choice for a task (exercise, working alone), never in crew quarters.
+    clearTimeout(camTimer);
+    camTimer = setTimeout(() => { if (camStop) { camStop(); camStop = null; toast('The camera turned itself off after an hour. Turn it on again if you still want it.'); render(); } }, 60 * 60 * 1000);
     btn.className = 'btn secondary';
     renderBar();
   } catch (err) {
@@ -1283,7 +1663,7 @@ async function connectHeartRate() {
       if (live) live.textContent = `${hr.bpm} bpm`;
       if (Date.now() - hr.savedAt > 60 * 1000 && ui.person && !personById[ui.person].real) {
         hr.savedAt = Date.now();
-        addReading('pulse', hr.bpm, { source: { id: 'ble-heart-rate', indicator: 'pulse' } });
+        addReading('pulse', hr.bpm, { source: { id: 'ble-heart-rate', indicator: 'pulse' }, context: ui.exercising ? 'exercise' : null });
       }
     });
     device.addEventListener('gattserverdisconnected', () => { hr = { device: null, bpm: null, savedAt: 0 }; render(); });
@@ -1441,8 +1821,11 @@ function renderSetup() {
           btn('secondary small', 'Test', () => { playLevel(LEVEL.ACTION); setTimeout(() => playLevel(LEVEL.URGENT, 'This is a test.'), 4200); toast('Sound test: needs action, then urgent.'); }, 'volume-2')),
         h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Display'), h('small', {}, 'Dark suits a dim cabin; light suits a bright one.')),
           h('div', { class: 'seg small', role: 'group', 'aria-label': 'Display' }, ...THEMES.map(([k, label]) => h('button', { type: 'button', 'aria-pressed': String(pick === k), onclick: () => { setTheme(k); renderSetup(); } }, pick === k ? icon('check', { size: 14 }) : null, label))))),
+      h('section', { class: 'card' }, cornerTip('t:mission', 'the mission profile'), h('h2', {}, 'Mission'),
+        h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Where the crew is'), h('small', {}, `${profile().name}: signal delay ${profile().delay} one way; ${profile().evac}.`)),
+          h('div', { class: 'seg small', role: 'group', 'aria-label': 'Mission' }, ...[['iss', 'ISS'], ['moon', 'Moon'], ['mars', 'Mars']].map(([k, label]) => h('button', { type: 'button', 'aria-pressed': String(ui.profile === k), onclick: () => { ui.profile = k; savePrefs(); renderSetup(); renderBar(); } }, ui.profile === k ? icon('check', { size: 14 }) : null, label))))),
       h('section', { class: 'card' }, cornerTip('t:camera', 'the camera'), h('h2', {}, 'Camera'),
-        h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, camOn ? 'The camera is on' : 'The camera is off'), h('small', {}, 'It watches for a hand held to the chest and asks "Are you okay?" first. A sleeping person is ignored. Video never leaves this computer and is never stored.')),
+        h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, camOn ? 'The camera is on' : 'The camera is off'), h('small', {}, 'It watches for a hand held to the chest and asks "Are you okay?" first. A sleeping person is ignored. It never guesses feelings from your face or voice. It turns itself off after an hour; not for crew quarters. Video never leaves this computer and is never stored.')),
           h('button', { type: 'button', class: camOn ? 'btn secondary' : 'btn primary', id: 'cam-toggle', onclick: toggleCamera }, camOn ? 'Turn the camera off' : 'Turn the camera on')),
         h('div', { class: 'cam-wrap', id: 'cam-wrap', hidden: camOn ? null : true },
           h('div', { class: 'cam-view' }, h('video', { id: 'cam-video', playsinline: true, muted: true }), h('canvas', { id: 'cam-canvas', 'aria-hidden': 'true' }), h('span', { class: 'cam-on-tag' }, 'Camera on')),
@@ -1454,6 +1837,7 @@ function renderSetup() {
       h('section', { class: 'card' }, cornerTip('t:connections', 'connections'), h('h2', {}, 'Connections'),
         h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Bluetooth heart rate monitor'), h('small', { id: 'hr-live' }, hr.device ? `${hr.bpm ?? '…'} bpm` : 'Any chest strap or watch with the standard Bluetooth Heart Rate profile.')),
           btn('secondary small', hr.device ? 'Connected' : 'Connect', connectHeartRate, 'bluetooth', { disabled: p.real ? true : null, 'data-tip': 't:bluetooth' })),
+        switchRow('st-exercise', 'I am exercising', 'Heart rate from the strap is then recorded, not judged against the resting range, so a workout raises no alarm. Low limits still count.', Boolean(ui.exercising), (on) => { ui.exercising = on; }),
         h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'Export for the doctor'), h('small', {}, 'A file medical record systems can read (HL7 FHIR).')),
           btn('secondary small', 'Open', openFhir, 'file-json-2', { disabled: p.real ? true : null, 'data-tip': 't:fhir' })),
         h('div', { class: 'switch-row' }, h('span', { class: 'label' }, h('span', {}, 'NASA data'), h('small', {}, 'Real Inspiration4 blood tests from NASA OSDR.')),
@@ -1495,6 +1879,7 @@ function render() {
   const p = personById[ui.person];
   byId('checkin').hidden = Boolean(p.real);
   byId('keynums').hidden = Boolean(p.real);
+  if (p.real) byId('comingup').hidden = true;
   const names = { home: 'Today', measures: 'All measures', alerts: 'Messages', setup: 'Settings' };
   const detailName = ui.detail ? (String(ui.detail).startsWith('blood:') ? 'Blood test' : (cellBy[ui.detail] || {}).label) : '';
   byId('screen-name').textContent = ui.screen === 'detail' ? detailName : names[ui.screen];
@@ -1511,6 +1896,8 @@ function render() {
 
 // ---------- start ----------
 initTips(tipContent);
+setupHelpKey();
+byId('help-btn').dataset.tip = 't:help';
 byId('met').dataset.tip = 't:flightday';
 byId('clock').parentElement.dataset.tip = 't:gmt';
 byId('alerts-btn').dataset.tip = 't:messages';
@@ -1519,10 +1906,11 @@ byId('today-head-tip').replaceWith(tipButton('t:today', 'this message'));
 byId('keynums-tip').replaceWith(tipButton('t:keynums', 'key numbers'));
 byId('measures-tip').replaceWith(tipButton('t:measures', 'all measures'));
 byId('checkin-tip').replaceWith(tipButton('t:checkin', 'the daily check-in'));
+byId('comingup-tip').replaceWith(tipButton('t:comingup', 'what is coming up'));
 byId('who-btn').addEventListener('click', () => { if (camStop) { camStop(); camStop = null; } closePanel(); ui.person = null; render(); });
 byId('alerts-btn').addEventListener('click', () => setScreen('alerts'));
 byId('ci-send').addEventListener('click', sendCheckin);
-byId('ci-cancel').addEventListener('click', () => { ui.checkinOpen = false; ui.checkin = { mood: null, attitude: null, sleepQuality: null }; renderHome(); });
+byId('ci-cancel').addEventListener('click', () => { ui.checkinOpen = false; ui.checkin = { mood: null, attitude: null, sleepQuality: null, weighing: [] }; renderHome(); });
 byId('see-all').addEventListener('click', () => setScreen('measures'));
 byId('find-icon').replaceWith(icon('search', { size: 20 }));
 byId('find-clear').append(icon('x', { size: 18 }));

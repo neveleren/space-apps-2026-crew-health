@@ -14,6 +14,9 @@
 // - Daily self-reports about the psyche are recorded; the AI reviews them periodically
 //   (for example every two weeks) and warns the person if their spirit is dropping.
 // Anything the team has not decided yet is returned as an open question, never guessed.
+// One exception, drafted by Claude after NASA-style reviews (15 Nov 2026) and marked as a draft for the team:
+// a reading past a published red limit (config.js, "red") goes to the crew on board at once by automation,
+// without the AI, and the doctor's message is queued when there is no link. "Undecided" is never the answer there.
 
 export const KIND = Object.freeze({
   NUMBER: 'number',
@@ -38,6 +41,9 @@ export const DEST = Object.freeze({
   AI: 'ai',
   DOCTOR_ONBOARD: 'doctor-onboard',
   DOCTOR_EARTH: 'doctor-earth',
+  // The automation alerts the person and the crew on board (the crew medical officer), and calls the doctor or
+  // queues the doctor's message (store-and-forward) when there is no link. Draft, for the team to confirm.
+  CREW_ALARM: 'crew-alarm',
   UNDECIDED: 'undecided', // the team has not decided yet who takes it
 });
 
@@ -120,6 +126,26 @@ export function checkNorm(cell, value, profile) {
   return { valid: false };
 }
 
+// The most severe red limit a reading is past, or null (config.js, "red": published single values, drafts).
+// One reading is enough: no streak. A limit marked atRest is skipped for a reading taken during exercise.
+const RED_RANK = { action: 1, urgent: 2 };
+export function redLimitOf(cell, value, reading = null) {
+  const limits = cell && Array.isArray(cell.red) ? cell.red : [];
+  const exercising = Boolean(reading && reading.context === 'exercise');
+  let hit = null;
+  for (const lim of limits) {
+    if (lim.atRest && exercising) continue;
+    const v = toNum(lim.part ? (value ? value[lim.part] : undefined) : value);
+    if (!Number.isFinite(v)) continue;
+    const past = lim.when === 'below' ? v < lim.value
+      : lim.when === 'atOrBelow' ? v <= lim.value
+        : lim.when === 'above' ? v > lim.value
+          : lim.when === 'atOrAbove' ? v >= lim.value : false;
+    if (past && (!hit || RED_RANK[lim.level] > RED_RANK[hit.level])) hit = lim;
+  }
+  return hit;
+}
+
 // Checks each value of a panel against its own range. Values or ranges that are not numbers are skipped.
 export function checkPanel(value) {
   const analytes = value && Array.isArray(value.analytes) ? value.analytes : [];
@@ -167,7 +193,8 @@ export function createMachine({ cells, crew = [], state = {}, now = () => new Da
   const timeOf = (t) => { const d = t ? new Date(t) : null; return d && Number.isFinite(d.getTime()) ? d : now(); };
 
   // The camera path, in the team's words: the automation calls the doctor on Earth
-  // if there is no doctor on board. No doctor and no link is an open question.
+  // if there is no doctor on board. No doctor and no link was an open question; the draft default now is the
+  // crew on board, with the doctor's message queued until the link returns (for the team to confirm).
   function callDoctor(steps) {
     if (s.doctorOnBoard) {
       steps.push({ code: 'to-doctor-onboard', by: 'doctor' });
@@ -177,8 +204,37 @@ export function createMachine({ cells, crew = [], state = {}, now = () => new Da
       steps.push({ code: 'to-doctor-earth', by: 'doctor' });
       return DEST.DOCTOR_EARTH;
     }
-    steps.push({ code: 'no-doctor-open', by: 'open', question: OPEN_QUESTION.NO_DOCTOR_NO_LINK });
-    return DEST.UNDECIDED;
+    steps.push({ code: 'no-doctor-crew', by: 'machine', question: OPEN_QUESTION.NO_DOCTOR_NO_LINK, draft: true });
+    steps.push({ code: 'alarm-crew', by: 'machine', level: 'urgent' });
+    steps.push({ code: 'doctor-queued', by: 'machine' });
+    return DEST.CREW_ALARM;
+  }
+
+  // Past a red limit, by automation alone (never the AI): the person and the crew on board are alerted, then the
+  // doctor: on board, on Earth over the link, or a queued message when there is no link (store-and-forward).
+  // Why the crew first: NASA requires means of autonomous medical care (NASA-STD-3001 Vol 1 Rev C [V1 3004],
+  // https://www.nasa.gov/wp-content/uploads/2023/11/nasa-std-3001-vol-1-rev-c-with-signature.pdf), and in the ISS
+  // medical event of January 2026 crewmates gave the first, immediate help
+  // (https://www.nasa.gov/blogs/commercialcrew/2026/02/25/nasas-spacex-crew-11-astronaut-update/).
+  function crewAlarm(steps, level) {
+    steps.push({ code: 'alarm-person', by: 'machine', level });
+    steps.push({ code: level === 'urgent' ? 'alarm-crew' : 'alarm-cmo', by: 'machine', level });
+    if (s.doctorOnBoard) steps.push({ code: 'to-doctor-onboard', by: 'doctor' });
+    else if (s.linkToEarth) steps.push({ code: 'to-doctor-earth', by: 'doctor' });
+    else steps.push({ code: 'doctor-queued', by: 'machine' });
+    return DEST.CREW_ALARM;
+  }
+
+  // A cabin value past the ship's own limit is the ship's alarm: every crew screen shows it at the ship's level,
+  // and the ship's procedures lead (NASA-STD-3001 Vol 2 Rev F [V2 6022] and Table 10.3-1,
+  // https://standards.nasa.gov/system/files/tmp/NASA-STD-3001%20Vol%202%20Rev%20F.pdf). No doctor is called for the air.
+  function redAlarm(steps, red, cell) {
+    steps.push({ code: 'red-limit', by: 'machine', level: red.level, limit: red, question: OPEN_QUESTION.DIRECT_ALARM, draft: true });
+    if (cell.section === 'env') {
+      steps.push({ code: 'ship-alarm', by: 'machine', level: red.level });
+      return DEST.CREW_ALARM;
+    }
+    return crewAlarm(steps, red.level);
   }
 
   // Outside the norm, in the team's words: the AI is triggered and takes over.
@@ -223,6 +279,7 @@ export function createMachine({ cells, crew = [], state = {}, now = () => new Da
     const cell = byIndicator.get(reading.indicator);
     let status;
     let dest;
+    let red = null;
 
     if (!cell) {
       steps.push({ code: 'no-cell', by: 'machine' });
@@ -235,8 +292,15 @@ export function createMachine({ cells, crew = [], state = {}, now = () => new Da
         status = STATUS.UNKNOWN;
         dest = DEST.UNDECIDED;
       } else {
+        // Red limits lie outside the norm, so only a reading outside the norm is checked against them.
+        red = r.inNorm === false ? redLimitOf(cell, reading.value, reading) : null;
         if (r.inNorm === null) {
           steps.push({ code: 'no-norm-recorded', by: 'machine' });
+          status = STATUS.RECORDED;
+          dest = DEST.NONE;
+        } else if (cell.atRest && reading.context === 'exercise' && !red) {
+          // A norm for rest says nothing about a reading taken during exercise: it is recorded, not judged (draft).
+          steps.push({ code: 'exercise-recorded', by: 'machine' });
           status = STATUS.RECORDED;
           dest = DEST.NONE;
         } else {
@@ -249,7 +313,7 @@ export function createMachine({ cells, crew = [], state = {}, now = () => new Da
         } else {
           steps.push({ code: 'out-of-norm', by: 'machine', side: r.side, percent: r.percent });
           status = STATUS.OUT;
-          dest = outOfNorm(steps);
+          dest = red ? redAlarm(steps, red, cell) : outOfNorm(steps);
         }
         }
         // In the team's words, hours of sleep are part of the daily report the AI reviews later.
@@ -340,7 +404,8 @@ export function createMachine({ cells, crew = [], state = {}, now = () => new Da
       const last = steps.find((x) => x.code === 'in-norm' || x.code === 'out-of-norm');
       const list = history.get(k);
       // The source is kept, so the screen can say where each value came from (a device, a person, made-up example data).
-      list.push({ time, value: reading.value, status, side: last ? last.side || null : null, percent: last ? last.percent : undefined, source: reading.source || null, example: Boolean(reading.example) });
+      // The red limit it crossed (or null) and the context (for example 'exercise') are kept for the screen and the levels.
+      list.push({ time, value: reading.value, status, side: last ? last.side || null : null, percent: last ? last.percent : undefined, source: reading.source || null, example: Boolean(reading.example), red, context: reading.context || null });
       list.sort((a, b) => a.time - b.time);
     }
     return entry(reading, cell, status, dest, steps, person.id, time);

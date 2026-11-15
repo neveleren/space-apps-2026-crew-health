@@ -172,7 +172,13 @@ async function getEvents(req, res, query) {
   const scope = scopeOf(query);
   if (!scope) return json(res, 400, { error: 'say whose events: ?person=<id>, or ?all=1 for the technical view' });
   const ids = scope.all ? await peopleWithFiles() : [...new Set([scope.person, SHIP.id])];
-  json(res, 200, await readEvents(ids), req.method === 'HEAD');
+  let events = await readEvents(ids);
+  // Crew alarms reach every crewmate: only the alarm line, never the rest of the other person's record.
+  if (!scope.all) {
+    const others = (await peopleWithFiles()).filter((id) => !ids.includes(id));
+    events = [...events, ...(await readEvents(others)).filter((e) => e.kind === 'alarm')].sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
+  }
+  json(res, 200, events, req.method === 'HEAD');
 }
 
 async function postEvent(req, res) {

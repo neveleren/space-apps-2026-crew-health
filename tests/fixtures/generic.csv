@@ -1,0 +1,5 @@
+measured_at,heart,comment
+2026-11-14T06:00:00Z,64,"morning, before coffee"
+2026-11-14T18:00:00Z,71,evening
+2026-11-15T06:00:00Z,300,"a typo: ""300"""
+2026-11-15T07:00:00Z,,missing

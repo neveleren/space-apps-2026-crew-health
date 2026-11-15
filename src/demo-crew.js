@@ -28,6 +28,7 @@
 // Menstrual cycle (made up): Elly does not suppress her periods in this example, as cosmonaut Anna Kikina did not
 // during 157 days in flight, when her cycles stayed of normal length (npj Microgravity, 2024). Many astronauts
 // do suppress them; that choice is the person's and the flight surgeon's.
+import { CELLS } from './config.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -162,5 +163,101 @@ export function exampleFlight(crew, stories = STORY) {
     push('ship', 'pressure-sensor', 'cabinPressure', round(101.3 + (rs() - 0.5) * 0.4, 1), ms);
     if (d > 0 && d % 30 === 0) push('ship', 'acoustic-monitor', 'noise', round(61 + (rs() - 0.5) * 6), ms + 60 * 60 * 1000);
   }
+  // The logs added after the NASA panel reviews come from their own random streams (below), so nothing above changes.
+  events.push(...exampleLogs(crew));
   return events.sort((a, b) => new Date(a.time) - new Date(b.time));
+}
+
+// ----- Example logs for the cells added after the two NASA panel reviews (15 Nov 2026). MADE UP by Claude, like
+// everything above. Each person has a random stream of their own here, so the stories above stay exactly as they
+// were. The shapes follow these sources:
+// - blood oxygen once a week: the ISS medical kit holds a pulse oximeter (NASA's kit list of 9 Apr 2015,
+//   https://www.governmentattic.org/19docs/NASA-ISSmedicalEmergManual_2016.pdf); healthy readings are 95 to 100%
+//   (MedlinePlus); here 96 to 99%;
+// - a thinking test once a month, like NASA's WinSCAT, compared with the person's own pre-flight result
+//   (NASA JSC, 2018: https://ntrs.nasa.gov/api/citations/20180003970/downloads/20180003970.pdf);
+// - exercise: the ISS schedules 2.5 hours a day, 6 days a week, about 1 hour 15 minutes of it exercise itself
+//   (NASA HRP evidence report, 2023); here one rest day a week, with no reading. Elly exercises little, and less
+//   as the flight goes on: the made-up story behind her falling endurance above;
+// - symptoms in the first days of flight: space motion sickness in up to 73% of crew (first 2 to 3 days),
+//   headaches in up to 90% (first few days), back pain in 52% (first 2 to 5 days), and a stuffy nose from the fluid
+//   shift (NASA OCHMO-MTB-004 Rev A, 2025). One later headache falls on a day of higher cabin CO2 (the ship's CO2
+//   above rises every 37th day; Law et al., 2014: the odds of a reported headache doubled per 1 mmHg);
+// - medicines from the kit list for those symptoms (NASA names promethazine its treatment of choice for motion
+//   sickness, OCHMO-MTB-004). Member 4, who sleeps less and less, takes a sleep aid now and then, more often late in
+//   the flight (75% of the ISS crew who answered reported using sleep medication: Barger et al., 2014);
+// - the eyes: a self-check once a month (this app's draft); OCT scans before flight, on flight day 30 and 90 and
+//   30 days before return (NASA, 2018), with thickness changes below NASA's 20-micron earliest indication of SANS
+//   (Brunstetter et al., 2023), so no example person shows it.
+//
+// symptoms: [flight day, hour of that day, symptom, 0 to 10, note]; medicines: [flight day, hour, kit key, tablets].
+// exercise: minutes on the first and on the last flight day, a straight line in between. oct: the thickness change
+// in microns on flight day 30, flight day 90 and 30 days before return.
+export const LOG_STORY = {
+  'crew-1': { seed: 1101, spo2: 98, exercise: [90, 90], oct: [5, 7, 8],
+    symptoms: [[0, 4, 'stuffyNose', 3], [0, 5, 'headache', 4], [1, 3, 'headache', 3], [2, 3, 'backPain', 3], [61, 13, 'skin', 2, 'dry skin on the hands']],
+    medicines: [[0, 5.5, 'pseudoephedrine', 1], [1, 3.5, 'acetaminophen', 2]] },
+  'crew-2': { seed: 1123, spo2: 98, exercise: [55, 35], oct: [3, 6, 7],
+    symptoms: [[0, 3, 'nausea', 5], [0, 4, 'stuffyNose', 4], [1, 3, 'nausea', 3], [1, 6, 'backPain', 5], [2, 3, 'backPain', 4], [4, 3, 'backPain', 2]],
+    medicines: [[0, 3.5, 'promethazine', 1], [1, 6.5, 'ibuprofen', 1]] },
+  'crew-3': { seed: 1137, spo2: 97, exercise: [85, 85], oct: [8, 12, 14],
+    symptoms: [[0, 4, 'headache', 5], [0, 4.5, 'stuffyNose', 3], [1, 3, 'headache', 3], [3, 3, 'stuffyNose', 2], [74, 13, 'headache', 3]],
+    medicines: [[0, 5, 'acetaminophen', 2], [74, 13.5, 'acetaminophen', 2]] },
+  'crew-4': { seed: 1141, spo2: 98, exercise: [80, 80], oct: [4, 5, 7], sleepAid: { from: 0.04, to: 0.3 },
+    symptoms: [[0, 3, 'nausea', 4], [1, 3, 'headache', 4], [1, 4, 'stuffyNose', 3], [2, 3, 'backPain', 3], [125, 3, 'sleep', 4], [141, 3, 'sleep', 5], [153, 3, 'sleep', 5], [160, 3, 'sleep', 6]],
+    medicines: [[0, 3.5, 'meclizine', 1], [2, 3.5, 'ibuprofen', 1]] },
+};
+
+const KIT = (CELLS.find((c) => c.indicator === 'medicines') || { kit: [] }).kit;
+// A medicine as the medicine log keeps it: what it was, its strength, how many tablets.
+function kitDose(key, amount) {
+  const k = KIT.find((x) => x.key === key);
+  return { medicine: k.key, name: k.name, strength: k.strength, amount, unit: k.unit };
+}
+
+// Builds the example logs of the given crew, up to MISSION.today. exampleFlight() adds them to the flight.
+export function exampleLogs(crew, stories = LOG_STORY) {
+  const events = [];
+  const launch = new Date(MISSION.launch).getTime();
+  const today = new Date(MISSION.today).getTime();
+  const flightDays = Math.floor((today - launch) / DAY);
+  const r30 = Math.floor((new Date(MISSION.landing).getTime() - 30 * DAY - launch) / DAY);
+  const push = (person, source, indicator, value, ms) => {
+    if (ms <= today) events.push({ v: 1, kind: 'reading', example: true, time: at(ms), person, state, reading: { source, indicator, value } });
+  };
+  for (const p of crew) {
+    const s = stories[p.id];
+    if (!s) continue;
+    const r = rng(s.seed);
+    const noise = (size) => (r() - 0.5) * 2 * size;
+    const dayAt = (d, hours) => launch + d * DAY + hours * HOUR;
+    const spo2 = () => Math.min(99, Math.max(96, round(s.spo2 + noise(1.4))));
+
+    // Before flight: blood oxygen at the three check-ups, and the baseline OCT scan.
+    for (const daysBefore of [90, 45, 10]) push(p.id, 'oximeter', 'spo2', spo2(), launch - daysBefore * DAY + 3 * HOUR + 10 * 60 * 1000);
+    push(p.id, 'oct-scanner', 'octScan', 'scan', launch - 45 * DAY + 5 * HOUR);
+
+    for (let d = 0; d <= flightDays; d += 1) {
+      if (d % 7 === 3) push(p.id, 'oximeter', 'spo2', spo2(), dayAt(d, 2.2));
+      // A rest day leaves nothing in the devices' logs, so it has no reading.
+      if (d >= 1 && d % 7 !== 0) {
+        const planned = s.exercise[0] + (s.exercise[1] - s.exercise[0]) * (d / flightDays);
+        push(p.id, 'exercise-log', 'exercise', Math.max(15, round(planned + noise(8))), dayAt(d, 15));
+      }
+      if (d % 30 === 10) push(p.id, 'cognition-test', 'cognition', 'same as before flight', dayAt(d, 5.5));
+      if (d % 30 === 20) push(p.id, 'eye-self-check', 'visionCheck', 'no change', dayAt(d, 13));
+      if (s.sleepAid && d >= 1 && r() < s.sleepAid.from + (s.sleepAid.to - s.sleepAid.from) * (d / flightDays)) {
+        const late = d > flightDays * 0.75 && r() < 0.3;
+        push(p.id, 'medicine-log', 'medicines', late ? kitDose('zolpidem', 0.5) : kitDose('melatonin', 1), dayAt(d, 20));
+      }
+    }
+    // OCT on flight day 30, flight day 90 and 30 days before return; the thickness change comes back a day later.
+    [30, 90, r30].forEach((d, i) => {
+      push(p.id, 'oct-scanner', 'octScan', 'scan', dayAt(d, 6.5));
+      push(p.id, 'oct-result', 'octChange', s.oct[i], dayAt(d + 1, 4));
+    });
+    for (const [d, hours, symptom, severity, note] of s.symptoms) push(p.id, 'symptom-log', 'symptoms', note ? { symptom, severity, note } : { symptom, severity }, dayAt(d, hours));
+    for (const [d, hours, key, amount] of s.medicines) push(p.id, 'medicine-log', 'medicines', kitDose(key, amount), dayAt(d, hours));
+  }
+  return events;
 }

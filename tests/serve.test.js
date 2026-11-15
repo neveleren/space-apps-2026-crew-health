@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  LIMITS, SECURITY_RULES, allowedHosts, cleanEvent, contentSecurityPolicy, eventProblem, hostName, isJson, isPrivatePath, recordProblem, sameOrigin, siteAllowed,
+  LIMITS, SECURITY_RULES, allowedHosts, cleanEvent, contentSecurityPolicy, eventProblem, hostName, isJson, isPrivatePath, sameOrigin, siteAllowed,
 } from '../src/security.js';
 import { CREW, SOURCES } from '../src/config.js';
 import { exampleFlight } from '../src/demo-crew.js';
@@ -137,7 +137,7 @@ test('the server refuses anything that is not a valid event', async () => {
       report('crew-1', 'hello', minutes(-1), 'everyone'),
       report('crew-1', 'x'.repeat(LIMITS.reportChars + 1)),
       { ...report('crew-1', 'hi'), report: { to: 'doctor-earth', text: 'hi', cc: 'all' } },
-      { ...report('crew-1', 'hi'), report: { to: 'doctor-earth', text: 'hi', topic: 'gossip' } },
+      { ...report('crew-1', 'hi'), report: { to: 'doctor-earth', text: 'hi', topic: 'Not An Id' } },
       { ...ok, reading: { ...ok.reading, context: 'party' } },
       { ...ok, reading: { ...ok.reading, context: 5 } },
       event('crew-1', { mood: 'good' }, minutes(-1), 'mood', 'mood-report'), // mood is a word, not a record
@@ -208,15 +208,26 @@ test('everything the program itself makes passes the check: every preset of the 
   }
 });
 
-test('a self-logged entry is a few named fields, as the symptom and medicine logs write them', () => {
-  assert.equal(recordProblem({ symptom: 'headache', severity: 4 }), null);
-  assert.equal(recordProblem({ symptom: 'other', severity: 0, note: 'itchy eyes' }), null);
-  assert.equal(recordProblem({ medicine: 'melatonin', name: 'Melatonin', strength: '3 mg', amount: 0.5, unit: 'tablet', takenAt: '2026-11-15T08:00:00.000Z' }), null);
-  const tooMany = Object.fromEntries(Array.from({ length: LIMITS.recordFields + 1 }, (_, i) => [`f${i}`, i]));
-  for (const bad of [null, [], 'headache', 4, {}, { symptom: { nested: true } }, { symptom: ['headache'] }, { symptom: null }, { severity: Infinity },
-    { note: 'x'.repeat(LIMITS.textChars + 1) }, JSON.parse('{"__proto__": 1}'), { 'bad key': 1 }, tooMany]) {
-    assert.ok(recordProblem(bad), JSON.stringify(bad));
-  }
+// The crew screen names what a message is: the conference summary, the letter to the psychologist and the
+// "Talk to a person now" call request. Each must be queued, or the person is told it is in the outbox when it is not.
+test('every kind of message the crew screen sends is queued: conference summary, letter, call request', async () => {
+  await withServer(async (srv, dir) => {
+    for (const [topic, text] of [['pmc', 'x'.repeat(5500)], ['letter-to-psychologist', 'Private letter for my psychologist.'], ['talk-request', 'Please call me as soon as you can.']]) {
+      const m = report('crew-1', text);
+      m.report.topic = topic;
+      const r = await postJson(srv, m);
+      assert.equal(r.status, 201, topic);
+      assert.equal(JSON.parse(r.text).outbox.status, 'queued', topic);
+    }
+    assert.equal((await filesIn(join(dir, 'outbox'))).length, 3);
+    const topics = (await getJson(srv, '/api/events?person=crew-1')).value.map((e) => e.report.topic);
+    assert.deepEqual(topics.sort(), ['letter-to-psychologist', 'pmc', 'talk-request']);
+    for (const topic of ['Gossip!', 5, '', 'x'.repeat(40)]) {
+      const m = report('crew-1', 'hi');
+      m.report.topic = topic;
+      assert.equal((await postJson(srv, m)).status, 400, String(topic));
+    }
+  });
 });
 
 test('a data folder inside the app folder under another name is never served either (DATA_DIR)', async () => {
@@ -476,6 +487,39 @@ test('private names, origins, fetch metadata and content types', () => {
   assert.equal(isJson('application/json'), true);
   assert.equal(isJson('Application/JSON; charset=utf-8'), true);
   for (const t of [undefined, '', 'text/plain', 'application/jsonx', 'application/x-www-form-urlencoded', 'text/plain; application/json']) assert.equal(isJson(t), false, String(t));
+});
+
+test('crew alarms reach every crewmate, without the rest of the record', async () => {
+  await withServer(async (srv) => {
+    const t = minutes(-10);
+    assert.equal((await postJson(srv, event('crew-2', 75, t))).status, 204);
+    assert.equal((await postJson(srv, { v: 1, kind: 'alarm', time: t, person: 'crew-2', alarm: { text: 'Elly needs help now: Oxygen saturation 85 %.' } })).status, 204);
+    const got = (await getJson(srv, '/api/events?person=crew-1')).value;
+    assert.deepEqual(got.map((e) => `${e.person}:${e.kind}`), ['crew-2:alarm'], 'only the alarm line of crew-2');
+    assert.equal((await postJson(srv, { v: 1, kind: 'alarm', time: t, person: 'crew-2', alarm: { text: 'x', extra: 1 } })).status, 400);
+    assert.equal((await postJson(srv, { v: 1, kind: 'alarm', time: t, person: 'crew-2', alarm: { text: 'x'.repeat(201) } })).status, 400);
+  });
+});
+
+test('the new answers are kept in their checked shapes, and nothing else', () => {
+  const now = Date.parse('2026-11-15T12:00:00.000Z');
+  const t = '2026-11-15T11:00:00.000Z';
+  const rd = (indicator, value, extra = {}) => ({ v: 1, kind: 'reading', time: t, person: 'crew-1', reading: { source: 'x', indicator, value, ...extra } });
+  assert.equal(eventProblem(rd('weighing', ['home', 'crew']), { now }), null);
+  assert.match(eventProblem(rd('weighing', ['home', 'home']), { now }), /topics/);
+  assert.match(eventProblem(rd('weighing', ['party']), { now }), /topics/);
+  assert.equal(eventProblem(rd('symptoms', { symptom: 'headache', severity: 4 }), { now }), null);
+  assert.match(eventProblem(rd('symptoms', { symptom: 'headache', severity: 11 }), { now }), /symptom/);
+  assert.equal(eventProblem(rd('medicines', { medicine: 'ibuprofen', amount: 1 }), { now }), null);
+  assert.match(eventProblem(rd('medicines', { medicine: 'unknown', amount: 1 }), { now }), /medicine/);
+  assert.deepEqual(cleanEvent(rd('symptoms', { symptom: 'headache', severity: 4, junk: 'x'.repeat(50) })).reading.value, { symptom: 'headache', severity: 4 });
+  assert.equal(eventProblem(rd('pulse', 150, { context: 'exercise' }), { now }), null);
+  assert.match(eventProblem(rd('pulse', 150, { context: 'sleep' }), { now }), /exercise/);
+  const detail = { median: 301, lapses: 1, falseStarts: 0, count: 60, durationS: 180, mode: 'full', score: 98 };
+  assert.equal(eventProblem(rd('cognition', 301, { detail }), { now }), null);
+  assert.match(eventProblem(rd('cognition', 301, { detail: { ...detail, trials: [] } }), { now }), /reaction test/);
+  assert.match(eventProblem(rd('pulse', 70, { detail }), { now }), /reaction test/);
+  assert.deepEqual(cleanEvent(rd('cognition', 301, { detail })).reading.detail, detail);
 });
 
 test('the event check and the stored copy', () => {

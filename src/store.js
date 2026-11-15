@@ -28,7 +28,8 @@ const at = (path) => new URL(path, location.href).href;
 export async function openStore({ person = null } = {}) {
   if (person !== null && (typeof person !== 'string' || !PERSON_ID.test(person))) throw new TypeError('person must be an id such as crew-1');
   const scope = person ? { person } : { all: true };
-  const inScope = (e) => Boolean(scope.all || (e && (e.person === scope.person || e.person === SHIP_ID)));
+  // A crewmate's alarm line is for everyone; the rest of their record is not.
+  const inScope = (e) => Boolean(scope.all || (e && (e.person === scope.person || e.person === SHIP_ID || e.kind === 'alarm')));
   try {
     if (!ownServer()) throw new Error('no server on a static copy');
     const query = scope.all ? 'all=1' : `person=${encodeURIComponent(person)}`;

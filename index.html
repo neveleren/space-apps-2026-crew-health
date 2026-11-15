@@ -59,6 +59,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 a { color: var(--link); text-underline-offset: 3px; }
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .muted { color: var(--muted); }
 .icon { flex: none; }
 .lvc1 { color: var(--lv1); } .lvc2 { color: var(--lv2); } .lvc3 { color: var(--lv3); } .lvc-stale { color: var(--stale); } .lvc-off { color: var(--off); }
@@ -84,6 +85,11 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .annunciator.lv3 { color: var(--on-lv3); border-color: var(--lv3-stripe); background: var(--lv3-stripe); }
 .annunciator.lv1 b, .annunciator.lv2 b, .annunciator.lv3 b { color: inherit; }
 .who { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px 0 4px; border-radius: 20px; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer; white-space: nowrap; }
+.help-key { position: relative; overflow: hidden; display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px; border-radius: 6px; border: 2px solid var(--lv3-stripe); background: transparent; color: var(--lv3); font-weight: 700; cursor: pointer; user-select: none; touch-action: none; }
+.help-key b { position: relative; }
+.help-key svg { position: relative; }
+.help-key .hold { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--lv3-fill); }
+.help-key.holding { color: var(--ink); }
 .who .avatar { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--cmd-soft); color: var(--link); font-family: var(--font-mono); font-size: 15px; font-weight: 600; }
 .who b { font-weight: 600; font-size: 16px; }
 
@@ -249,6 +255,28 @@ h1 .tip-btn, h2 .tip-btn, p .tip-btn { width: 30px; height: 30px; margin-left: 2
 .needs .link { min-height: 32px; }
 .link.ink { color: var(--ink); text-decoration-color: var(--axis); }
 .empty-find { margin: 0; color: var(--muted); }
+.ci-extra { border-top: 1px solid var(--line); padding-top: 12px; }
+.answers { display: grid; gap: 8px; }
+.answers button { text-align: left; justify-content: flex-start; }
+.amsler { width: 180px; height: 180px; background: #FFFFFF; border: 1px solid var(--line); border-radius: 4px; }
+.tool-list { display: grid; gap: 10px; }
+.tool-list .btn { justify-content: flex-start; text-align: left; }
+.mind-log li { display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: space-between; }
+.crew-banner { background: var(--lv3-fill); border-bottom: 2px solid var(--lv3-stripe); padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.crew-banner p { max-width: 928px; margin: 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; color: var(--ink); }
+.crew-banner .icon { color: var(--lv3); }
+.support { display: grid; gap: 14px; }
+.support textarea { min-height: 110px; width: 100%; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--axis); background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 16px; font-weight: 400; }
+.support .chips .topic { cursor: pointer; min-height: 40px; }
+.support .chips .topic:hover { border-color: var(--cmd-edge); }
+.coping, .privacy-card, .help-now { display: grid; gap: 8px; padding: 14px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); }
+.help-now { border-color: var(--lv3-stripe); }
+.ai-badge { display: inline-flex; align-items: center; gap: 6px; justify-self: start; padding: 2px 10px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); font-size: 15px; font-weight: 600; }
+.due { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.due li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+.due li .btn { margin-left: 8px; min-height: 34px; padding: 0 12px; font-size: 15px; }
+.due li .icon { align-self: center; color: var(--muted); }
+.due .when { font-family: var(--font-mono); color: var(--muted); white-space: nowrap; }
 .log-form { display: flex; flex-wrap: wrap; align-items: end; gap: 12px 16px; }
 .log-field { display: grid; gap: 4px; font-weight: 600; }
 .log-field input { width: 11em; min-height: 44px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--axis); background: var(--bg); color: var(--ink); font-family: var(--font-mono); font-size: 18px; }
@@ -269,6 +297,8 @@ label.btn input[type=file] { display: none; }
 .now-value { display: flex; align-items: baseline; gap: 8px; font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .now-value b { font-size: 44px; font-weight: 500; line-height: 1; }
 .now-value .u { font-family: var(--font-body); color: var(--muted); font-size: 17px; }
+.now-value.words { grid-column: 1 / -1; white-space: normal; font-family: var(--font-body); }
+.now-value.words b { font-size: 24px; font-weight: 600; line-height: 1.3; }
 .now-text { display: grid; gap: 4px; }
 .now-text .verdict { font-size: 18px; font-weight: 600; }
 .now-text .meta { font-size: 15px; color: var(--muted); }
@@ -443,7 +473,10 @@ dialog p { margin: 0; }
   .annunciator { order: 2; margin-left: auto; }
   .ann-word { display: none; }
   .who { order: 3; }
-  .clockblock { order: 4; width: 100%; margin-left: 0; font-size: 14px; }
+  .help-key { order: 5; padding: 0 10px; }
+
+  .clockblock { order: 4; flex: 1 1 auto; margin-left: 0; font-size: 14px; }
+  .tag-long { display: none; }
   .tag { min-height: 28px; padding: 0 8px; font-size: 13px; }
   .brand span { display: none; }
   .who b { display: none; }
@@ -455,6 +488,7 @@ dialog p { margin: 0; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
+<link rel="stylesheet" href="./support.css">
 <script>
   // The display choice is applied before anything is drawn: dark (default), light, or follow the device.
   try { const pick = localStorage.getItem('jff-theme') || 'dark'; if (pick === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', pick); } catch { /* storage blocked: dark */ }
@@ -470,9 +504,11 @@ dialog p { margin: 0; }
     <span class="sl-tags" id="sys-summary"></span>
     <button type="button" class="annunciator" id="alerts-btn" hidden></button>
     <button type="button" class="who" id="who-btn" hidden><span class="avatar" id="who-avatar"></span><b id="who-name"></b></button>
+    <button type="button" class="help-key" id="help-btn" hidden aria-label="Help: hold for 2 seconds to call for help"><span class="hold" aria-hidden="true"></span><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/><path d="M12 8v8M8 12h8"/></svg><b>Help</b></button>
   </div>
 </header>
 <nav class="keys" id="tabs" hidden aria-label="Screens"><div class="keys-in" id="tabs-in"></div></nav>
+<div class="crew-banner" id="crew-banner" role="alert" hidden></div>
 
 <main class="main" id="main">
   <section id="view-login" class="login" aria-labelledby="login-title">
@@ -510,9 +546,16 @@ dialog p { margin: 0; }
           <div class="q"><div class="q-label">Mood</div><div class="seg" id="ci-mood" role="group" aria-label="Mood"></div></div>
           <div class="q"><div class="q-label">Energy</div><div class="seg" id="ci-attitude" role="group" aria-label="Energy"></div></div>
           <div class="q"><div class="q-label">Last night's sleep <span>1 bad, 7 great</span></div><div class="seg" id="ci-sleep" role="group" aria-label="Sleep rating"></div></div>
+          <div id="ci-topics"></div>
           <div class="actions"><button type="button" class="btn primary" id="ci-send">Save my check-in</button><button type="button" class="link" id="ci-cancel">Not now</button></div>
           <p class="note">Your answers build up for a planned review, for example every two weeks. One bad day never raises an alarm.</p>
         </div>
+        <div class="actions ci-extra" id="ci-extra"></div>
+      </section>
+
+      <section class="card" id="comingup" aria-labelledby="comingup-title" hidden>
+        <div class="checkin-row"><p><b id="comingup-title">Coming up</b> <span id="comingup-tip"></span></p><span class="note" id="comingup-note"></span></div>
+        <ul class="due" id="comingup-list"></ul>
       </section>
 
       <section class="group" id="keynums" aria-labelledby="keynums-title">

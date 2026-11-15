@@ -2,8 +2,19 @@
 // Plain English, one idea per line. Written by Claude (Anthropic), an AI system, at the team's request.
 
 export const TIPS = {
+  aisession: { title: 'Anonymous session with AI support', lines: ['A private talk with an AI program on this laptop: not a person and not a psychologist. Nothing you write is saved or sent.', 'Help now, coping steps and your plan work with the AI off. No AI model is connected in this version.'] },
+  helpnow: { title: 'Help now', lines: ['Fixed steps, not AI: tell a crewmate, ask the ground for a private medical conference, use your plan for hard days.', 'Shown by simple word rules even when the AI is off. Nothing is sent by itself.'] },
+  noemotion: { title: 'No emotion reading', lines: ['The camera only looks for physical events: a hand held on the chest, sleep.', 'It never guesses feelings from a face or a voice (the EU AI Act bans emotion reading at work since February 2025).'] },
+  pmc: { title: 'Prepare', lines: ['Opens a summary of your last 7 days for the weekly private medical conference: your numbers, check-ins and what the program flagged.', 'You edit it and decide whether to send it.'] },
+  symptomlog: { title: 'Log a symptom', lines: ['Most problems in flight are symptoms, not numbers: a stuffy nose, back pain, motion sickness, trouble sleeping, headache (NASA, 2017).', 'Pick one and how bad it is, in about ten seconds. Private: nothing is sent unless you choose.'] },
+  medicinelog: { title: 'I took a medicine', lines: ['Two taps from the ISS medical kit list. On the ISS, medicine use was recorded far less often than crews really took medicines (NASA Dose Tracker).', 'Private: nothing is sent unless you choose.'] },
+  mindsupport: { title: 'Mind support', lines: ['Small things that help, a private journal, a plan for hard days, five steps to work a problem through, a 3-minute Earth break and a reaction test.', 'All from NASA research or proven methods, all working with no AI and no link to Earth.'] },
+  comingup: { title: 'Coming up', lines: ['What the medical routine of an ISS flight brings next: a private medical conference every week, a private talk with the psychologist every two weeks, a thinking test every month, eye checks on flight days 30 and 90 and 30 days before return.', 'The dates here are an example schedule; on a real flight they come from the crew timeline.'] },
+  falsealarm: { title: 'False alarm', lines: ['If the camera got it wrong, say so here: the alarm clears, and the note stays in your record so the doctor sees it.', 'NASA-STD-3001 Vol 2 asks that the crew can safely override automation (10165).'] },
+  help: { title: 'Help key', lines: ['Hold it for 2 seconds to call for help by hand, at any time, from any screen.', 'It raises an urgent alert for the crew on board and the doctor, the same way as answering "I need help" to the camera question (NASA-STD-3001 Vol 2, 10178).'] },
+  mission: { title: 'Mission profile', lines: ['Where the crew is decides how far help is: on the ISS a doctor answers within minutes and a return to Earth takes hours; on Mars a message takes up to about 22 minutes one way and there is no return for months (NASA HRP-48021).', 'The program works the same everywhere: it checks on board and does not need the link.'] },
   mydata: { title: 'Your data', lines: ['A copy of everything you entered or that was measured for you, as one file you keep.', 'The made-up example flight is not part of your data.'] },
-  flightday: { title: 'Flight day', lines: ['Days since launch; launch day is day 1. Mission elapsed time (MET) counts the same way in days, hours and minutes.', 'Here it counts the made-up example flight, which always runs up to today: flight day 167, landing in 26 days.'] },
+  flightday: { title: 'Flight day (FD)', lines: ['FD 167 means flight day 167: days since launch, launch day is day 1. Mission elapsed time (MET) counts the same way in days, hours and minutes.', 'Here it counts the made-up example flight, which always runs up to today: flight day 167, landing in 26 days.'] },
   gmt: { title: 'GMT clock', lines: ['The ISS runs on GMT (Greenwich Mean Time).', '319/00:04 means day 319 of the year, 00:04. Every time in this app is GMT.'] },
   example: { title: 'Example data', lines: ['Made-up readings for four people, shaped like published flight studies.', 'For real NASA data choose an Inspiration4 person at sign-in. Switch the example off in Settings.'] },
   messages: { title: 'Messages', lines: ['Everything the program flagged, the most important first, each with what to do.', 'The colour is the highest level right now: blue attention, yellow needs action, red urgent.'] },
@@ -17,7 +28,6 @@ export const TIPS = {
   details: { title: 'Details', lines: ['Opens the first reason: its chart, its normal range, its history and what to do.'] },
   ai: { title: 'Analyse with AI', lines: ['Sends a summary of these readings to an AI on board that works without internet.', 'No AI is connected in this version; the team decides which one.'] },
   doctor: { title: 'Message the doctor', lines: ['Drafts a message with these readings for the doctor on board, or on Earth when the link is up.', 'You can change the text before sending.'] },
-  aisession: { title: 'Anonymous session with AI', lines: ['A private conversation that is not recorded or read (the team\'s idea).', 'No AI is connected in this version.'] },
   tellDoctor: { title: 'Tell the doctor on Earth', lines: ['Sends your recent check-ins to the doctor on Earth, only if you choose to.'] },
   advice: { title: 'Advice and articles', lines: ['Checked reading material: NASA health briefs, NASA evidence reports, MedlinePlus.', 'For people who prefer to read without the AI.'] },
   checkin: { title: 'Daily check-in', lines: ['Three quick questions each day: mood, energy and last night\'s sleep.', 'Your answers build up for a planned review. One bad day never raises an alarm.'] },
@@ -606,5 +616,280 @@ export const PROVENANCE = {
     ],
     "how": "Temperature sensors in the Common Cabin Air Assembly read the air it moves; the assembly's heat exchanger cools the air and removes moisture to hold the set temperature and humidity.",
     "path": "In flight: the station's own temperature readings"
+  },
+  "eyePressure": {
+    "what": "Pressure of the fluid inside the eye (normal 10 to 21 mmHg); weightlessness can change pressure around the eyes and the shape of the eyeball and affect vision, so long-stay crews get regular eye checks.",
+    "iss": [
+      {
+        "name": "Handheld tonometer exam",
+        "maker": "",
+        "url": "https://www.nasa.gov/blogs/spacestation/2026/04/08/nasas-northrop-grumman-crs-24-mission-targets-april-11/"
+      },
+      {
+        "name": "Tonopen handheld tonometer, in the Ambulatory Medical Pack",
+        "maker": "Tono-Pen is a Reichert brand today",
+        "url": "https://ntrs.nasa.gov/api/citations/20110022379/downloads/20110022379.pdf"
+      }
+    ],
+    "could": [
+      {
+        "name": "Tono-Pen AVIA handheld tonometer",
+        "maker": "Reichert",
+        "url": "https://www.reichert.com/products/tono-pen-avia"
+      },
+      {
+        "name": "iCare HOME2 self-tonometer",
+        "maker": "Icare",
+        "url": "https://www.icare-world.com/the-new-icare-home2-tonometer/"
+      }
+    ],
+    "how": "After numbing eye drops, a crewmate (the crew medical officer) lightly taps the cornea with a pen-shaped tonometer, which shows the pressure in mmHg on its small screen. Research studies also measure it before and after flight on Earth with other tonometers.",
+    "path": "On the ISS the reading is shown on the tonometer screen and the device has no data link (NASA catalog, 2011), so it would be typed in by the crew..."
+  },
+  "hearing": {
+    "what": "The quietest tone a person can hear, in decibels (dB HL; lower is better); station fans and machines are loud, so NASA tests the hearing of everyone who stays on orbit longer than 30 days.",
+    "iss": [
+      {
+        "name": "On-Orbit Hearing Assessment: OOHA headset and KUDUwave software",
+        "maker": "eMoyo; the Kuduwave is now sold by GeoAxon",
+        "url": "https://www.nasa.gov/blogs/stationreport/2024/03/21/iss-daily-summary-report-3-21-2024/"
+      },
+      {
+        "name": "EarQ",
+        "maker": "",
+        "url": "https://ntrs.nasa.gov/citations/20240009887"
+      }
+    ],
+    "could": [
+      {
+        "name": "Kuduwave Pro / Ultra boothless audiometers",
+        "maker": "GeoAxon",
+        "url": "https://geoaxon.com/kuduwave-pro-tmp/"
+      },
+      {
+        "name": "Hearing Test with AirPods Pro 2 or 3",
+        "maker": "Apple",
+        "url": "https://support.apple.com/120991"
+      }
+    ],
+    "how": "In a quiet module the person wears the audiometer headset, does an ear pressure check, then presses a key whenever a tone is heard; the software finds the quietest level heard at each pitch (an audiogram). This app shows one number: the average at 500 to 4000 Hz (WHO grading).",
+    "path": "On the ISS the KUDUwave software runs on a station laptop and its results go to secure NASA servers and the JSC audiology clinic."
+  },
+  "radiation": {
+    "what": "All the radiation a person has received over their career, in millisieverts; the ISS adds about 0.2 to 0.5 mSv a day, and NASA's career limit is 600 mSv for everyone.",
+    "iss": [
+      {
+        "name": "Crew Active Dosimeter",
+        "maker": "Mirion, developed with NASA JSC Space Radiation Analysis Group",
+        "url": "https://srag.jsc.nasa.gov/spaceradiation/how/how.cfm"
+      },
+      {
+        "name": "Crew Passive Dosimeter",
+        "maker": "NASA",
+        "url": "https://ntrs.nasa.gov/api/citations/20110022379/downloads/20110022379.pdf"
+      }
+    ],
+    "could": [
+      {
+        "name": "Instadose VUE / Instadose+ wireless dosimeters",
+        "maker": "Mirion",
+        "url": "https://www.instadose.com/instadosevue"
+      },
+      {
+        "name": "NASA OSDR RadLab API",
+        "maker": "NASA",
+        "url": "https://visualization.osdr.nasa.gov/radlab/gui/data-api/"
+      }
+    ],
+    "how": "Each astronaut carries a Crew Active Dosimeter that measures and logs dose all the time; NASA's Space Radiation Analysis Group combines dosimeter data, station detectors and models to compute each person's career dose.",
+    "path": "The Crew Active Dosimeter sends timestamped readings by Bluetooth to laptops on the ISS, which downlink them to NASA's radiation team"
+  },
+  "vo2max": {
+    "what": "The most oxygen the body can use at full effort, per kilogram per minute: the core measure of fitness; on the ISS it falls by about 17% early in flight, and NASA requires at least 80% of the person's own pre-flight level (and 32.9 mL/kg/min for spacewalk missions).",
+    "iss": [
+      {
+        "name": "CEVIS, Max CEVIS fitness test",
+        "maker": "NASA",
+        "url": "https://www.nasa.gov/blogs/stationreport/2024/03/21/iss-daily-summary-report-3-21-2024/"
+      },
+      {
+        "name": "Portable Pulmonary Function System",
+        "maker": "Danish Aerospace Company",
+        "url": "https://ntrs.nasa.gov/api/citations/20180006615/downloads/20180006615.pdf"
+      }
+    ],
+    "could": [
+      {
+        "name": "Garmin watches: VO2 max estimate",
+        "maker": "Garmin",
+        "url": "https://www8.garmin.com/manuals/webhelp/GUID-9D99A9D4-467A-4F1A-A0EA-023184FEA3DD/EN-US/GUID-3E971364-A756-4057-B22D-C41250B2A82B.html"
+      },
+      {
+        "name": "Apple Watch cardio fitness",
+        "maker": "Apple",
+        "url": "https://support.apple.com/en-us/108790"
+      }
+    ],
+    "how": "On the CEVIS exercise bike the workload rises step by step; in NASA's VO2max study a gas analyser (Portable Pulmonary Function System) measured the oxygen breathed in and out, while the routine ISS fitness test is submaximal and judges aerobic capacity from heart rate at set workloads.",
+    "path": "CEVIS and analyser data are files on the station network"
+  },
+  "strength": {
+    "what": "The most force the muscles can produce; ISS crews lost 8 to 17% of knee, ankle and trunk strength over about 5-month flights, and NASA requires at least 80% of the person's own pre-flight level.",
+    "iss": [
+      {
+        "name": "Isokinetic dynamometer before and after flight",
+        "maker": "Biodex",
+        "url": "https://ntrs.nasa.gov/api/citations/20140003281/downloads/20140003281.pdf"
+      },
+      {
+        "name": "ARED",
+        "maker": "NASA",
+        "url": "https://www.nasa.gov/missions/station/iss-research/astronaut-exercise/"
+      }
+    ],
+    "could": [
+      {
+        "name": "Jamar Smart hand dynamometer",
+        "maker": "Performance Health",
+        "url": "https://www.performancehealth.com/jamar-smart-hand-dynamometer"
+      }
+    ],
+    "how": "On Earth before and after flight the person pushes and pulls as hard as possible against a motorised isokinetic dynamometer that measures torque; NASA does not test strength in flight, but the ARED weight machine records every set's load and repetitions.",
+    "path": "Pre- and post-flight results come from the lab on Earth as a report (typed in, or as a medical record)."
+  },
+  "bone": {
+    "what": "How much mineral is in the hip and spine bones; without gravity bone thins (average losses of 2 to 9% after 4 to 6 months), and NASA requires at least 95% (hip, spine) and 90% (femoral neck) of the person's own pre-flight level.",
+    "iss": [
+      {
+        "name": "Hologic DXA densitometers",
+        "maker": "Hologic",
+        "url": "https://ntrs.nasa.gov/api/citations/20140002854/downloads/20140002854.pdf"
+      },
+      {
+        "name": "QCT scans and hip strength models",
+        "maker": "",
+        "url": "https://ntrs.nasa.gov/api/citations/20140002854/downloads/20140002854.pdf"
+      }
+    ],
+    "could": [
+      {
+        "name": "Horizon DXA System",
+        "maker": "Hologic",
+        "url": "https://www.hologic.com/horizondxa"
+      }
+    ],
+    "how": "A low-dose X-ray scan called DXA while lying on a table, on Earth before and after flight; each result is compared with the person's own pre-flight scan made on the same machine.",
+    "path": "Comes from the clinic on Earth: the DXA scanner's report (Hologic publishes a DICOM conformance statement for its scanners) or a medical record in..."
+  },
+  "blood": {
+    "what": "Lab tests of blood cells and blood chemistry (for example red and white cells, glucose, kidney and liver markers); on the ISS blood can be drawn but is tested on Earth after it returns, so results come late.",
+    "iss": [
+      {
+        "name": "In-flight blood draw, centrifuge and science freezer",
+        "maker": "MELFI built for ESA",
+        "url": "https://www.nasa.gov/blogs/spacestation/2026/11/13/botany-biomedicine-and-cargo-ops-wrap-up-week-aboard-station/"
+      },
+      {
+        "name": "i-STAT",
+        "maker": "Abbott",
+        "url": "https://ntrs.nasa.gov/api/citations/20100011008/downloads/20100011008.pdf"
+      }
+    ],
+    "could": [
+      {
+        "name": "i-STAT 1 hand-held blood analyser",
+        "maker": "Abbott",
+        "url": "https://www.globalpointofcare.abbott/ww/en/product-details/apoc/i-stat-system.html"
+      },
+      {
+        "name": "HemoCue WBC DIFF System",
+        "maker": "HemoCue",
+        "url": "https://hemocue.com/en/products/hematology/hemocue-wbc-diff-system/"
+      }
+    ],
+    "how": "Blood is drawn from a vein; on the ISS the tube is spun in a centrifuge and frozen, then flown home and tested in a lab. Inspiration4 blood was drawn on Earth before and after its 3-day flight and tested by Quest Diagnostics (complete blood count and metabolic panel).",
+    "path": "Lab results arrive as a file or a medical record (HL7 FHIR Observations with LOINC codes)"
+  },
+  "xray": {
+    "what": "A picture of bones or lungs made with X-rays, used to find fractures and chest problems; there has never been an X-ray machine for people on the ISS.",
+    "iss": [
+      {
+        "name": "None for people on the ISS",
+        "maker": "",
+        "url": "https://spinoff.nasa.gov/node/10591"
+      },
+      {
+        "name": "NASA Glenn mini X-ray program: MinXray, Remedi and Fujifilm tested; one system recommended for a flight demonstration",
+        "maker": "NASA Glenn",
+        "url": "https://ntrs.nasa.gov/citations/20260002492"
+      }
+    ],
+    "could": [
+      {
+        "name": "Impact Ultraportable Wireless DR System",
+        "maker": "MinXray",
+        "url": "https://www.minxray.com/products"
+      },
+      {
+        "name": "Reveal 35C dual-energy detector",
+        "maker": "KA Imaging",
+        "url": "https://kaimaging.com/reveal-35c/"
+      }
+    ],
+    "how": "A battery-powered X-ray generator sends a short pulse through the body onto a flat digital detector; a doctor or an AI reads the image.",
+    "path": "As an image file in DICOM, the standard format of medical images (portable kits such as the MinXray Impact include DICOM software)"
+  },
+  "ecg": {
+    "what": "A recording of the heart's electrical signal as wavy lines; it shows how fast the heart beats and whether the rhythm is normal, and NASA requires it in the ISS fitness tests.",
+    "iss": [
+      {
+        "name": "Bio-Monitor",
+        "maker": "CSA; developed by Carré Technologies",
+        "url": "https://www.asc-csa.gc.ca/eng/sciences/bio-monitor.asp"
+      },
+      {
+        "name": "ECG during Max CEVIS fitness tests",
+        "maker": "NASA",
+        "url": "https://www.nasa.gov/blogs/stationreport/2024/03/21/iss-daily-summary-report-3-21-2024/"
+      }
+    ],
+    "could": [
+      {
+        "name": "Polar H10 chest strap",
+        "maker": "Polar",
+        "url": "https://www.polar.com/en/sensors/h10-heart-rate-sensor"
+      },
+      {
+        "name": "Hexoskin smart shirt",
+        "maker": "Hexoskin",
+        "url": "https://hexoskin.com/pages/developers"
+      }
+    ],
+    "how": "Sticky electrodes on the chest (or a smart shirt with built-in sensors) pick up the heart's electrical signal and record it as a waveform; on the ISS this is done during fitness tests, in research with Holter recorders and with the Bio-Monitor shirt.",
+    "path": "As a recorded waveform: a file from a Holter recorder or smart shirt"
+  },
+  "ultrasound": {
+    "what": "Live pictures of organs, veins and the heart made with sound waves; for decades the only reliable way to image the body in spaceflight, used for routine vein, heart and eye checks and in emergencies.",
+    "iss": [
+      {
+        "name": "Ultrasound 3, launched Sept 2025",
+        "maker": "GE HealthCare",
+        "url": "https://www.gehealthcare.com/en-us/about/newsroom/press-releases/taking-innovative-technology-to-the-final-frontier-ge-healthcares-vivid-iq-ultrasound-system-launches-to-the-international-space-station"
+      },
+      {
+        "name": "Ultrasound 2, since 2011",
+        "maker": "GE",
+        "url": "https://www.nasa.gov/blogs/spacestation/2025/05/30/week-ends-with-vein-scans-brain-research-and-3d-microscope-test/"
+      }
+    ],
+    "could": [
+      {
+        "name": "Butterfly iQ3",
+        "maker": "Butterfly Network",
+        "url": "https://www.butterflynetwork.com/iq3"
+      }
+    ],
+    "how": "A crewmate moves a probe with gel over the skin while doctors on Earth guide by live video, or on-screen guidance (NASA's AMOS software, the EchoFinder study with AI) shows where to place it.",
+    "path": "As image or video files in DICOM"
   }
 };

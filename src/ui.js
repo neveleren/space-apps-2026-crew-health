@@ -3,6 +3,7 @@
 import { createMachine, STATUS, DEST, KIND } from './engine.js';
 import { CELLS, SOURCES, SECTIONS, NORM_KINDS, CREW, SHIP, realPeople, QUESTIONS, DATA_GAPS, NEXT } from './config.js';
 import { INSPIRATION4 } from './inspiration4.js';
+import { logText } from './quicklog.js';
 import { openStore } from './store.js';
 import { RULES as CAM_RULES } from './camera-rules.js';
 import { exampleFlight, MISSION } from './demo-crew.js';
@@ -31,6 +32,7 @@ const DEST_TEXT = {
   [DEST.DOCTOR_ONBOARD]: 'doctor on board',
   [DEST.DOCTOR_EARTH]: 'doctor on Earth',
   [DEST.UNDECIDED]: 'not decided who gets it',
+  [DEST.CREW_ALARM]: 'crew on board, at once',
 };
 
 const DEST_HINT = {
@@ -38,10 +40,11 @@ const DEST_HINT = {
   [DEST.DOCTOR_ONBOARD]: 'if there is a doctor on board',
   [DEST.DOCTOR_EARTH]: 'if there is no doctor on board, but there is a link to Earth',
   [DEST.UNDECIDED]: 'there is no rule yet, see "Not decided yet"',
+  [DEST.CREW_ALARM]: 'a reading past a red limit, or an alarm with no doctor reachable: the person and the crew are alerted by automation, without the AI',
   [DEST.NONE]: 'within the norm, recorded, or the camera does not react',
 };
 
-const DEST_ORDER = [DEST.AI, DEST.DOCTOR_ONBOARD, DEST.DOCTOR_EARTH, DEST.UNDECIDED, DEST.NONE];
+const DEST_ORDER = [DEST.CREW_ALARM, DEST.AI, DEST.DOCTOR_ONBOARD, DEST.DOCTOR_EARTH, DEST.UNDECIDED, DEST.NONE];
 
 const KIND_TAG = {
   [KIND.NUMBER]: 'number → compared with the norm',
@@ -102,6 +105,14 @@ const STEP_TEXT = {
   'no-baseline': () => 'There is no pre-flight level for this person, so there is nothing to compare with.',
   'bad-value': () => 'Reading not recognised: empty, or an impossible number.',
   'no-trigger': () => 'The camera has no trigger for this event.',
+  'red-limit': (s) => `Past a red limit (${s.limit && s.limit.source ? s.limit.source : 'cited source'}): ${s.level === 'urgent' ? 'urgent' : 'needs action'}, at once, without the AI (a draft limit).`,
+  'alarm-person': () => 'The person is alerted on screen and by sound.',
+  'alarm-crew': () => 'The crew on board is alerted.',
+  'alarm-cmo': () => 'The crew medical officer is alerted.',
+  'doctor-queued': () => 'No link to Earth: the message to the doctor waits in the outbox for the next link.',
+  'no-doctor-crew': () => 'No doctor on board and no link to Earth: the crew on board takes over (a draft default; the team decides).',
+  'ship-alarm': (s) => `Past the ship's own limit: ship ${s.level === 'urgent' ? 'emergency' : 'caution'}; the ship's alarm system leads.`,
+  'exercise-recorded': () => 'Taken during exercise: recorded, not judged against the resting norm.',
 };
 
 const CAMERA_TRIGGERS_TEXT = 'Person is asleep: no reaction. Hand on chest: first the question "Are you okay?" Answer "I am okay": no alarm. "I need help" or no answer: calls the doctor.';
@@ -177,6 +188,8 @@ const shown = (v) => (v === null || v === undefined || v === '' ? 'empty' : fmtN
 
 function formatValue(indicator, value) {
   if (indicator === 'review') return `reports: ${value}`;
+  const logged = logText(indicator, value);
+  if (logged !== null && logged !== undefined) return logged;
   if (indicator === 'bp') return value && typeof value === 'object' ? `${shown(value.sys)}/${shown(value.dia)} mmHg` : shown(value);
   if (indicator === 'bone') return value && typeof value === 'object' ? `hip and spine ${shown(value.hipSpine)}%, femoral neck ${shown(value.neck)}%` : shown(value);
   if (indicator === 'blood') {
