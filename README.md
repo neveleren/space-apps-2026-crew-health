@@ -50,7 +50,7 @@ These screenshots show the crew screen with the made-up example flight. The app'
 - One dated sentence about body and mind, for example "As of 15 Nov 2026, your physical condition needs attention, your mental condition is excellent." When something needs the person, level chips, the reasons and the buttons Details, Analyse with AI and Message the doctor appear under it.
 - A daily check-in (mood, energy, sleep quality, and an optional private "What is weighing on you?"), a quick symptom log and a two-tap medicine log from an ISS kit list.
 - Coming up (an example schedule, shown with the example flight) lists the next three of: the weekly private medical conference (with "Prepare", a drafted 7-day summary the person edits), the talk with the psychologist every two weeks, the monthly thinking test and the next eye check. The card also names the next event of the example mission calendar.
-- A status line that never scrolls away: flight day, GMT clock, a Systems tag (automation, AI, mission, link, doctor, saving, sound), Messages, and a Help key you hold for 2 s.
+- A status line that never scrolls away: flight day, GMT clock, a Systems tag (automation, AI, mission, link, doctor, saving, sound), Messages, and a Help key you hold for 2 s (a single press from a screen reader or a switch asks "Call for help now?"). A crewmate's alarm line appears in it.
 
 **2. A "?" on cards, rows and tags.**
 
@@ -63,7 +63,8 @@ These screenshots show the crew screen with the made-up example flight. The app'
 ![The team's AI support offer after hard days, with the choice: an anonymous session with AI, telling the doctor on Earth, or small things that help](presentation/img/mind.png)
 
 - The AI support offer in the team's own words. It can name a topic the person marked on 3 or more of the last 7 days (a placeholder rule). The choice: "Start an anonymous session with AI" or "Tell the doctor on Earth".
-- No AI model is connected in this version. The session panel opens with a privacy card, then offers a "Help now" button with fixed steps to reach a person (its card also opens when risk words are typed), short coping steps by topic, a write-it-out box that is not saved, and "Tell the doctor on Earth".
+- No AI model is connected in this version. The session panel still opens: a privacy card, then "Help now", short coping steps by topic, a write-it-out box that is not saved, and "Tell the doctor on Earth".
+- "Help now" leads to a person: talk to a crewmate now, request a private call with the ground (the request is shown before it is sent), or open my plan. It also opens by itself when risk words are typed in any box of the mind tools. The word list is a plain draft list, not AI, and nothing is sent by itself.
 - Tools that work with the AI off: small things that help (each with its source), a private journal with a letter to the psychologist, my plan for hard days, five-step problem solving, a 3-minute Earth break with NASA photos from the ISS, a 3-minute reaction test.
 
 **4. Settings and connections.**
@@ -97,8 +98,13 @@ These screenshots show the crew screen with the made-up example flight. The app'
 
 - **Automation first.** Every reading goes through one machine (`src/engine.js`) and its cell in `src/config.js`, which holds the norm, any red limits and their public sources. Judging a reading or raising an alarm needs no AI.
 - **Levels.** Fine, attention (blue), needs action (yellow), urgent (red), and stale data (cyan). The colours mean what NASA-STD-3001 Volume 2 says they mean, and every level also has an icon and a word: colour is never the only cue.
-- **Red limits.** One reading past a published limit counts at once. Examples: SpO2 88% or lower is urgent (MedlinePlus); systolic pressure above 180 is urgent (NHLBI); glucose below 54 mg/dL is urgent (ADA); 38.0 °C or more needs action (CDC); cabin pressure below 34.5 kPa is urgent (NASA-STD-3001 Vol 2). All are drafts.
-- **Crew alarm.** An urgent red limit, a camera alarm or the Help key alerts the person and the crew on board, then routes the case to the doctor (on board, or on Earth over the simulated link), or queues the message when there is no link. A crewmate's screen shows one line, for example "Tom needs help now: ...", and nothing else from that record; it appears the next time that screen loads its records. Under the ISS crew code of conduct (14 CFR 1214.403), other crewmembers may not use or disclose a crewmember's medical information without consent, "except as required for the immediate safety of ISS crewmembers".
+- **Red limits.** One reading past a published limit counts at once. Examples: SpO2 88% or lower is urgent (MedlinePlus); systolic pressure above 180 is urgent (NHLBI); glucose below 54 mg/dL is urgent (ADA), and its first step is ADA's 15-15 rule; 38.0 °C or more needs action (CDC); 35.0 °C or less is urgent (MedlinePlus, NEWS2); cabin pressure below 34.5 kPa is urgent (NASA-STD-3001 Vol 2). All are drafts.
+- **Crew alarm.** An urgent red limit, a camera alarm or the Help key alerts the person and the crew on board, and writes a message to the doctor by itself: to the doctor on board, or sealed in the outbox for Earth, where it waits while there is no link.
+  - Every crew screen where someone is signed in asks the station computer for new alarm lines every 15 s (a draft), so the line reaches a crewmate's open screen within seconds.
+  - An urgent alarm repeats its tone every 4 s and its spoken line every 16 s until someone acknowledges it (drafts). "Sound off" never mutes it.
+  - A crewmate sees one line, for example "Tom needs help now: Blood oxygen (SpO2) 85 %.", and nothing else from that record.
+  - "I am okay: false alarm" writes an all clear that takes the line away on every screen, and tells the doctor.
+  - Under the ISS crew code of conduct (14 CFR 1214.403), other crewmembers may not use or disclose a crewmember's medical information without consent, "except as required for the immediate safety of ISS crewmembers".
 - **Expected changes are information.** Changes that flight studies call common show on the measure's page and never raise the headline: a resting temperature up to about 1 °C above the usual range, built up over the first months of flight (Stahn 2017) and always below 38.0 °C; sleep of 5 hours or more (Barger 2014).
 - **Watch rule.** A daily vital sign just outside its normal range (inside its red limits) is watched first: attention after 3 readings in a row outside, needs action after 7. Two or more vital signs outside within 24 hours count at once as attention (after NEWS2). Heart rate and breathing rate readings marked as exercise are recorded, not judged against the resting range; their low red limits still count.
 - **Forecast.** A straight line to landing. It raises an alert only for slow measures (VO2max, strength, body mass, radiation, hearing) or a line that clearly outruns the daily scatter. It is not a validated medical model, and the page says so.
@@ -138,7 +144,7 @@ Why each tool is there, with its sources and guardrails: [docs/MIND_SUPPORT.md](
 The full traceability matrix, with the evidence for each row: [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md).
 
 - **Display, met in part:** the crew screen follows the Display Standard of NASA-STD-3001 Vol 2 Rev F, Appendix F [V2 10150], in its colour meanings, an icon and a word on every level, a status line that is always visible, units on values and numbered procedure steps. Gaps, such as no units in the table view's column headers, are listed in the matrix.
-- **Alerts, met in part:** a colour, icon and word for every level, and tones after Table 10.3-1 for needs action and urgent [V2 10114], played twice rather than repeated until acknowledged; the first burst 10 dB below the repeat [V2 10176]; a sound test, but no light test [V2 10117]; stale data marked for measures with an expected cadence [V2 10020]; a Help key held for 2 s, which is on the screen and so not yet independent of the display, as [V2 10178] asks.
+- **Alerts, met in part:** a colour, icon and word for every level, and tones after Table 10.3-1 for needs action and urgent [V2 10114]: an urgent alarm repeats until someone acknowledges it, the needs-action tone plays once; the first burst 10 dB below the repeat [V2 10176]; a sound test, but no light test [V2 10117]; stale data marked for measures with an expected cadence [V2 10020]; a Help key held for 2 s, which is on the screen and so not yet independent of the display, as [V2 10178] asks.
 - **Records and privacy:** secured handling of medical records [V1 7003] and protection of private data [V2 10125] are met only in part (see SECURITY.md).
 - **ISS research software rules** (NASA JSC, [archived page](https://web.archive.org/web/20260312221613/https://tsc.jsc.nasa.gov/roi-swprocess/sw_reqs.html)): "Experiment software does not have internet access on ISS"; installer packages "should contain all dependencies"; "File names shall not contain PII". The program runs with no internet and keeps personal information out of its file names (a person's file is named by id, an outbox message by time and a random number). It has no installer package: the folder holds everything the pages need, but Node.js 18 or newer must be installed.
 - **Not done:** tests with real people (human-in-the-loop testing, [V2 3101]), usability and workload scores, a hazard analysis.
@@ -181,7 +187,7 @@ The first three checks showed no page errors. What each test file covers, and ho
 Full detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 1. Two pages in plain JavaScript modules, no framework, no build: the crew screen (`index.html`, `src/crew.js`) and the technical view (`machine.html`, `src/ui.js`).
-2. The machine (`src/engine.js`) puts each reading in its cell (`src/config.js`), checks it against the norm and red limits, and records who gets it. The levels (`src/state-levels.js`) turn one person's history into today's sentence.
+2. The machine (`src/engine.js`) puts each reading in its cell (`src/config.js`), checks it against the norm and red limits, and records who gets it. The levels (`src/state-levels.js`) turn one person's history into today's sentence. The crew alarm's rules and words (`src/crew-alarm.js`), the search of the measures (`src/find.js`) and the crew's own mission dates (`src/mission.js`) are kept apart from the screen, so they can be tested without a browser.
 3. Every reading, answer and message is an event. `src/store.js` keeps events on our server or, without it, in the browser; the machine is rebuilt from them each time a page opens.
 4. The server (`serve.mjs`, `src/security.js`, Node built-ins only) serves the pages, checks each event, appends it to the person's file and seals messages to a doctor. It never judges a reading.
 5. Bluetooth devices (`src/ble.js`), CSV files (`src/csv-import.js`), ISSLive (`src/isslive.js`), the reaction test (`src/reaction-test.js`), the camera (`src/camera.js`, `src/camera-rules.js`) and a letter to the psychologist add events the same way. The FHIR and calendar exports (`src/fhir.js`, `src/ical.js`) read them. The journal, the plan for hard days, the five steps and the Earth break (`src/support.js`, `src/earth-break.js`) stay in the browser.
@@ -197,6 +203,9 @@ These stay with the team. The thresholds in the program are marked as drafts on 
 - Who analyses X-rays; the default with no doctor on board and no link to Earth.
 - Converting the ISS oxygen value to the inspired value; an ISS-specific cabin pressure limit.
 - An upper heart-rate limit during exercise; a resting pulse of 40 for athletes; how long a red reading of a rarely taken measure stays.
+- The alarm timings (a look for new crew lines every 15 s, a repeat every 4 s, the spoken line every 16 s, a call for help tried again every 5 s); whether an eye self-check answer other than "no change" is attention or needs action; the symptom score (8 of 10 in 24 hours) that asks to tell the crew medical officer; the 12 hours for two sleep medicines.
+- On the public copy, which has no station server, the urgent sentence still says "a doctor has been called", while the message panel says the message is saved on this computer only. The sentence is the team's own wording.
+- Who can clear the line "Help was pressed at this computer" (it stays for 24 hours); how a forecast works when no mission is set (it then uses the example dates).
 
 ## Use of SI
 

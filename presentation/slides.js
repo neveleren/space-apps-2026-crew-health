@@ -29,7 +29,7 @@ export const SLIDES = [
     html: `<div><p class="quote">"As of 15 Nov 2026, your physical condition needs attention, your mental condition is excellent."</p>
       <ul class="points" style="margin-top:22px">
         <li><span>Every reading is checked on board against its normal range and the team's rules: <b>no AI needed</b>.</span></li>
-        <li><span>Changes common in flight stay quiet; a value past a <b>medical red limit</b> alerts the person and the crew at once, with no AI in the loop.</span></li>
+        <li><span>Changes common in flight stay quiet; a value past a <b>medical red limit</b> alerts the person at once and every crew screen in use within seconds, with no AI in the loop.</span></li>
         <li><span>Then a choice: <b>Details · Analyse with AI · Message the doctor</b>.</span></li>
       </ul></div>
       <img class="shot" src="./img/today-attention.png" alt="Today with a reason and the three buttons">`,
@@ -57,9 +57,9 @@ export const SLIDES = [
   },
   {
     kicker: 'SAFE, PRIVATE, CONNECTED WHERE IT CAN BE',
-    title: 'Danger reaches the crew at once; privacy stays',
+    title: 'Danger reaches the crew in seconds; privacy stays',
     html: `<ul class="points">
-      <li><span><b>Safe:</b> past a red limit, the person and the crew are alerted at once, with no AI and no link to Earth. Crewmates see <b>one line</b>, never the record.</span></li>
+      <li><span><b>Safe:</b> past a red limit, the person is alerted at once and every crew screen in use within seconds, with no AI and no link to Earth; a message to the doctor is written by itself. Crewmates see <b>one line</b>, never the record.</span></li>
       <li><span><b>Private:</b> each person opens only their own records, with an optional PIN; messages to the doctor are sealed for the flight surgeon's key.</span></li>
       <li><span><b>Connected:</b> Bluetooth health devices, HL7 FHIR export, NASA OSDR blood tests, live ISS cabin air (NASA ISSLive), NOAA space weather. <b>Planned with partners:</b> EveryWear, NASA's crew medical record.</span></li>
     </ul>

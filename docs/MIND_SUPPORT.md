@@ -19,8 +19,8 @@ The owner's request (15 Nov 2026): more ways to support the person's mind, built
 
 ## Guardrails built in
 
-1. **Private by default.** Whatever the person writes goes only to the callbacks of the screen; the modules send and store nothing themselves. Journal and plan say "Private: only you see this. Not encrypted in this prototype." Nothing is shown to crewmates or the commander.
-2. **Human first.** "Talk to a person now" is one tap from the plan, and the AI panel's Help now card points to a person; the plan is written with the crew psychologist, never by the AI; the AI never handles a hard moment alone.
+1. **Private by default.** Whatever the person writes goes only to the callbacks of the screen; the modules send and store nothing themselves. Journal and plan say truly who can read them: "you on your screen, and anyone who opens your screen on this computer, unless you set a PIN. Not encrypted in this prototype.", with a "Set a PIN" button that opens the PIN in Settings. Nothing is shown to crewmates or the commander.
+2. **Human first.** "Help now" offers three ways to a person: talk to a crewmate now, request a private call with the ground (the line is shown before it is sent), or open my plan, and it names the Help key for immediate danger. It opens by itself when risk words are typed in the session box, the journal, the letter, the five steps or the plan: a plain word list, marked as a draft, not AI, and nothing is sent by itself. The plan is written with the crew psychologist, never by the AI; the AI never handles a hard moment alone.
 3. **Says what it is.** The AI notice starts with "This is an AI program, not a person." No feature is called treatment by a professional; no diagnosis anywhere.
 4. **No emotion reading** from camera or voice. The camera keeps only its set physical triggers.
 5. **Calm signals.** The only level any of this may raise is the blue "attention" (a clearly slower reaction test). No sounds, no red.
@@ -32,6 +32,7 @@ The owner's request (15 Nov 2026): more ways to support the person's mind, built
 
 - **The exception to privacy.** Draft text in `crisisNotice()`, marked "TO CONFIRM" and not shown on the crew screen yet: in immediate danger, the program stops the talk, shows how to reach a person and tells the crew medical officer or flight surgeon that help is needed, without the words of the talk. Alternatives: only help on screen and ask first; or a one-line alert to a person chosen in advance.
 - **Thresholds:** topic on 3 of the last 7 days (F1); "slower" at 10% from one's own runs (F3). Both placeholders.
+- **The risk words** that open Help now (`RISK_PATTERNS` in `src/support.js`): a draft list.
 - **When the AI offer shows:** today only when the mind rule fires; whether a topic signal alone should show it.
 - **The questionnaire** (PHQ-9, PHQ-8, GAD-7 or another): not added.
 - **Where private writing is kept:** in the person's own file or only in this browser, and the passphrase lock as the next step.
