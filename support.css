@@ -1,0 +1,179 @@
+/* Mind support: the styles for src/support.js, src/reaction-test.js and src/earth-break.js.
+   Only the page's own colour tokens (var(--panel), var(--ink), var(--muted), var(--line), var(--cmd),
+   var(--cmd-edge), var(--focus) and the rest from index.html), so the dark and the light display both work.
+   Every rule is scoped under .sup, which each builder puts on its host. Link it after the page's own style:
+   <link rel="stylesheet" href="./support.css">
+   Written by Claude (Anthropic), an AI system, for team Just For Fun. */
+
+.sup { display: grid; gap: 14px; min-width: 0; }
+.sup p { margin: 0; }
+.sup h2 { margin: 0; font-size: 20px; font-weight: 600; line-height: 1.3; }
+.sup h3 { margin: 0; font-size: 17px; font-weight: 600; line-height: 1.3; }
+.sup [hidden] { display: none !important; }
+.sup [tabindex="-1"]:focus:not(:focus-visible) { outline: none; }
+.sup .sup-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.sup .sup-head > .icon { color: var(--muted); }
+.sup .sup-head .tip-btn { margin-left: -4px; }
+.sup .sup-label { font-weight: 600; }
+.sup .sup-sub { margin-top: 6px; }
+.sup .sup-status { font-size: 15px; color: var(--ink); }
+.sup .sup-status:empty { display: none; }
+.sup .muted { color: var(--muted); }
+
+/* Where each suggestion comes from, and how close its evidence is to life on the ISS. */
+.sup .sup-badge { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 10px 0 8px; border-radius: 14px; border: 1px solid var(--axis); background: var(--panel); color: var(--ink); font-size: 14px; font-weight: 600; white-space: nowrap; }
+.sup .sup-badge .icon { color: var(--muted); }
+.sup .sup-src { font-size: 14px; line-height: 1.45; color: var(--muted); overflow-wrap: anywhere; }
+.sup .sup-src a { color: var(--muted); text-decoration-color: var(--axis); }
+.sup .sup-src a:hover, .sup .sup-src a:focus-visible { color: var(--link); text-decoration-color: currentColor; }
+.tip-pop .sup.sup-tipcard { gap: 6px; }
+.tip-pop .sup-tipcard .sup-src { font-size: 13px; }
+
+/* Private things say so, with a lock. */
+.sup .sup-private { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line); }
+.sup .sup-private b { font-weight: 700; }
+.sup .sup-private .icon { flex: none; margin-top: 2px; color: var(--muted); }
+
+/* Text boxes and ticks, the same look inside a card or inside the side sheet. */
+.sup textarea.sup-textarea { display: block; width: 100%; min-height: 96px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--axis); background: var(--bg); color: var(--ink); font: inherit; line-height: 1.45; resize: vertical; }
+.sup .sup-check { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; }
+.sup .sup-check input { flex: none; width: 22px; height: 22px; margin: 0; accent-color: var(--cmd); }
+.sup .sup-date { min-height: 44px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--axis); background: var(--bg); color: var(--ink); font-family: var(--font-mono); }
+.sup .tag.sup-example { min-height: 26px; }
+
+/* F1: "What is weighing on you?" chips in the check-in. */
+.sup.sup-topics-row { gap: 8px; }
+.sup .sup-topics { display: flex; flex-wrap: wrap; gap: 8px; }
+.sup .sup-topic { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px 0 12px; border-radius: 22px; border: 1px solid var(--cmd-edge); background: var(--panel-2); color: var(--ink); font-weight: 600; cursor: pointer; }
+.sup .sup-topic:hover { background: var(--panel); }
+.sup .sup-topic[aria-pressed="true"] { background: var(--panel); box-shadow: inset 0 0 0 2px var(--focus); font-weight: 700; }
+.sup .sup-dot { flex: none; width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--muted); }
+
+/* F2: small things that help. */
+.sup .sup-tips { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.sup .sup-tip { display: grid; gap: 10px; padding: 14px 16px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); }
+.sup .sup-tip-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+.sup .sup-tip-head h3:focus { outline: none; }
+.sup .sup-tip-head h3:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.sup .sup-tip-icon { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--cmd-soft); color: var(--link); }
+.sup .sup-tip-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.sup .sup-more { justify-content: space-between; }
+.sup .sup-count { font-size: 15px; color: var(--muted); }
+
+/* F4: the private journal. */
+.sup .sup-compose { display: grid; gap: 8px; }
+.sup .sup-talklist, .sup .sup-entries { display: grid; gap: 10px; padding-top: 14px; border-top: 1px solid var(--line); }
+.sup .sup-talk-items { margin: 0; padding-left: 20px; display: grid; gap: 6px; overflow-wrap: anywhere; }
+.sup .sup-talk-items .mono { color: var(--muted); font-size: 14px; }
+.sup .sup-letter { display: grid; gap: 8px; }
+.sup .sup-entry-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.sup .sup-entry { display: grid; gap: 6px; padding: 12px 14px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); }
+.sup .sup-entry-date { font-size: 14px; color: var(--muted); }
+.sup .sup-entry-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.sup .sup-entry-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; }
+.sup .sup-confirm { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 600; }
+.sup .btn.sup-quiet { border-color: var(--line); color: var(--muted); }
+.sup .btn.sup-quiet:hover { color: var(--ink); }
+
+/* F5: "Talk to a person now" and "My plan for hard days". */
+.sup .sup-talknow { display: grid; gap: 10px; padding: 14px 16px; border-radius: 8px; border: 2px solid var(--cmd-edge); background: var(--cmd-soft); }
+.sup .sup-talknow-body { display: grid; gap: 10px; }
+.sup .sup-talknow .sup-status { padding: 10px 12px; border-radius: 6px; background: var(--panel); border: 1px solid var(--line); }
+.sup .sup-plan-box { display: grid; gap: 12px; }
+.sup .sup-plan-box > div { display: grid; gap: 12px; }
+.sup .sup-plan-list { margin: 0; display: grid; gap: 12px; }
+.sup .sup-plan-list > div { display: grid; gap: 2px; }
+.sup .sup-plan-list dt { font-size: 15px; font-weight: 600; color: var(--muted); }
+.sup .sup-plan-list dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.sup .sup-plan-edit { display: grid; gap: 14px; }
+.sup .sup-field { display: grid; gap: 4px; }
+.sup .sup-example-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 15px; color: var(--muted); }
+
+/* The notice at the top of the AI session panel. */
+.sup.sup-notice { padding: 14px 16px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); box-shadow: inset 4px 0 0 var(--lv1); }
+.sup .sup-exception { padding: 10px 12px; border-radius: 6px; background: var(--panel); border: 1px solid var(--line); }
+.sup .sup-draft { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; font-size: 15px; color: var(--muted); }
+.sup .sup-draft-tag { padding: 1px 8px; border-radius: 4px; border: 1px dashed var(--off); color: var(--ink); font-family: var(--font-mono); font-size: 13px; font-weight: 600; letter-spacing: .04em; white-space: nowrap; }
+
+/* F9: five steps. Neutral numbers: magenta stays for NASA-style procedures. */
+.sup .sup-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; }
+.sup .sup-step { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 12px; }
+.sup .sup-step-n { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--axis); display: grid; place-items: center; font-family: var(--font-mono); font-size: 15px; font-weight: 600; }
+.sup .sup-step-body { display: grid; gap: 6px; min-width: 0; }
+.sup .sup-date-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-weight: 600; }
+
+/* F8: mission calendar. */
+.sup .sup-nextup { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.sup .sup-nextup .icon { flex: none; color: var(--muted); }
+.sup .sup-cal { list-style: none; margin: 0; padding: 0; display: grid; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel); }
+.sup .sup-cal-item { display: grid; grid-template-columns: 22px 4.8em minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 52px; padding: 8px 14px; border-top: 1px solid var(--line); }
+.sup .sup-cal-item:first-child { border-top: 0; }
+.sup .sup-cal-item .icon { color: var(--muted); }
+.sup .sup-cal-item.past { color: var(--muted); }
+.sup .sup-cal-item.today { background: var(--panel-2); box-shadow: inset 4px 0 0 var(--focus); }
+.sup .sup-cal-day { font-size: 15px; color: var(--muted); }
+.sup .sup-cal-state { display: inline-flex; align-items: center; gap: 4px; font-size: 15px; color: var(--muted); white-space: nowrap; }
+@media (max-width: 480px) {
+  .sup .sup-cal-item { grid-template-columns: 22px minmax(0, 1fr); row-gap: 2px; }
+  .sup .sup-cal-day { grid-column: 2; }
+  .sup .sup-cal-title { grid-column: 2; }
+  .sup .sup-cal-item > :last-child { grid-column: 2; justify-self: start; }
+}
+
+/* Full-screen layers: the reaction test and the Earth break. */
+html.sup-noscroll, html.sup-noscroll body { overflow: hidden; }
+.sup.sup-overlay { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; overflow: auto; padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); background: var(--bg); color: var(--ink); }
+
+/* F3: the reaction test. No animation anywhere: only the counter's digits change. */
+.sup .sup-rt-panel { width: min(640px, 100%); display: grid; gap: 16px; }
+.sup .sup-rt-box { display: grid; place-items: center; min-height: min(46vh, 340px); border-radius: 12px; border: 2px solid var(--line); background: var(--panel); cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+.sup .sup-rt-box:focus { outline: none; }
+.sup .sup-rt-box:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.sup .sup-rt-box.on { border-color: var(--ink); }
+.sup .sup-rt-counter { font-size: clamp(56px, 13vw, 104px); font-weight: 600; line-height: 1; color: var(--ink); font-variant-numeric: tabular-nums; }
+.sup .sup-rt-box.feedback .sup-rt-counter { font-size: clamp(30px, 7vw, 48px); font-weight: 500; color: var(--muted); }
+.sup .sup-rt-meta { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px; }
+.sup .sup-rt-left { font-size: 15px; color: var(--muted); }
+.sup .sup-rt-bar { height: 8px; border-radius: 4px; background: var(--grid); overflow: hidden; }
+.sup .sup-rt-bar span { display: block; width: 0; height: 100%; background: var(--series-1); }
+.sup .sup-rt-small { font-size: 17px; font-weight: 600; color: var(--muted); }
+.sup .sup-rt-say { font-weight: 600; }
+.sup .sup-rt-result { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.sup .sup-rt-result b { font-size: 60px; font-weight: 500; line-height: 1; }
+.sup .sup-rt-result span { font-size: 20px; color: var(--muted); }
+.sup .sup-rt-result .sup-rt-label { width: 100%; font-size: 15px; }
+.sup .sup-rt-rows { margin: 0; display: grid; border-top: 1px solid var(--line); }
+.sup .sup-rt-rows > div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.sup .sup-rt-rows dd { margin: 0; }
+.sup .sup-rt-compare { display: flex; align-items: flex-start; gap: 8px; }
+.sup .sup-rt-compare .icon { flex: none; margin-top: 3px; }
+
+/* F7: the Earth break. Text sits on solid panels so it reads on any photo, in both displays. */
+.sup.sup-eb { display: block; padding: 0; overflow: hidden; }
+.sup .sup-eb-photos { position: absolute; inset: 0; overflow: hidden; background: var(--bg); }
+.sup .sup-eb-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 4s ease-in-out; }
+.sup .sup-eb-img.shown { opacity: 1; }
+.sup.sup-eb.still .sup-eb-img { transition: none; }
+.sup .sup-eb-photos.missing { background: var(--panel-2); }
+.sup .sup-eb-top { position: absolute; top: max(12px, env(safe-area-inset-top, 0px)); left: max(12px, env(safe-area-inset-left, 0px)); right: max(12px, env(safe-area-inset-right, 0px)); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; padding: 10px 14px; border-radius: 10px; background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--line); }
+.sup .sup-eb-top h2 { font-size: 19px; }
+.sup .sup-eb-top p { font-size: 15px; color: var(--muted); }
+.sup .sup-eb-top-right { display: flex; align-items: center; gap: 12px; }
+.sup .sup-eb-left { font-size: 15px; color: var(--muted); }
+.sup .sup-eb-pacer { position: absolute; left: 50%; bottom: max(64px, calc(env(safe-area-inset-bottom, 0px) + 56px)); transform: translateX(-50%); width: min(360px, calc(100% - 32px)); display: grid; justify-items: center; gap: 10px; padding: 18px 16px 16px; border-radius: 14px; background: color-mix(in srgb, var(--panel) 86%, transparent); border: 1px solid var(--line); text-align: center; }
+.sup .sup-eb-circle { width: 132px; height: 132px; border-radius: 50%; border: 3px solid var(--ink); background: color-mix(in srgb, var(--cmd) 45%, transparent); transform: scale(.6); will-change: transform; }
+.sup .sup-eb-word { font-size: 24px; font-weight: 600; }
+.sup .sup-eb-count { font-size: 48px; font-weight: 500; line-height: 1; }
+.sup .sup-eb-how { font-size: 15px; color: var(--muted); }
+.sup .sup-eb-credit { position: absolute; left: max(12px, env(safe-area-inset-left, 0px)); bottom: max(12px, env(safe-area-inset-bottom, 0px)); max-width: calc(100% - 24px); padding: 4px 10px; border-radius: 6px; background: color-mix(in srgb, var(--panel) 88%, transparent); color: var(--ink); font-size: 14px; }
+.sup .sup-eb-credit:empty { display: none; }
+.sup .sup-eb-ask { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(440px, calc(100% - 32px)); display: grid; gap: 12px; padding: 20px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); }
+.sup .sup-eb-ask .link { justify-self: start; }
+@media (max-width: 640px) {
+  .sup .sup-eb-circle { width: 104px; height: 104px; }
+  .sup .sup-eb-pacer { bottom: max(100px, calc(env(safe-area-inset-bottom, 0px) + 92px)); }
+  .sup .sup-eb-top { padding: 8px 12px; }
+  .sup .sup-eb-top p { font-size: 14px; }
+  .sup .sup-rt-result b { font-size: 48px; }
+}
+@media (prefers-reduced-motion: reduce) { .sup .sup-eb-img { transition: none; } }
