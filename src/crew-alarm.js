@@ -47,6 +47,7 @@ export function eventKey(e) {
   if (e.kind === 'alarm') body = [e.alarm && e.alarm.text, Boolean(e.alarm && e.alarm.clear)];
   else if (e.kind === 'reading') body = [e.reading && e.reading.indicator, e.reading && e.reading.source, e.reading && e.reading.value];
   else if (e.kind === 'report') body = [e.report && e.report.to, e.report && e.report.text];
+  else if (e.kind === 'alert') body = [e.alert && e.alert.id, e.alert && e.alert.step]; // the alert log (src/alert-log.js)
   return `${e.kind}|${e.person}|${e.time}|${JSON.stringify(body)}`;
 }
 

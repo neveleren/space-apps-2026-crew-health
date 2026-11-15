@@ -6,6 +6,8 @@
 import { CELLS } from './config.js';
 import { KIND, checkNorm, checkPanel, checkSelf } from './engine.js';
 import { symptomValue, medicineValue } from './quicklog.js';
+import { LOG_STEPS, ACK_WAYS, SYSTEMS, ALERT_ID, isBedford } from './alert-log.js';
+import { isDrillId } from './drill.js';
 
 export const REFS = {
   cfr: { name: '14 CFR 1214.403, ISS crew code of conduct (CFR 2026)', url: 'https://www.govinfo.gov/content/pkg/CFR-2026-title14-vol5/pdf/CFR-2026-title14-vol5-sec1214-403.pdf' },
@@ -42,7 +44,7 @@ export const LIMITS = Object.freeze({
   futureMinutes: 5,
 });
 
-export const EVENT_KINDS = Object.freeze(['reading', 'review', 'report', 'alarm']);
+export const EVENT_KINDS = Object.freeze(['reading', 'review', 'report', 'alarm', 'alert']);
 export const PERSON_ID = /^[a-z0-9][a-z0-9-]{0,31}$/;
 const SOURCE_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 // Exactly what Date.prototype.toISOString() writes, the only way the screens write a time.
@@ -51,8 +53,8 @@ const DOCTORS = ['doctor-onboard', 'doctor-earth'];
 const SWITCHES = ['aiWorks', 'doctorOnBoard', 'linkToEarth'];
 const ANALYTE = ['code', 'name', 'test', 'value', 'min', 'max', 'units'];
 // The fields an event may carry. A screen that starts sending a new field adds it here (and to cleanEvent).
-const COMMON = ['v', 'kind', 'time', 'person', 'state', 'example'];
-const OWN = { reading: ['reading'], review: [], report: ['report'], alarm: ['alarm'] };
+const COMMON = ['v', 'kind', 'time', 'person', 'state', 'example', 'drill'];
+const OWN = { reading: ['reading'], review: [], report: ['report'], alarm: ['alarm'], alert: ['alert'] };
 // The reaction test result kept with a thinking-test reading: numbers only, and the length of the run.
 const RT_DETAIL = ['median', 'lapses', 'falseStarts', 'count', 'durationS', 'mode', 'score'];
 const ALARM_CHARS = 200;
@@ -80,6 +82,8 @@ export function eventProblem(e, { now = Date.now(), checkFuture = true } = {}) {
   if (typeof e.time !== 'string' || !ISO_TIME.test(e.time) || !Number.isFinite(Date.parse(e.time))) return 'time must be an ISO 8601 time in UTC';
   if (checkFuture && Date.parse(e.time) > now + LIMITS.futureMinutes * 60 * 1000) return `time is more than ${LIMITS.futureMinutes} minutes ahead of this computer's clock`;
   if (e.example !== undefined && typeof e.example !== 'boolean') return 'example must be true or false';
+  // A drill (src/drill.js) marks its events with the time it started, which is never after the event itself.
+  if (e.drill !== undefined && !(isDrillId(e.drill) && Date.parse(e.drill) <= Date.parse(e.time) + LIMITS.futureMinutes * 60 * 1000)) return 'drill must be the ISO time the drill started, not after the event';
   if (e.state !== undefined) {
     if (!isObj(e.state)) return 'state must be an object';
     for (const k of SWITCHES) if (typeof e.state[k] !== 'boolean') return `state.${k} must be true or false`;
@@ -87,6 +91,23 @@ export function eventProblem(e, { now = Date.now(), checkFuture = true } = {}) {
   if (e.kind === 'report') return reportProblem(e.report);
   if (e.kind === 'reading') return readingProblem(e.reading);
   if (e.kind === 'alarm') return alarmProblem(e.alarm);
+  if (e.kind === 'alert') return alertProblem(e.alert);
+  return null;
+}
+
+// One step of the alert log (src/alert-log.js): which alert (the screen's own id), which step, its level and system,
+// and only for the steps that have them how it was acknowledged or the Bedford rating. No text of the alert.
+function alertProblem(a) {
+  if (!isObj(a)) return 'alert must be an object';
+  if (unknownKey(a, ['id', 'step', 'level', 'system', 'private', 'how', 'rating']) !== undefined) return 'alert may hold only id, step, level, system, private, how and rating';
+  if (typeof a.id !== 'string' || !ALERT_ID.test(a.id)) return 'alert.id must be an alert id of letters, digits and the signs | : . _ -, at most 160 characters';
+  if (!LOG_STEPS.includes(a.step)) return `alert.step must be one of ${LOG_STEPS.join(', ')}`;
+  if (!Number.isInteger(a.level) || a.level < 1 || a.level > 3) return 'alert.level must be 1, 2 or 3';
+  if (!SYSTEMS.includes(a.system)) return `alert.system must be one of ${SYSTEMS.join(', ')}`;
+  if (a.private !== undefined && a.private !== true) return 'alert.private must be true when it is given';
+  const acks = a.step === 'acknowledged' || a.step === 'read';
+  if (acks ? !ACK_WAYS.includes(a.how) : a.how !== undefined) return `alert.how is needed on acknowledged and read, and only there: one of ${ACK_WAYS.join(', ')}`;
+  if (a.step === 'rated' ? !isBedford(a.rating) : a.rating !== undefined) return 'alert.rating is a Bedford rating, a whole number from 1 to 10, and only on a rated step';
   return null;
 }
 
@@ -180,6 +201,7 @@ function panelProblem(v) {
 export function cleanEvent(e) {
   const out = { v: 1, kind: e.kind, time: e.time, person: e.person };
   if (e.example !== undefined) out.example = e.example;
+  if (e.drill !== undefined) out.drill = e.drill;
   if (e.state !== undefined) out.state = Object.fromEntries(SWITCHES.map((k) => [k, e.state[k]]));
   if (e.kind === 'reading') {
     const r = e.reading;
@@ -195,6 +217,13 @@ export function cleanEvent(e) {
   if (e.kind === 'alarm') {
     out.alarm = { text: e.alarm.text };
     if (e.alarm.clear === true) out.alarm.clear = true;
+  }
+  if (e.kind === 'alert') {
+    const a = e.alert;
+    out.alert = { id: a.id, step: a.step, level: a.level, system: a.system };
+    if (a.private === true) out.alert.private = true;
+    if (a.how !== undefined) out.alert.how = a.how;
+    if (a.rating !== undefined) out.alert.rating = a.rating;
   }
   return out;
 }
@@ -324,7 +353,7 @@ export const SECURITY_RULES = [
     rule: 'A save with an Origin must come from this server\'s own address, and a browser\'s Sec-Fetch-Site must say same-origin. A save with no Origin comes from a program such as curl, not from a web page.',
     draft: false, sources: [REFS.csrf, REFS.origin] },
   { id: 'event-shape', title: 'Every event is checked',
-    rule: `Version 1; kind ${EVENT_KINDS.join(', ')}; a person id of lower-case letters, digits and hyphens; the switches as true or false; a reading names a measure of src/config.js and carries a value the machine can read; a message to a doctor may name its topic with a short id; a crew alarm is one line of text, marked clear: true when it calls an earlier alarm off; nothing else.`,
+    rule: `Version 1; kind ${EVENT_KINDS.join(', ')}; a person id of lower-case letters, digits and hyphens; the switches as true or false; a reading names a measure of src/config.js and carries a value the machine can read; a message to a doctor may name its topic with a short id; a crew alarm is one line of text, marked clear: true when it calls an earlier alarm off; a step of the alert log names the alert by its id, the step, its level and system, and nothing of its text; a drill marks its events with the time it started; nothing else.`,
     draft: false, sources: [REFS.input] },
   { id: 'future-time', title: 'No times from the future',
     rule: `An event may be dated at most ${LIMITS.futureMinutes} minutes ahead of this computer's clock, the usual clock tolerance (Kerberos).`,
