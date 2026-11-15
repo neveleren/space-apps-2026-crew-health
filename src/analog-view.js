@@ -22,7 +22,7 @@ export const ANALOG_TIPS = {
   ] },
   alertlog: { title: 'Alert log', lines: [
     'When an alert shows on your screen, is acknowledged (Mark as read, Mark all as read, the Messages key, Silence, Silence all sounds), clears, or is called off as a false alarm, that step is saved in your record: one entry per alert and step, with no text of the alert.',
-    'So every screen where you are signed in shows the same read and acknowledged state within 15 seconds, and an acknowledged alarm does not sound there again. Your crewmates never see these entries.',
+    'So, with the station server, every screen where you are signed in shows the same read and acknowledged state within 15 seconds, and an acknowledged alarm does not sound there again. A copy without the server keeps them in this browser only. Your crewmates never see these entries.',
     'The time to acknowledge is worked out from them. For an analog test the technical view exports them for all subjects, by id only, without any alert about the mind, the cycle, symptoms or medicines.',
   ] },
   workload: { title: 'Workload rating', lines: [
@@ -42,7 +42,7 @@ export function analogCard({ drill = null, left = 0, onDrill, switchRow, cornerT
     h('h2', {}, 'Analog test'),
     switchRow('st-drill', DRILL_WORDS.switchLabel, DRILL_WORDS.switchText, Boolean(drill), (on) => onDrill(on)),
     drill ? h('p', { class: 'note', role: 'status' }, supIcon('flag', { size: 16 }), ` DRILL in progress since ${gmt(drill.since)}; it ends by itself in ${left} min. ${DRILL_WORDS.emergency}`) : null,
-    h('p', { class: 'muted' }, 'Alert log: each alert\'s steps (shown, acknowledged, read, cleared, false alarm, workload) are saved in your record, one entry per alert and step, so your other screens show the same and an acknowledged alarm does not sound there again. Your crewmates never see them.'),
+    h('p', { class: 'muted' }, 'Alert log: each alert\'s steps (shown, acknowledged, read, cleared, false alarm, workload) are saved in your record, one entry per alert and step, so with the station server your other screens show the same and an acknowledged alarm does not sound there again. Your crewmates never see them.'),
     sources(DRILL_SOURCES));
 }
 
