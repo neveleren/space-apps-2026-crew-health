@@ -1064,7 +1064,7 @@ function renderDetail() {
     else facts.push(`Steady within the normal range until landing on ${fmtDate(MISSION.landing)}, if this line holds.`);
     about.push("The forecast is a straight line through the in-flight readings (Claude's technical choice), not a validated medical model.");
   } else if (cell.kind === KIND.NUMBER) {
-    const flightDays = new Set((m.list || []).filter((x) => msOf(x.time) >= msOf(MISSION.launch)).map((x) => new Date(x.time).toISOString().slice(0, 10))).size;
+    const flightDays = new Set(((m && m.list) || []).filter((x) => msOf(x.time) >= msOf(MISSION.launch)).map((x) => new Date(x.time).toISOString().slice(0, 10))).size;
     facts.push(cell.onlyOnEarth ? 'Not measured in flight: only on Earth, before and after flight.'
       : cell.normType === 'record' ? 'Recorded for you and your doctor: there is no checked norm, so there is no forecast line.'
         : flightDays < 3 ? 'To see where a measure is going, in-flight readings on at least three different days are needed.'
@@ -1134,7 +1134,7 @@ function renderDetail() {
       cell.howToSrc ? h('p', { class: 'note' }, 'How to: ', h('a', { href: cell.howToSrc.url, target: '_blank', rel: 'noopener' }, cell.howToSrc.name)) : null) : null,
     wordCell ? null : periodBar(redrawDetail),
     wordCell ? h('section', { class: 'card' }, h('h2', {}, 'Your answers'),
-      (m.list || []).length ? h('ul', { class: 'links mind-log' }, ...[...m.list].reverse().slice(0, 12).map((x) => h('li', {}, h('span', {}, cap(String(valueText(indicator, x.value)))), h('span', { class: 'mono muted' }, `GMT ${gmtDOY(x.time)}`)))) : h('p', { class: 'muted' }, 'No answers yet.')) : h('section', { class: 'card chart-card' },
+      machine.history(owner.id, indicator).length ? h('ul', { class: 'links mind-log' }, ...[...machine.history(owner.id, indicator)].reverse().slice(0, 12).map((x) => h('li', {}, h('span', {}, cap(String(valueText(indicator, x.value)))), h('span', { class: 'mono muted' }, `GMT ${gmtDOY(x.time)}`)))) : h('p', { class: 'muted' }, 'No answers yet.')) : h('section', { class: 'card chart-card' },
       cornerTip('t:chart', 'the chart'),
       h('h2', {}, `${cell.label}, ${periodName}`),
       h('p', { class: 'how' }, how),
@@ -1174,8 +1174,8 @@ function renderDetail() {
   if (band) legend.push(h('span', {}, h('span', { class: 'band' }), 'Normal range'));
   if (showTrend) legend.push(h('span', {}, h('span', { class: 'trend-key' }), 'Forecast to landing'));
   if (shownPts.some((pt) => pt.out)) legend.push(h('span', {}, h('span', { class: 'out-key' }), ord ? cap(LOW[indicator]) : 'Outside the normal range'));
-  byId('d-legend').replaceChildren(...legend);
-  byId('d-legend').hidden = !legend.length;
+  const legendBox = byId('d-legend');
+  if (legendBox) { legendBox.replaceChildren(...legend); legendBox.hidden = !legend.length; }
 }
 
 // An Amsler grid to look at for the eye self-check: a 20 by 20 grid with a dot in the centre (MedlinePlus).
@@ -1299,7 +1299,7 @@ function renderAlerts() {
     h('h2', { class: 'section-title' }, 'Sent messages'),
     reports.length ? h('ul', { class: 'msgs' }, ...reports.map((r) => h('li', { class: 'card msg' },
       h('div', { class: 'msg-top' }, h('b', {}, r.report.text === TALK_REQUEST_TEXT ? 'Request for a private call, to Earth' : r.report.text.startsWith('Private letter for my psychologist') ? 'Private letter for your psychologist, to Earth' : r.report.to === 'doctor-onboard' ? 'To the doctor on board' : 'To the doctor on Earth'),
-        r.report.to !== 'doctor-earth' ? h('span', { class: 'chip neutral' }, icon('check', { size: 16 }), 'Saved for the doctor on board') : store && store.kind !== 'server' ? h('span', { class: 'chip off' }, icon('info', { size: 16 }), 'Saved on this computer only') : ui.ship.linkToEarth ? h('span', { class: 'chip neutral' }, icon('send', { size: 16 }), 'Sealed in the outbox, goes with the next downlink') : staleChip('Waiting for the link'),
+        r.report.to !== 'doctor-earth' ? h('span', { class: 'chip neutral' }, icon('check', { size: 16 }), 'Saved for the doctor on board') : store && store.kind !== 'server' ? h('span', { class: 'chip off' }, icon('info', { size: 16 }), 'Saved on this computer only') : ui.ship.linkToEarth ? h('span', { class: 'chip neutral' }, icon('send', { size: 16 }), 'Sealed in the outbox for the next downlink') : staleChip('Waiting for the link'),
         h('span', { class: 'when' }, `GMT ${gmtDOY(r.time)}`)),
       h('p', { style: 'white-space: pre-line' }, r.report.text)))) : h('p', { class: 'note' }, 'Nothing sent yet.'),
   );
