@@ -153,8 +153,13 @@ export function drawHistory(host, tip, opts) {
     svg.append(el('text', { x: nx > W - 90 ? nx - 8 : nx + 8, y: y(newest.v) - 9, class: 'tick latest-label halo', 'text-anchor': nx > W - 90 ? 'end' : 'start' }, 'Latest'));
   }
 
-  // Names of the border lines: at the left, where the flight readings are not yet, on a halo.
-  for (const l of opts.lines || []) svg.append(el('text', { x: m.l + 8, y: y(l.v) - 6, class: 'tick halo' }, l.label));
+  // Names of the border lines: at the left, where the flight readings are not yet, on a halo. A name too long for
+  // the chart is broken into lines once the chart is on the page (fitLabels), so its number and "(draft)" stay in view.
+  const limitLabels = (opts.lines || []).map((l) => {
+    const node = el('text', { x: m.l + 8, y: y(l.v) - 6, class: 'tick halo limit-label' }, l.label);
+    svg.append(node);
+    return { node, text: l.label, lineY: y(l.v) };
+  });
 
   // Hover: a crosshair that snaps to the nearest reading in time, and a tooltip with every series.
   const cross = el('line', { y1: m.t, y2: H - m.b, class: 'crosshair', visibility: 'hidden' });
@@ -213,6 +218,53 @@ export function drawHistory(host, tip, opts) {
     show(times[focusIndex]);
   });
   host.append(svg);
+  fitLabels(limitLabels, { left: m.l + 8, right: W - m.r - 4, top: m.t });
+  // "Latest" moves under its dot when a limit name sits where it would be.
+  const latest = svg.querySelector('.latest-label');
+  if (latest && limitLabels.some((lab) => overlaps(lab.node, latest))) latest.setAttribute('y', String(Number(latest.getAttribute('y')) + 27));
+}
+
+function overlaps(a, b) {
+  try {
+    const p = a.getBBox();
+    const q = b.getBBox();
+    return p.width > 0 && q.width > 0 && p.x < q.x + q.width && q.x < p.x + p.width && p.y < q.y + q.height && q.y < p.y + p.height;
+  } catch { return false; }
+}
+
+// Breaks a text into lines at spaces so that no line is wider than maxWidth; measure(text) gives a width.
+// A single word wider than the limit keeps a line of its own.
+export function wrapWords(text, maxWidth, measure) {
+  const lines = [];
+  let line = '';
+  for (const word of String(text ?? '').split(/\s+/).filter(Boolean)) {
+    const next = line ? `${line} ${word}` : word;
+    if (line && measure(next) > maxWidth) { lines.push(line); line = word; } else line = next;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+// The limit names on a narrow chart: measured in the page (an estimate when there is no layout), wrapped into lines
+// that end just above their dashed line, or start just below it when there is no room above.
+const LABEL_LINE = 16;
+function fitLabels(labels, { left, right, top }) {
+  const width = right - left;
+  for (const lab of labels) {
+    const measure = (t) => {
+      lab.node.textContent = t;
+      let w = 0;
+      try { w = lab.node.getComputedTextLength(); } catch { w = 0; }
+      return w || String(t).length * 8.4; // 14 px mono text when nothing could be measured
+    };
+    const lines = measure(lab.text) > width ? wrapWords(lab.text, width, measure) : [lab.text];
+    lab.node.textContent = '';
+    if (lines.length === 1) { lab.node.textContent = lab.text; continue; }
+    const above = lab.lineY - 6 - (lines.length - 1) * LABEL_LINE;
+    const firstY = above - 12 >= top ? above : lab.lineY + LABEL_LINE;
+    lab.node.setAttribute('y', String(firstY));
+    lines.forEach((t, i) => lab.node.append(el('tspan', { x: left, dy: i ? LABEL_LINE : 0 }, t)));
+  }
 }
 
 // The same readings as a table, so nothing depends on hovering.
