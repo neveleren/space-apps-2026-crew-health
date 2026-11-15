@@ -1896,6 +1896,7 @@ function sentTitle(r) {
   if (t === 'alarm') return `Automatic alarm message, to ${where}`;
   if (t === 'alarm-clear') return `Automatic all clear, to ${where}`;
   if (t === 'pmc') return `Summary for the private medical conference, to ${where}`;
+  if (t === 'readiness') return `Before a critical task, to ${where}`;
   return `To ${where}`;
 }
 const CHIP_TONE = { neutral: 'chip neutral', off: 'chip off', stale: 'chip stale', bad: 'chip lv2' };
@@ -3067,7 +3068,7 @@ function renderSetup() {
       h('section', { class: 'card' }, h('h2', {}, 'About'),
         h('p', {}, ui.example ? `${MISSION.name}: launch ${fmtDate(MISSION.launch)}, landing ${fmtDate(MISSION.landing)}.`
           : ui.mission ? `${ui.mission.name || MISSION_RULES.defaultName}: launch ${missionDay(ui.mission.launch)}, landing ${missionDay(ui.mission.landing)} (GMT), set on this device.`
-            : 'No mission is set on this device, so no flight day is shown. Set it under Mission.'),
+            : 'No mission is set on this device, so there is no flight day, no forecast to landing and no flight on the charts. Set it under Mission.'),
         h('p', {}, 'The levels (attention, needs action, urgent) and their thresholds are drafts: the team decides the final ones.'),
         h('p', { class: 'muted' }, 'Idea and decisions: team Just For Fun, NASA Space Apps Challenge 2026. Code written with Claude (Anthropic), an AI system.'),
         h('p', {}, h('a', { href: './machine.html' }, 'Technical view, for engineers'))),
