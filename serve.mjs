@@ -3,8 +3,8 @@
 // server implementations work best, and ask that data be kept in plain files with no personal
 // information in file names. This file needs only Node.js.
 // It serves the pages and keeps the events (readings, reviews, messages to a doctor) in app/data, one plain file
-// per person, named by the person's id. A message to a doctor is also queued in app/data/outbox with its text sealed
-// for the flight surgeon's key: the hand-over point for the station's downlink. Nothing leaves this computer.
+// per person, named by the person's id. A message to the doctor on Earth is also queued in app/data/outbox with its
+// text sealed for the flight surgeon's key: the hand-over point for the station's downlink. Nothing leaves this computer.
 // The protection rules, with their sources, are in src/security.js; docs/SECURITY.md says what is protected and what is not.
 // Run: node serve.mjs   then open http://127.0.0.1:8080/
 // Settings: PORT; HOST, the address to listen on; HOSTS, more host names to answer to (comma-separated);
@@ -72,6 +72,19 @@ function inlineScriptHashes(html) {
   return out;
 }
 
+// True when a real path lies in the data folder. DATA_DIR may put that folder inside the app folder under any
+// name (DATA_DIR=./records), where the name rules above would not know it.
+async function inData(real) {
+  let data;
+  try {
+    data = await realpath(DATA);
+  } catch {
+    return false; // no data folder yet: nothing can be served from it
+  }
+  const r = relative(data, real);
+  return r === '' || (r !== '..' && !r.startsWith(`..${sep}`) && !isAbsolute(r));
+}
+
 async function serveFile(req, res, path) {
   // Back slashes, colons and NUL never appear in this program's addresses; on Windows they would mean another
   // folder, a drive or a hidden stream.
@@ -84,7 +97,7 @@ async function serveFile(req, res, path) {
   try {
     // Checked again under the name the disk uses, which also catches short names such as DEMO-K~1.
     real = await realpath(file);
-    if (!real.startsWith(REAL_ROOT + sep) || isPrivatePath(relative(REAL_ROOT, real))) return notFound(res);
+    if (!real.startsWith(REAL_ROOT + sep) || isPrivatePath(relative(REAL_ROOT, real)) || (await inData(real))) return notFound(res);
     if (!(await stat(real)).isFile()) return notFound(res);
     body = await readFile(real);
   } catch {
@@ -175,9 +188,11 @@ async function postEvent(req, res) {
   const problem = eventProblem(event);
   if (problem) return json(res, 400, { error: `not a valid event: ${problem}` });
   const clean = cleanEvent(event);
-  // A message is queued first: if that fails, nothing is kept and the screen says so, so it can be sent again.
+  // A message to the doctor on Earth is queued first: if that fails, nothing is kept and the screen says so, so it
+  // can be sent again. A message to the doctor on board stays on board: it is not handed to the downlink, and it
+  // needs no ground key.
   let outbox = null;
-  if (clean.kind === 'report') {
+  if (clean.kind === 'report' && clean.report.to === 'doctor-earth') {
     if (!OUTBOX_KEY) return json(res, 503, { error: 'no outbox key on this computer: the message was not queued' });
     outbox = await queueMessage(clean);
   }
@@ -199,7 +214,7 @@ async function loadOutboxKey() {
     if (kty !== 'EC' || crv !== 'P-256') throw new Error('the key must be an EC P-256 public key');
     return { kid: String(k.kid || 'unnamed'), demo: k.demo === true, publicKey: createPublicKey({ key: { kty, crv, x, y }, format: 'jwk' }) };
   } catch (err) {
-    console.error(`No outbox key in ${file} (${err.message}): messages to a doctor cannot be queued.`);
+    console.error(`No outbox key in ${file} (${err.message}): messages to the doctor on Earth cannot be queued.`);
     return null;
   }
 }
@@ -322,6 +337,6 @@ const server = createServer(async (req, res) => {
 server.listen(PORT, HOST, () => {
   const at = HOST.includes(':') ? `[${HOST}]` : HOST;
   console.log(`Skeleton running at http://${at}:${PORT}/ (no internet needed). Data: ${DATA}. Stop with Ctrl+C.`);
-  console.log(`Answers only to the host names ${[...HOSTS].join(', ')}. Messages to a doctor are queued in ${OUTBOX}${OUTBOX_KEY ? `, sealed for key "${OUTBOX_KEY.kid}"${OUTBOX_KEY.demo ? ' (a DEMO key, not a real one)' : ''}` : ', but there is no outbox key'}.`);
+  console.log(`Answers only to the host names ${[...HOSTS].join(', ')}. Messages to the doctor on Earth are queued in ${OUTBOX}${OUTBOX_KEY ? `, sealed for key "${OUTBOX_KEY.kid}"${OUTBOX_KEY.demo ? ' (a DEMO key, not a real one)' : ''}` : ', but there is no outbox key'}.`);
   if (!LOCAL_HOSTS.includes(hostName(at))) console.log('Note: listening beyond this computer. There is no sign-in: anyone on the network who uses a name from HOSTS can read every person\'s data (/api/events?all=1).');
 });

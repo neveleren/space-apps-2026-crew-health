@@ -13,8 +13,10 @@ import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  LIMITS, SECURITY_RULES, allowedHosts, cleanEvent, contentSecurityPolicy, eventProblem, hostName, isJson, isPrivatePath, sameOrigin, siteAllowed,
+  LIMITS, SECURITY_RULES, allowedHosts, cleanEvent, contentSecurityPolicy, eventProblem, hostName, isJson, isPrivatePath, recordProblem, sameOrigin, siteAllowed,
 } from '../src/security.js';
+import { CREW, SOURCES } from '../src/config.js';
+import { exampleFlight } from '../src/demo-crew.js';
 import { openMessage } from '../tools/read-outbox.mjs';
 
 const APP = fileURLToPath(new URL('..', import.meta.url));
@@ -135,6 +137,10 @@ test('the server refuses anything that is not a valid event', async () => {
       report('crew-1', 'hello', minutes(-1), 'everyone'),
       report('crew-1', 'x'.repeat(LIMITS.reportChars + 1)),
       { ...report('crew-1', 'hi'), report: { to: 'doctor-earth', text: 'hi', cc: 'all' } },
+      { ...report('crew-1', 'hi'), report: { to: 'doctor-earth', text: 'hi', topic: 'gossip' } },
+      { ...ok, reading: { ...ok.reading, context: 'party' } },
+      { ...ok, reading: { ...ok.reading, context: 5 } },
+      event('crew-1', { mood: 'good' }, minutes(-1), 'mood', 'mood-report'), // mood is a word, not a record
     ];
     for (const body of bad) {
       const r = await postJson(srv, body);
@@ -169,6 +175,68 @@ test('what the machine can read is kept, with only the fields that were checked'
     assert.deepEqual(kept.at(-1).state, SWITCHES, 'an unknown switch is left out, not stored');
     assert.deepEqual(Object.keys(kept[0]), ['v', 'kind', 'time', 'person', 'state', 'reading']);
   });
+});
+
+test('a strap reading during exercise and the weekly conference summary are saved with their marks', async () => {
+  await withServer(async (srv, dir) => {
+    const workout = event('crew-1', 150, minutes(-2), 'pulse', 'ble-heart-rate');
+    workout.reading.context = 'exercise';
+    assert.equal((await postJson(srv, workout)).status, 204);
+    const summary = `Summary of my last 7 days.\n${'x'.repeat(5000)}`;
+    const pmc = report('crew-1', summary);
+    pmc.report.topic = 'pmc';
+    assert.equal((await postJson(srv, pmc)).status, 201, 'the crew screen cuts this summary at 6,000 characters');
+    const back = (await getJson(srv, '/api/events?person=crew-1')).value;
+    assert.equal(back[0].reading.context, 'exercise', 'kept, or a reload would judge the workout against the resting range');
+    assert.equal(back[1].report.topic, 'pmc');
+    assert.equal(back[1].report.text, summary);
+  });
+});
+
+test('everything the program itself makes passes the check: every preset of the technical view and every event of the example flight', () => {
+  const t = minutes(-1);
+  for (const src of SOURCES) {
+    for (const p of src.presets || []) {
+      const e = event(src.section === 'env' ? 'ship' : 'crew-1', p.value, t, src.indicator, src.id);
+      assert.equal(eventProblem(e), null, `${src.id} ${JSON.stringify(p.value)}`);
+    }
+  }
+  const flight = exampleFlight(CREW);
+  assert.ok(flight.length > 100);
+  for (const e of flight) {
+    assert.equal(eventProblem(e, { checkFuture: false }), null, `${e.person} ${e.reading ? `${e.reading.indicator} ${JSON.stringify(e.reading.value).slice(0, 80)}` : e.kind}`);
+  }
+});
+
+test('a self-logged entry is a few named fields, as the symptom and medicine logs write them', () => {
+  assert.equal(recordProblem({ symptom: 'headache', severity: 4 }), null);
+  assert.equal(recordProblem({ symptom: 'other', severity: 0, note: 'itchy eyes' }), null);
+  assert.equal(recordProblem({ medicine: 'melatonin', name: 'Melatonin', strength: '3 mg', amount: 0.5, unit: 'tablet', takenAt: '2026-11-15T08:00:00.000Z' }), null);
+  const tooMany = Object.fromEntries(Array.from({ length: LIMITS.recordFields + 1 }, (_, i) => [`f${i}`, i]));
+  for (const bad of [null, [], 'headache', 4, {}, { symptom: { nested: true } }, { symptom: ['headache'] }, { symptom: null }, { severity: Infinity },
+    { note: 'x'.repeat(LIMITS.textChars + 1) }, JSON.parse('{"__proto__": 1}'), { 'bad key': 1 }, tooMany]) {
+    assert.ok(recordProblem(bad), JSON.stringify(bad));
+  }
+});
+
+test('a data folder inside the app folder under another name is never served either (DATA_DIR)', async () => {
+  const name = `zz-records-${process.pid}`;
+  const dataDir = join(APP, name);
+  const srv = await startServer(dataDir);
+  try {
+    assert.equal((await postJson(srv, event('crew-1', 85, minutes(-1), 'spo2', 'oximeter'))).status, 204);
+    assert.equal((await postJson(srv, report('crew-1', 'Dizzy and short of breath.'))).status, 201);
+    for (const path of [`/${name}/crew-1.jsonl`, `/${name.toUpperCase()}/crew-1.jsonl`, `/${name}./crew-1.jsonl`, `/${name}/`]) {
+      const r = await raw(srv, path);
+      assert.equal(r.status, 404, path);
+      assert.doesNotMatch(r.text, /spo2|Dizzy/, path);
+    }
+    const [queued] = (await getJson(srv, '/api/outbox?person=crew-1')).value;
+    assert.equal((await raw(srv, `/${queued.file}`)).status, 404, 'nor the outbox file the API names');
+  } finally {
+    srv.stop();
+    await rm(dataDir, { recursive: true, force: true });
+  }
 });
 
 test('times from the future are refused beyond the clock tolerance', async () => {
@@ -348,6 +416,33 @@ test('without a key the message is not queued and not kept, so the screen can sa
     assert.deepEqual(await filesIn(dir), []);
     assert.equal((await postJson(srv, event('crew-1', 70, minutes(-1)))).status, 204, 'readings still save');
   }, { OUTBOX_KEY_FILE: join(APP, 'demo-keys', 'no-such-key.json') });
+});
+
+test('a message to the doctor on board stays on board: kept for the screen, not queued for the downlink, no key needed', async () => {
+  await withServer(async (srv, dir) => {
+    assert.equal((await postJson(srv, report('crew-1', 'Can you look at my ankle?', minutes(-1), 'doctor-onboard'))).status, 204);
+    assert.deepEqual(await filesIn(join(dir, 'outbox')), []);
+    const own = (await getJson(srv, '/api/events?person=crew-1')).value;
+    assert.equal(own[0].report.to, 'doctor-onboard');
+    assert.equal((await postJson(srv, report('crew-1', 'And this one to Earth.'))).status, 503, 'a message to Earth still needs the key');
+  }, { OUTBOX_KEY_FILE: join(APP, 'demo-keys', 'no-such-key.json') });
+});
+
+// The static copy (GitHub Pages) gets no headers, so a page may carry the policy in a meta tag. That copy of the
+// policy must name the hash of each inline script, or the page's own script stops working there and here.
+test('a page that carries its own Content-Security-Policy meta tag allows its inline scripts by hash', async () => {
+  for (const page of ['index.html', 'machine.html']) {
+    const html = await readFile(join(APP, page), 'utf8');
+    const tag = [...html.matchAll(/<meta\b[^>]*>/gi)].map((m) => m[0]).find((m) => /http-equiv\s*=\s*["']?Content-Security-Policy/i.test(m));
+    if (!tag) continue; // no meta tag: the server's header is the only policy
+    const policy = (/content\s*=\s*"([^"]*)"/i.exec(tag) || [])[1] || '';
+    assert.doesNotMatch(policy, /script-src[^;]*'unsafe-inline'/, page);
+    for (const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)) {
+      if (/\bsrc\s*=/i.test(m[1])) continue;
+      const hash = createHash('sha256').update(m[2].replace(/\r\n?/g, '\n'), 'utf8').digest('base64');
+      assert.ok(policy.includes(`'sha256-${hash}'`), `${page}: the meta policy must name 'sha256-${hash}'`);
+    }
+  }
 });
 
 // ---------- the rules themselves (src/security.js) ----------

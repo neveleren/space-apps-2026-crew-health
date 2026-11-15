@@ -30,13 +30,15 @@ export const REFS = {
   ntia: { name: 'NTIA, The Minimum Elements for an SBOM, 12 Jul 2021', url: 'https://www.ntia.gov/report/2021/minimum-elements-software-bill-materials-sbom' },
 };
 
-// Sizes and times. bodyBytes and reportChars are kept from the first version (the screen cuts a message at 4,000
-// characters too); the others are new drafts. A real Inspiration4 blood panel holds 37 analytes.
+// Sizes and times. bodyBytes is kept from the first version; reportChars follows the crew screen, which cuts a
+// message to a doctor at 4,000 characters and the weekly conference summary at 6,000; the others are new drafts.
+// A real Inspiration4 blood panel holds 37 analytes.
 export const LIMITS = Object.freeze({
   bodyBytes: 64 * 1024,
-  reportChars: 4000,
+  reportChars: 6000,
   textChars: 200,
   panelAnalytes: 200,
+  recordFields: 8,
   futureMinutes: 5,
 });
 
@@ -48,6 +50,13 @@ const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
 const DOCTORS = ['doctor-onboard', 'doctor-earth'];
 const SWITCHES = ['aiWorks', 'doctorOnBoard', 'linkToEarth'];
 const ANALYTE = ['code', 'name', 'test', 'value', 'min', 'max', 'units'];
+// What a reading may say about how it was taken: the crew screen marks heart rate from the strap during a workout
+// as "exercise", and the machine then records it instead of judging it against the resting range. It must be
+// stored, or a reload would turn the workout into alarms.
+export const READING_CONTEXTS = Object.freeze(['exercise']);
+// What a message to a doctor may say it is: "pmc", the summary for the weekly private medical conference.
+export const REPORT_TOPICS = Object.freeze(['pmc']);
+const FIELD_NAME = /^[a-zA-Z][a-zA-Z0-9]{0,31}$/;
 // The fields an event may carry. A screen that starts sending a new field adds it here (and to cleanEvent).
 const COMMON = ['v', 'kind', 'time', 'person', 'state', 'example'];
 const OWN = { reading: ['reading'], review: [], report: ['report'] };
@@ -83,20 +92,38 @@ export function eventProblem(e, { now = Date.now(), checkFuture = true } = {}) {
 
 function reportProblem(r) {
   if (!isObj(r)) return 'report must be an object';
-  if (unknownKey(r, ['to', 'text']) !== undefined) return 'report may hold only to and text';
+  if (unknownKey(r, ['to', 'text', 'topic']) !== undefined) return 'report may hold only to, text and topic';
   if (!DOCTORS.includes(r.to)) return `report.to must be ${DOCTORS.join(' or ')}`;
   if (typeof r.text !== 'string' || r.text.length > LIMITS.reportChars) return `report.text must be text of at most ${LIMITS.reportChars} characters`;
+  if (r.topic !== undefined && !REPORT_TOPICS.includes(r.topic)) return `report.topic must be one of ${REPORT_TOPICS.join(', ')}`;
   return null;
 }
 
 function readingProblem(r) {
   if (!isObj(r)) return 'reading must be an object';
-  if (unknownKey(r, ['source', 'indicator', 'value']) !== undefined) return 'reading may hold only source, indicator and value';
+  if (unknownKey(r, ['source', 'indicator', 'value', 'context']) !== undefined) return 'reading may hold only source, indicator, value and context';
   if (typeof r.source !== 'string' || !SOURCE_ID.test(r.source)) return 'reading.source must be a device id of lower-case letters, digits and hyphens';
+  if (r.context !== undefined && !READING_CONTEXTS.includes(r.context)) return `reading.context must be one of ${READING_CONTEXTS.join(', ')}`;
   const cell = typeof r.indicator === 'string' ? cellOf.get(r.indicator) : undefined;
   if (!cell) return 'reading.indicator is not a measure of src/config.js';
   const why = valueProblem(cell, r.value);
   return why ? `reading.value ${why}` : null;
+}
+
+// A self-logged entry made of a few named fields, such as a symptom { symptom, severity, note } or a medicine
+// { medicine, name, strength, amount, unit, takenAt }: flat, small, each field a short text, a number or true/false.
+// Returns null when it may be saved, otherwise a short reason.
+export function recordProblem(v) {
+  if (!isObj(v)) return 'must be an object of named fields';
+  const keys = Object.keys(v);
+  if (!keys.length || keys.length > LIMITS.recordFields) return `must have 1 to ${LIMITS.recordFields} fields`;
+  for (const k of keys) {
+    if (!FIELD_NAME.test(k)) return `has a field name that is not a plain word: ${JSON.stringify(k.slice(0, 40))}`;
+    const x = v[k];
+    const ok = (typeof x === 'string' && x.length <= LIMITS.textChars) || (typeof x === 'number' && Number.isFinite(x)) || typeof x === 'boolean';
+    if (!ok) return `has a field "${k}" that is not a short text, a number or true/false`;
+  }
+  return null;
 }
 
 // The value must be of the kind the measure takes, and readable by the machine's own check (engine.js),
@@ -116,6 +143,8 @@ function valueProblem(cell, v) {
   }
   if (cell.kind === KIND.COMPLEX) return shortText(v) ? null : `must be a text of 1 to ${LIMITS.textChars} characters`;
   if (cell.kind === KIND.SELF) {
+    // A measure that is recorded, never judged (normType "record"), may take a small entry of named fields.
+    if (cell.normType === 'record' && isObj(v)) return recordProblem(v);
     if (!shortText(v) && !(typeof v === 'number' && Number.isFinite(v))) return `must be a short text or a number`;
     if (cell.scale && !(Number(v) >= cell.scale.min && Number(v) <= cell.scale.max)) return `must be from ${cell.scale.min} to ${cell.scale.max}`;
     return null;
@@ -144,8 +173,14 @@ export function cleanEvent(e) {
   const out = { v: 1, kind: e.kind, time: e.time, person: e.person };
   if (e.example !== undefined) out.example = e.example;
   if (e.state !== undefined) out.state = Object.fromEntries(SWITCHES.map((k) => [k, e.state[k]]));
-  if (e.kind === 'reading') out.reading = { source: e.reading.source, indicator: e.reading.indicator, value: e.reading.value };
-  if (e.kind === 'report') out.report = { to: e.report.to, text: e.report.text };
+  if (e.kind === 'reading') {
+    out.reading = { source: e.reading.source, indicator: e.reading.indicator, value: e.reading.value };
+    if (e.reading.context !== undefined) out.reading.context = e.reading.context;
+  }
+  if (e.kind === 'report') {
+    out.report = { to: e.report.to, text: e.report.text };
+    if (e.report.topic !== undefined) out.report.topic = e.report.topic;
+  }
   return out;
 }
 
@@ -260,7 +295,7 @@ export function securityHeaders(scriptHashes = []) {
 // draft: true marks a number or a choice by Claude that the team and the flight surgeons still have to confirm.
 export const SECURITY_RULES = [
   { id: 'private-files', title: 'Private folders are never served',
-    rule: `The data, the program's workshop and the demo keys (${PRIVATE_NAMES.join(', ')}) and every name that starts with a dot are never sent as files. Names are compared without letter case and without trailing dots or spaces, as Windows reads them, and again under the name the disk itself uses.`,
+    rule: `The data, the program's workshop and the demo keys (${PRIVATE_NAMES.join(', ')}) and every name that starts with a dot are never sent as files. Names are compared without letter case and without trailing dots or spaces, as Windows reads them, and again under the name the disk itself uses. The data folder is refused wherever DATA_DIR puts it.`,
     draft: false, sources: [REFS.caseWin] },
   { id: 'known-host', title: 'Only known host names',
     rule: `The server answers only to ${LOCAL_HOSTS.join(', ')}, the exact address it listens on, and the names in HOSTS. This stops DNS rebinding, where a web page points its own name at this computer.`,
@@ -272,19 +307,19 @@ export const SECURITY_RULES = [
     rule: 'A save with an Origin must come from this server\'s own address, and a browser\'s Sec-Fetch-Site must say same-origin. A save with no Origin comes from a program such as curl, not from a web page.',
     draft: false, sources: [REFS.csrf, REFS.origin] },
   { id: 'event-shape', title: 'Every event is checked',
-    rule: `Version 1; kind ${EVENT_KINDS.join(', ')}; a person id of lower-case letters, digits and hyphens; the switches as true or false; a reading names a measure of src/config.js and carries a value the machine can read; nothing else.`,
+    rule: `Version 1; kind ${EVENT_KINDS.join(', ')}; a person id of lower-case letters, digits and hyphens; the switches as true or false; a reading names a measure of src/config.js and carries a value the machine can read (for a measure that is only recorded, such as symptoms or medicines, a few named fields), and may say it was taken during ${READING_CONTEXTS.join(', ')}; a message to a doctor may say it is the weekly conference summary; nothing else.`,
     draft: false, sources: [REFS.input] },
   { id: 'future-time', title: 'No times from the future',
     rule: `An event may be dated at most ${LIMITS.futureMinutes} minutes ahead of this computer's clock, the usual clock tolerance (Kerberos).`,
     value: `${LIMITS.futureMinutes} minutes`, draft: true, sources: [REFS.clock] },
   { id: 'sizes', title: 'Size limits',
-    rule: `A request of at most ${LIMITS.bodyBytes / 1024} KB; a message to a doctor of at most ${LIMITS.reportChars} characters; a text value of at most ${LIMITS.textChars} characters; a blood panel of at most ${LIMITS.panelAnalytes} analytes (a real Inspiration4 panel has 37). No public standard gives these numbers: engineering drafts.`,
+    rule: `A request of at most ${LIMITS.bodyBytes / 1024} KB; a message to a doctor of at most ${LIMITS.reportChars} characters; a text value of at most ${LIMITS.textChars} characters; a self-logged entry of at most ${LIMITS.recordFields} fields; a blood panel of at most ${LIMITS.panelAnalytes} analytes (a real Inspiration4 panel has 37). No public standard gives these numbers: engineering drafts.`,
     draft: true, sources: [REFS.input] },
   { id: 'own-data', title: 'The crew screen reads one person',
     rule: 'The crew screen asks for one person\'s events plus the ship\'s cabin readings (/api/events?person=<id>). The whole list (/api/events?all=1) is the engineering view for the technical page; a real deployment would give it only to the flight surgeons.',
     draft: false, sources: [REFS.cfr, REFS.std2] },
-  { id: 'outbox', title: 'Messages to a doctor are sealed',
-    rule: 'Each message to a doctor is also written as one file in data/outbox, the hand-over point for the station\'s downlink. Who it is for and when stay readable for routing; the text is encrypted for the flight surgeon\'s public key (ECDH P-256, HKDF-SHA-256, AES-256-GCM), and the readable fields are bound to it. This version uses a DEMO key pair.',
+  { id: 'outbox', title: 'Messages to Earth are sealed',
+    rule: 'Each message to the doctor on Earth is also written as one file in data/outbox, the hand-over point for the station\'s downlink; a message to the doctor on board stays on board. Who it is for and when stay readable for routing; the text is encrypted for the flight surgeon\'s public key (ECDH P-256, HKDF-SHA-256, AES-256-GCM), and the readable fields are bound to it. The seal hides the text but does not prove who wrote it. This version uses a DEMO key pair.',
     draft: true, sources: [REFS.std1, REFS.esa, REFS.ecdh, REFS.hkdf, REFS.gcm] },
   { id: 'file-names', title: 'No personal information in file names',
     rule: 'Data files are named by the person\'s id, outbox files by time and a random number.',

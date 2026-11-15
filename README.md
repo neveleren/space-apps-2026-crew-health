@@ -38,7 +38,7 @@ Everything the pages need is in this folder: fonts (`fonts/`, SIL Open Font Lice
 
 - The crew screen reads only the signed-in person's data plus the ship's cabin readings; the whole list is the technical view's engineering view, which a real deployment would restrict.
 - The server answers only on this computer's own names (`127.0.0.1`, `localhost`, `[::1]`; add more with `HOSTS`), saves only JSON from its own pages, checks every event, never serves `data/` or the program's workshop folders, and sends security headers on every response. The headers also stop the camera runtime's built-in usage log to Google, so nothing leaves the computer.
-- Each message to a doctor is also queued as one file in `data/outbox/`, the hand-over point for the station's downlink. Its text is encrypted for the flight surgeon's public key (ECDH P-256, HKDF-SHA-256, AES-256-GCM, with Node.js's own crypto). **This version uses a DEMO key pair, `demo-keys/`, which is public: it is not a real key.** `npm run outbox` opens the queue as the ground would.
+- Each message to the doctor on Earth is also queued as one file in `data/outbox/`, the hand-over point for the station's downlink; a message to the doctor on board stays on board. Its text is encrypted for the flight surgeon's public key (ECDH P-256, HKDF-SHA-256, AES-256-GCM, with Node.js's own crypto). **This version uses a DEMO key pair, `demo-keys/`, which is public: it is not a real key.** `npm run outbox` opens the queue as the ground would.
 - An optional PIN per person (`src/privacy.js`) keeps only a salted PBKDF2 hash.
 - `SBOM.json` and `SHA256SUMS` list every third-party file with its hash; `npm test` checks them.
 - What is protected and what is not: `docs/SECURITY.md`.
