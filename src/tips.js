@@ -5,7 +5,7 @@ export const TIPS = {
   aisession: { title: 'Anonymous session with AI', lines: ['A private talk with an AI program on this laptop: not a person and not a psychologist. Nothing you write is saved or sent.', 'It opens with the AI off too: then only the chat with the AI is missing, while Help now, coping steps and your plan work. No AI model is connected in this version.'] },
   helpnow: { title: 'Help now', lines: ['Fixed steps to a person, not AI: talk to a crewmate now, request a private call with the ground (you see the line before it goes), open your plan for hard days. In immediate danger, hold the Help key.', 'Also shown by a simple word rule, even when the AI is off: in the session, the journal and its letter, the five steps and the plan. Nothing is sent by itself.'] },
   noemotion: { title: 'No emotion reading', lines: ['The camera only looks for physical events: a hand held on the chest, sleep.', 'It never guesses feelings from a face or a voice (the EU AI Act bans emotion reading at work since February 2025).'] },
-  pmc: { title: 'Prepare', lines: ['Opens a summary of your last 7 days for the weekly private medical conference: your numbers, check-ins and what the program flagged.', 'You edit it and decide whether to send it.'] },
+  pmc: { title: 'Prepare', lines: ['Opens a summary of your last 7 days for the weekly private medical conference: your numbers, check-ins, exercise, reaction tests, eye checks and what the program flagged, then your private symptom and medicine logs under a heading of their own.', 'You edit it and decide whether to send it: delete any line you want to keep to yourself.'] },
   symptomlog: { title: 'Log a symptom', lines: ['Most problems in flight are symptoms, not numbers: a stuffy nose, back pain, motion sickness, trouble sleeping, headache (NASA, 2017).', 'Pick one and how bad it is, in about ten seconds. Private: nothing is sent unless you choose.'] },
   privatelog: { title: 'Your private log', lines: ['Symptoms and medicines you logged in the last 14 days, newest first.', 'Kept for you: nothing here is sent to anyone unless you choose, for example by copying it into a message to the doctor or bringing it to your weekly private medical conference.'] },
   medicinelog: { title: 'I took a medicine', lines: ['Two taps from the ISS medical kit list. On the ISS, medicine use was recorded far less often than crews really took medicines (NASA Dose Tracker).', 'Private: nothing is sent unless you choose.'] },
@@ -30,7 +30,7 @@ export const TIPS = {
   level: { title: 'Levels', lines: ['Attention (blue, circle i): look at it when you can.', 'Needs action (yellow, triangle): do something today.', 'Urgent (red, octagon): act now. For the body, every crew screen shows it and a message goes to the doctor; with no link it waits in the outbox, and Messages says what really happened.', 'Each level has its own icon and word, so colour is never the only cue.'] },
   details: { title: 'Details', lines: ['Opens the first reason: its chart, its normal range, its history and what to do.'] },
   ai: { title: 'Analyse with AI', lines: ['Sends a summary of these readings to an AI on board that works without internet.', 'No AI is connected in this version; the team decides which one.'] },
-  doctor: { title: 'Message the doctor', lines: ['Drafts a message with these readings for the doctor on board, or on Earth when the link is up.', 'You can change the text before sending.'] },
+  doctor: { title: 'Message the doctor', lines: ['Drafts a message with these readings for the doctor on board, or on Earth when the link is up; from Today it also holds your last 7 days of exercise, reaction tests, eye checks and your private symptom and medicine logs.', 'You can change the text before sending, and delete what you want to keep to yourself.'] },
   tellDoctor: { title: 'Tell the doctor on Earth', lines: ['Sends your recent check-ins to the doctor on Earth, only if you choose to. You see and can change the message first.', 'It always goes to Earth, also when a doctor is on board.'] },
   advice: { title: 'Small things that help', lines: ['Things that help astronauts, each with its source, chosen by plain rules from your check-ins: no AI, no internet.', 'Below them, checked reading for people who prefer to read without the AI: NASA health briefs, NASA evidence reports, MedlinePlus.'] },
   checkin: { title: 'Daily check-in', lines: ['Three quick questions each day: mood, energy and last night\'s sleep.', 'Your answers build up for a planned review. One bad day never raises an alarm.'] },
@@ -283,7 +283,7 @@ export const PROVENANCE = {
     "path": "Planned: a drink log in this app, or import from Apple Health (dietaryWater) or Android Health Connect (HydrationRecord), both stored on the device..."
   },
   "bodyMass": {
-    "what": "Body mass as a share of your own pre-flight mass; ISS crews lose 2 to 5% in the first month, and ordinary scales do not work in weightlessness.",
+    "what": "Body mass as a share of your own pre-flight mass; ISS crews lose 2 to 5% in the first month, and ordinary scales do not work in weightlessness. NASA's nutrition report calls a loss of more than 5% worthy of concern and a loss of 10% clinically significant (drafts here: attention and needs action).",
     "iss": [
       {
         "name": "SLAMMD",
@@ -461,7 +461,7 @@ export const PROVENANCE = {
       }
     ],
     "could": [],
-    "how": "You pick what you feel and how strong it is, in about ten seconds, and add a few words if you like.",
+    "how": "You pick what you feel and how strong it is, in about ten seconds, and add a few words if you like. A headache shows the cabin CO2 before it, on Today and on this page: on the ISS, more CO2 went with more reported headaches (Law et al., 2014).",
     "path": "Working now: Today, Log a symptom. Private: sent to no one unless you choose."
   },
   "medicines": {
@@ -591,7 +591,7 @@ export const PROVENANCE = {
     "path": "The app's own camera models, run in the browser from files on this computer (no internet needed)"
   },
   "co2": {
-    "what": "Carbon dioxide breathed out by the crew builds up in a closed cabin; in ISS data higher CO2 went with more headaches, so NASA limits the one-hour average to 3 mmHg.",
+    "what": "Carbon dioxide breathed out by the crew builds up in a closed cabin; in ISS data higher CO2 went with more headaches, so NASA limits the one-hour average to 3 mmHg. Its page shows the 7-day average, and a logged headache shows the cabin CO2 before it.",
     "iss": [
       {
         "name": "Vaisala GMP252 CO2 probes",
@@ -760,7 +760,7 @@ export const PROVENANCE = {
     "path": "On the ISS the reading is shown on the tonometer screen and the device has no data link (NASA catalog, 2011), so it would be typed in by the crew..."
   },
   "hearing": {
-    "what": "The quietest tone a person can hear, in decibels (dB HL; lower is better); station fans and machines are loud, so NASA tests the hearing of everyone who stays on orbit longer than 30 days.",
+    "what": "The quietest tones a person can hear, in decibels (dB HL; lower is better); station fans and machines are loud, so NASA tests the hearing of everyone who stays on orbit longer than 30 days. Judged by the change from your own pre-flight test: NASA counts an average shift of 10 dB or more at 2000, 3000 and 4000 Hz (a draft rule here).",
     "iss": [
       {
         "name": "On-Orbit Hearing Assessment: OOHA headset and KUDUwave software",
@@ -785,7 +785,7 @@ export const PROVENANCE = {
         "url": "https://support.apple.com/120991"
       }
     ],
-    "how": "In a quiet module the person wears the audiometer headset, does an ear pressure check, then presses a key whenever a tone is heard; the software finds the quietest level heard at each pitch (an audiogram). This app shows one number: the average at 500 to 4000 Hz (WHO grading).",
+    "how": "In a quiet module the person wears the audiometer headset, does an ear pressure check, then presses a key whenever a tone is heard; the software finds the quietest level heard at each pitch (an audiogram). This app shows one number: the average at 2000, 3000 and 4000 Hz, compared with your latest test before launch. WHO's 20 dB (an average at 500 to 4000 Hz) is only a second reference, used when no pre-flight test is on record.",
     "path": "On the ISS the KUDUwave software runs on a station laptop and its results go to secure NASA servers and the JSC audiology clinic."
   },
   "radiation": {
