@@ -292,8 +292,9 @@ export async function connectHealthDevice(kind, onReading, options = {}) {
         onReading(r);
       }
     });
-    await ch.startNotifications();
-    subscribed.push(c.name);
+    // A characteristic that will not start (for example a cuff that needs pairing first) is skipped; if none starts,
+    // the connection is closed below, so a half-open device is never left behind.
+    try { await ch.startNotifications(); subscribed.push(c.name); } catch { /* try the next one */ }
   }
   if (!subscribed.length) {
     try { device.gatt.disconnect(); } catch { /* already gone */ }
