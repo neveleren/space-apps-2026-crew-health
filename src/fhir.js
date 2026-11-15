@@ -54,7 +54,7 @@ export const MEASURES = {
 // Number cells left out of the file, and why.
 export const NOT_EXPORTED = {
   bodyMass: 'kept as a share of the person\'s own pre-flight mass; LOINC\'s body weight (29463-7) is in kg',
-  hearing: 'a better-ear average over several tones; LOINC codes hearing thresholds per tone and ear',
+  hearing: 'an average over the tones of 2000, 3000 and 4000 Hz; LOINC codes hearing thresholds per tone and ear',
   radiation: 'a career dose: no LOINC code was checked for it',
   strength: 'the strength test is not one standard test with a LOINC code checked here',
   bone: 'two body sites as shares of the pre-flight level, not one value',

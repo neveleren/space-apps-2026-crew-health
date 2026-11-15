@@ -10,8 +10,9 @@ import { RULES as CAM_RULES } from './camera-rules.js';
 import { exampleFlight, MISSION } from './demo-crew.js';
 import { forecast } from './trend.js';
 import { drawHistory, drawTable, fmtDate } from './history-view.js';
+import { hearingBand, hearingLines } from './nasa-rules.js';
 
-const PEOPLE = [...CREW, SHIP, ...realPeople(INSPIRATION4.subjects)];
+const PEOPLE =[...CREW, SHIP, ...realPeople(INSPIRATION4.subjects)];
 const personById = Object.fromEntries(PEOPLE.map((p) => [p.id, p]));
 const personName = (id) => (personById[id] ? personById[id].name : 'not signed');
 
@@ -73,12 +74,14 @@ const fmtPct = (p) => fmtNum(Math.floor(p * 10) / 10);
 
 const STEP_TEXT = {
   'norm-used': (s) => `Compared with the norm: ${NORM_TITLE[s.norm] || 'not set'}.`,
-  'in-norm': (s) => (s.percent !== undefined ? `Within the norm: ${fmtPct(s.percent)}% of own pre-flight level. The AI is not triggered.` : 'Within the norm. The AI is not triggered.'),
+  'in-norm': (s) => (s.percent !== undefined ? `Within the norm: ${fmtPct(s.percent)}% of own pre-flight level. The AI is not triggered.`
+    : s.shift !== undefined ? `Within the norm: ${fmtNum(s.shift)} dB from the own pre-flight test (${fmtNum(s.baseline)} dB HL). The AI is not triggered.` : 'Within the norm. The AI is not triggered.'),
   'no-norm-recorded': () => 'No checked norm for this measure: the reading is recorded, not judged.',
   'no-lower-limit': () => 'There is no lower limit for blood pressure: low blood pressure is not checked yet.',
   'out-of-norm': (s) => (s.percent !== undefined
     ? `Below the norm: ${fmtPct(s.percent)}% of own pre-flight level.`
-    : (s.side === 'below' ? 'Below the norm.' : 'Above the norm.')),
+    : s.shift !== undefined ? `Above the norm: a shift of ${fmtNum(s.shift)} dB from the own pre-flight test (${fmtNum(s.baseline)} dB HL), a draft.`
+      : (s.side === 'below' ? 'Below the norm.' : 'Above the norm.')),
   'panel-in-norm': (s) => `All ${s.checked} values are within the lab's norm. The AI is not triggered.`,
   'panel-out': (s) => `${s.out.length} of ${s.checked} outside the norm: ${s.out.map((a) => `${a.name} ${fmtNum(a.value)} ${a.units} (${a.side === 'below' ? 'below' : 'above'} the norm ${a.min === null ? '' : fmtNum(a.min)}${a.max === null ? '+' : `-${fmtNum(a.max)}`})`).join('; ')}.`,
   'ai-takes': () => 'The AI is triggered and takes on the reading.',
@@ -164,7 +167,8 @@ function readSwitches() {
   return state;
 }
 
-const freshMachine = () => createMachine({ cells: CELLS, crew: PEOPLE, state: readSwitches() });
+// The example mission tells the machine which readings are pre-flight (hearing is judged against the pre-flight test).
+const freshMachine = () => createMachine({ cells: CELLS, crew: PEOPLE, state: readSwitches(), mission: MISSION });
 let machine = freshMachine();
 let selected = CREW[0].id; // who is being measured now
 let replaying = false; // while stored events go through the machine again, the page is drawn once at the end
@@ -331,6 +335,11 @@ function histSetup(owner, key) {
     const n = cell.norm;
     const lines = key === 'radiation' ? [{ v: n.max, label: 'NASA career limit' }] : [];
     return { series, band: { min: n.min, max: n.max }, lines, trendOf: list, norm: { min: n.min, max: n.max, maxExclusive: !!n.maxExclusive }, normName };
+  }
+  if (cell.normType === 'baseline-shift') {
+    // Hearing: the band ends at the own pre-flight test plus the shift (src/nasa-rules.js), a draft.
+    const band = hearingBand(list, cell);
+    return { series, band, lines: hearingLines(list, cell), trendOf: list, norm: { min: null, max: band.max, maxExclusive: true }, normName };
   }
   return { series, trendOf: list, norm: null, normName: '' };
 }

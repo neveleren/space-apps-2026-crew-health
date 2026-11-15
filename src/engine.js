@@ -72,8 +72,25 @@ const has = (x) => x !== null && x !== undefined;
 // Compares one reading with the cell's norm.
 // Returns { valid: false } when the value cannot be read,
 // otherwise { valid: true, inNorm, side } where side is 'below', 'above' or null.
-export function checkNorm(cell, value, profile) {
+// context (optional): { baseline, baselineTime }, the person's own pre-flight test of a measure judged by its shift
+// from it (norm type 'baseline-shift', hearing); the machine finds it (receive below).
+export function checkNorm(cell, value, profile, context = null) {
   const n = cell.norm || {};
+  if (cell.normType === 'baseline-shift') {
+    // NASA's rule for hearing: a shift of shiftAtLeast or more from the person's own pre-flight test counts. With no
+    // pre-flight test on record, the cell's second reference (an absolute value, WHO's 20 dB) stands in. Drafts.
+    const v = toNum(value);
+    if (!Number.isFinite(v) || (v < 0 && !cell.allowNegative)) return { valid: false };
+    const base = context && Number.isFinite(context.baseline) ? context.baseline : null;
+    if (base === null) {
+      const f = n.fallback || {};
+      const out = has(f.max) && (f.maxExclusive ? v >= f.max : v > f.max);
+      return { valid: true, inNorm: !out, side: out ? 'above' : null, norm: 'earthGeneral' };
+    }
+    const shift = Math.round((v - base) * 10) / 10;
+    const inNorm = shift < n.shiftAtLeast;
+    return { valid: true, inNorm, side: inNorm ? null : 'above', shift, baseline: base, baselineTime: context.baselineTime || null };
+  }
   if (cell.normType === 'range') {
     const v = toNum(value);
     // Below zero is a device error for body readings, radiation or CO2; a cell where it is
@@ -203,10 +220,13 @@ export function checkSelf(cell, value) {
 // Every reading is signed with the person it belongs to (reading.person). Each person has their
 // own pre-flight levels, their own history and their own pile for the periodic review, so data of
 // different people never mix. A reading without a known person is not accepted.
-export function createMachine({ cells, crew = [], state = {}, now = () => new Date() } = {}) {
+// mission (optional): { launch }, so a reading can be told apart as before or after launch; a measure judged by its
+// shift from the person's own pre-flight test (hearing) needs it. Without a mission no reading counts as pre-flight.
+export function createMachine({ cells, crew = [], state = {}, now = () => new Date(), mission = null } = {}) {
   if (!Array.isArray(cells)) throw new TypeError('cells must be an array');
   if (!Array.isArray(crew)) throw new TypeError('crew must be an array');
   const s = { aiWorks: true, doctorOnBoard: false, linkToEarth: true, ...state };
+  const launchMs = mission && mission.launch ? new Date(mission.launch).getTime() : NaN;
   const byIndicator = new Map(cells.map((c) => [c.indicator, c]));
   const people = new Map(crew.map((p) => [p.id, p]));
   let seq = 0;
@@ -216,6 +236,16 @@ export function createMachine({ cells, crew = [], state = {}, now = () => new Da
   const hkey = (id, indicator) => `${id}${indicator}`;
   // A reading may carry its own time (stored or imported data); otherwise it happens now.
   const timeOf = (t) => { const d = t ? new Date(t) : null; return d && Number.isFinite(d.getTime()) ? d : now(); };
+  // The person's own pre-flight test of a measure: the latest reading of it before launch (a draft: NASA compares
+  // with "preflight audiometric tests"), for a reading taken at or after launch. null before launch, or with no mission.
+  function preflightOf(personId, indicator, time) {
+    if (!Number.isFinite(launchMs) || time.getTime() < launchMs) return null;
+    const before = (history.get(hkey(personId, indicator)) || []).filter((x) => x.time.getTime() < launchMs && Number.isFinite(toNum(x.value)));
+    const last = before[before.length - 1];
+    return last ? { baseline: toNum(last.value), baselineTime: last.time.toISOString() } : null;
+  }
+  // The shift from the pre-flight test travels with the steps and the history, for the screens and the levels.
+  const shiftOf = (r) => (r.shift !== undefined ? { shift: r.shift, baseline: r.baseline, baselineTime: r.baselineTime } : {});
 
   // The camera path, in the team's words: the automation calls the doctor on Earth
   // if there is no doctor on board. No doctor and no link was an open question; the draft default now is the
@@ -311,7 +341,7 @@ export function createMachine({ cells, crew = [], state = {}, now = () => new Da
       status = STATUS.UNKNOWN;
       dest = DEST.UNDECIDED;
     } else if (cell.kind === KIND.NUMBER) {
-      const r = checkNorm(cell, reading.value, profile);
+      const r = checkNorm(cell, reading.value, profile, cell.normType === 'baseline-shift' ? preflightOf(person.id, cell.indicator, time) : null);
       if (!r.valid) {
         steps.push({ code: r.reason === 'no-baseline' ? 'no-baseline' : 'bad-value', by: 'machine' });
         status = STATUS.UNKNOWN;
@@ -329,14 +359,14 @@ export function createMachine({ cells, crew = [], state = {}, now = () => new Da
           status = STATUS.RECORDED;
           dest = DEST.NONE;
         } else {
-        steps.push({ code: 'norm-used', by: 'machine', norm: cell.compareWith, question: OPEN_QUESTION.WHICH_NORM });
+        steps.push({ code: 'norm-used', by: 'machine', norm: r.norm || cell.compareWith, question: OPEN_QUESTION.WHICH_NORM });
         if (r.inNorm) {
-          steps.push({ code: 'in-norm', by: 'machine', percent: r.percent });
+          steps.push({ code: 'in-norm', by: 'machine', percent: r.percent, ...shiftOf(r) });
           if (cell.normType === 'below-both' && !has(cell.norm.sysMin)) steps.push({ code: 'no-lower-limit', by: 'open' });
           status = STATUS.OK;
           dest = DEST.NONE;
         } else {
-          steps.push({ code: 'out-of-norm', by: 'machine', side: r.side, percent: r.percent });
+          steps.push({ code: 'out-of-norm', by: 'machine', side: r.side, percent: r.percent, ...shiftOf(r) });
           status = STATUS.OUT;
           dest = red ? redAlarm(steps, red, cell) : outOfNorm(steps);
         }
@@ -430,7 +460,7 @@ export function createMachine({ cells, crew = [], state = {}, now = () => new Da
       const list = history.get(k);
       // The source is kept, so the screen can say where each value came from (a device, a person, made-up example data).
       // The red limit it crossed (or null) and the context (for example 'exercise') are kept for the screen and the levels.
-      list.push({ time, value: reading.value, status, side: last ? last.side || null : null, percent: last ? last.percent : undefined, source: reading.source || null, example: Boolean(reading.example), red, context: reading.context || null });
+      list.push({ time, value: reading.value, status, side: last ? last.side || null : null, percent: last ? last.percent : undefined, source: reading.source || null, example: Boolean(reading.example), red, context: reading.context || null, ...(last ? shiftOf(last) : {}) });
       list.sort((a, b) => a.time - b.time);
     }
     return entry(reading, cell, status, dest, steps, person.id, time);
