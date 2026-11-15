@@ -11,7 +11,7 @@ import {
   withEntry, markSent, matchesRisk, plainText, RISK_RULE, TALK_REQUEST_TEXT, TALK_REQUEST_TOPIC, LETTER_TOPIC, isTalkRequest, isLetter,
 } from '../src/support.js';
 import { RT_RULES, scoreRun, createSession, compareToOwn, median, exampleEarlierRuns } from '../src/reaction-test.js';
-import { breathAt, sceneAt, sceneFor, chooseScene, nextSceneAt, clampVolume, soundLevel, volumeText, loopBounds, creditText, problemText, BREAK_SCENES, BREAK_RULES } from '../src/earth-break.js';
+import { breathAt, sceneAt, sceneFor, chooseScene, nextSceneAt, clampVolume, soundLevel, volumeText, loopBounds, loopPoints, creditText, problemText, BREAK_SCENES, BREAK_RULES } from '../src/earth-break.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 const NOW = new Date('2026-11-15T09:00:00Z');
@@ -371,6 +371,18 @@ test('a sound loop skips the silence an encoder adds at both ends, so the loop h
   assert.equal(loopBounds([new Float32Array(10)], 4), null, 'all silence: no bounds, play the whole buffer');
   assert.equal(loopBounds([], 44100), null);
   assert.equal(loopBounds([left], 0), null);
+});
+
+test('the loop points sit half a second inside the sound, where the file repeats the loop\'s own end and start', () => {
+  assert.equal(BREAK_RULES.soundPadS, 0.5);
+  const rate = 10;
+  const ch = new Float32Array(370).fill(0.2);
+  assert.deepEqual(loopPoints([ch], rate), { start: 0.5, end: 36.5 }, 'a 37 s file: the 36 s loop between 0.5 s and 36.5 s');
+  const late = new Float32Array(372).fill(0.2);
+  late.fill(0, 0, 2);
+  assert.deepEqual(loopPoints([late], rate), { start: 0.7, end: 36.7 }, 'a decoder that keeps the encoder silence at the start: the loop moves with it');
+  assert.equal(loopPoints([new Float32Array(15).fill(0.2)], rate), null, 'too short to loop');
+  assert.equal(loopPoints([new Float32Array(20)], rate), null, 'silence');
 });
 
 test('every scene names its video and sound makers on the screen and has a description', () => {

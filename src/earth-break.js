@@ -29,8 +29,9 @@ export const BREAK_SCENES = [
 
 export const BREATH = { inS: 4, outS: 6 };
 // fadeS: the crossfade between two scenes, for the picture and the sound. volume: the calm starting level, 0 to 1
-// (TO CONFIRM: 50 percent). soundFadeS: how fast the sound goes quiet when the break stops.
-export const BREAK_RULES = { durationS: 180, fadeS: 2, volume: 0.5, volumeStep: 0.05, soundFadeS: 1.5, prefetchS: 8 };
+// (TO CONFIRM: 50 percent). soundFadeS: how fast the sound goes quiet when the break stops. soundPadS: each sound
+// file carries this much of its loop's own end before the loop and of its own start after it (see loopPoints).
+export const BREAK_RULES = { durationS: 180, fadeS: 2, volume: 0.5, volumeStep: 0.05, soundFadeS: 1.5, prefetchS: 8, soundPadS: 0.5 };
 export const FEELINGS = [['better', 'Better'], ['same', 'Same'], ['worse', 'Worse']];
 
 // Where the breath is at ms after the start: phase 'in' or 'out', progress 0 to 1 within the phase, the circle's
@@ -109,6 +110,17 @@ export function loopBounds(channels, sampleRate, threshold = 1e-4) {
   return { start: first / sampleRate, end: (last + 1) / sampleRate };
 }
 
+// Where a sound loops, in seconds: inside the sound (loopBounds) and padS in from each end. The padding repeats the
+// loop's own sound, so the step from the loop's end back to its start is as smooth as any other moment, and the
+// edge effects of decoding and resampling stay outside the loop. null when the sound is too short to loop.
+export function loopPoints(channels, sampleRate, padS = BREAK_RULES.soundPadS) {
+  const b = loopBounds(channels, sampleRate);
+  if (!b) return null;
+  const start = b.start + padS;
+  const end = b.end - padS;
+  return end - start >= 1 ? { start, end } : null;
+}
+
 // The credit line on the screen for one scene.
 export function creditText(scene) {
   if (!scene) return '';
@@ -182,7 +194,7 @@ function createSound({ base, fadeS, onProblem, onPlay }) {
         src.loop = true;
         const ch = [];
         for (let i = 0; i < buf.numberOfChannels; i += 1) ch.push(buf.getChannelData(i));
-        const b = loopBounds(ch, buf.sampleRate);
+        const b = loopPoints(ch, buf.sampleRate);
         if (b) { src.loopStart = b.start; src.loopEnd = b.end; }
         const gain = ctx.createGain();
         const now = ctx.currentTime;

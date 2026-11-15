@@ -24,7 +24,7 @@ Every video was cut to a loop: a stretch of the source is taken, and its last se
 
 ## Sounds (Creative Commons 0)
 
-Every sound was made from the page's high-quality preview (Ogg Vorbis): 40 s cut from the source, the last 4 s crossfaded with equal power into the first 4 s for a 36 s loop with no seam, resampled to 44.1 kHz stereo, levelled to about -24 LUFS (the gain below) with a peak limiter, and saved as MP3 at 128 kbit/s with no metadata. The program plays them on a loop at 50 percent volume to start with.
+Every sound was made from the page's high-quality preview (Ogg Vorbis): 40 s cut from the source, the last 4 s crossfaded with equal power into the first 4 s for a 36 s loop with no seam, then the loop's last 0.5 s put before it and its first 0.5 s after it (a 37 s file; the program loops from 0.5 s to 36.5 s, so decoding never touches the seam), resampled to 44.1 kHz stereo, levelled to about -24 LUFS (the gain below) with a peak limiter, and saved as MP3 at 128 kbit/s with no metadata. The program plays them on a loop at 50 percent volume to start with.
 
 | File | Title on Freesound | Author | Source page | What was changed |
 |---|---|---|---|---|
