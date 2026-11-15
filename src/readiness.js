@@ -210,7 +210,8 @@ export function readinessLines(r, rules = READINESS_RULES) {
     ? { key: 'medicines', level: 0, title: 'Medicines that can make you sleepy', text: `None logged since ${gmtText(r.from)}, ${rules.windowHours} hours before the start: no sleep medicine from the kit list and no medicine with its note "May cause sedation and impair performance."`, src: [S.kit2015] }
     : { key: 'medicines', level: 1, title: m.list.some((x) => x.sleepMed) ? 'A sleep medicine before the task' : 'A medicine that can make you sleepy', text: `${m.list.map(medicineText).join(' ')} Worth telling your flight surgeon before the task (a draft rule).`, src: [S.kit2015, ...m.list.map((x) => (MEDICINE_NOTES[x.key] || {}).src).filter(Boolean)] };
   const c = r.reaction;
-  const ask = r.askTest ? ` After ${r.sleep.state === 'short' ? 'a short night' : 'a sleep medicine'}, a run now shows how you compare with yourself.` : '';
+  const after = r.sleep.state === 'short' ? 'a short night' : r.medicines.list.some((x) => x.sleepMed) ? 'a sleep medicine' : 'a medicine that can make you sleepy';
+  const ask = r.askTest ? ` After ${after}, a run now shows how you compare with yourself.` : '';
   const reactionLine = c.state === 'none'
     ? { key: 'reaction', level: 0, title: 'Reaction test', text: `No reaction test since ${gmtText(r.from)}, ${rules.windowHours} hours before the start.${ask} It compares you only with your own earlier runs; it is not a fitness-for-duty test.`, src: [S.jones2022] }
     : { key: 'reaction', level: c.level, title: c.state === 'slower' ? 'Reaction test: slower than before' : 'Reaction test', text: `Run of ${gmtText(c.run.time)}${c.run.mode === 'demo' ? ' (the 30-second demo)' : ''}: ${c.compare.text}${c.state === 'slower' ? ' Worth telling your flight surgeon before the task (a draft rule).' : ''}${ask}`, src: [S.jones2022] };
