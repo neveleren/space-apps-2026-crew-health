@@ -200,6 +200,13 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .seg button:first-child { border-top-left-radius: 5px; border-bottom-left-radius: 5px; }
 .seg button:last-child { border-right: 0; border-top-right-radius: 5px; border-bottom-right-radius: 5px; }
 .seg button:hover { background: var(--panel); }
+/* The energy question: seven statements of the Samn-Perelli fatigue scale, one per row, read in full. */
+.seg.seg-list { display: flex; flex-direction: column; width: 100%; }
+.seg.seg-list button { justify-content: flex-start; text-align: left; padding: 10px 16px; border-right: 0; border-bottom: 1px solid var(--line); border-radius: 0; }
+.seg.seg-list button:first-child { border-top-left-radius: 5px; border-top-right-radius: 5px; }
+.seg.seg-list button:last-child { border-bottom: 0; border-bottom-left-radius: 5px; border-bottom-right-radius: 5px; }
+.seg.seg-list .step { min-width: 1.4em; font-family: var(--mono, monospace); color: var(--muted); }
+.seg.seg-list button[aria-pressed="true"] .step { color: var(--ink); }
 .seg button[aria-pressed="true"] { background: var(--cmd-soft); color: var(--ink); box-shadow: inset 0 -3px 0 var(--cmd-edge); font-weight: 700; }
 .seg button:focus-visible { z-index: 1; outline: 3px solid var(--focus); outline-offset: -3px; }
 .seg.small button { min-height: 44px; padding: 0 14px; font-size: 15px; }
@@ -617,7 +624,7 @@ dialog p { margin: 0; }
         </div>
         <div class="questions" id="ci-form" hidden>
           <div class="q"><div class="q-label">Mood</div><div class="seg" id="ci-mood" role="group" aria-label="Mood"></div></div>
-          <div class="q"><div class="q-label">Energy</div><div class="seg" id="ci-attitude" role="group" aria-label="Energy"></div></div>
+          <div class="q"><div class="q-label">Energy <span id="ci-attitude-scale">pick the one that fits: 1 fully alert, 7 completely exhausted</span></div><div class="seg seg-list" id="ci-attitude" role="group" aria-label="Energy" aria-describedby="ci-attitude-scale"></div></div>
           <div class="q"><div class="q-label">Last night's sleep <span id="ci-sleep-scale">1 bad, 7 great</span></div><div class="seg" id="ci-sleep" role="group" aria-label="Sleep rating" aria-describedby="ci-sleep-scale"></div></div>
           <div id="ci-topics"></div>
           <div class="actions"><button type="button" class="btn primary" id="ci-send">Save my check-in</button><button type="button" class="link" id="ci-cancel">Not now</button></div>

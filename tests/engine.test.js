@@ -186,7 +186,7 @@ test('psyche: daily reports are recorded and reviewed by the AI later', () => {
   assert.equal(mood.status, STATUS.RECORDED);
   assert.equal(mood.dest, DEST.NONE);
   assert.deepEqual(codes(mood), ['recorded', 'psych-review-later']);
-  m.receive(r('attitude', 'sluggish'));
+  m.receive(r('attitude', 6));
   assert.equal(m.pendingReports(TOM), 2);
   const rev = m.review(TOM);
   assert.equal(rev.dest, DEST.AI);

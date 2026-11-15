@@ -74,7 +74,7 @@ const fresh = (state) => createMachine({ cells: CELLS, crew: [...CREW, SHIP], st
 const put = (m, n, indicator, value, who = 'crew-1', extra = {}) => m.receive({ person: who, source: indicator, indicator, value, time: at(n), ...extra });
 // One ordinary day: every daily measure in its norm, and the check-in.
 function ordinaryDay(m, n, who = 'crew-1') {
-  for (const [ind, v] of [['pulse', 70], ['bp', { sys: 112, dia: 72 }], ['temp', 36.7], ['sleep', 7.2], ['resp', 14], ['fluid', 2700], ['radiation', 100 + n * 0.3], ['mood', 'good'], ['attitude', 'energetic']]) put(m, n, ind, v, who);
+  for (const [ind, v] of [['pulse', 70], ['bp', { sys: 112, dia: 72 }], ['temp', 36.7], ['sleep', 7.2], ['resp', 14], ['fluid', 2700], ['radiation', 100 + n * 0.3], ['mood', 'good'], ['attitude', 2]]) put(m, n, ind, v, who);
 }
 function ordinaryDays(m, from, to, who = 'crew-1') { for (let n = from; n <= to; n += 1) ordinaryDay(m, n, who); }
 const judgeOn = (m, n, who = 'crew-1') => assess({ machine: m, person: person(who), cells: CELLS, mission: MIS, now: new Date(at(n, 12)) });
@@ -308,7 +308,7 @@ test('exercise: a reading that is only recorded never changes the judgement of t
   const m = fresh();
   ordinaryDays(m, 100, 115);
   for (let n = 116; n <= 120; n += 1) {
-    for (const [ind, v] of [['bp', { sys: 112, dia: 72 }], ['temp', 36.7], ['sleep', 7.2], ['resp', 14], ['fluid', 2700], ['radiation', 140], ['mood', 'good'], ['attitude', 'energetic']]) put(m, n, ind, v);
+    for (const [ind, v] of [['bp', { sys: 112, dia: 72 }], ['temp', 36.7], ['sleep', 7.2], ['resp', 14], ['fluid', 2700], ['radiation', 140], ['mood', 'good'], ['attitude', 2]]) put(m, n, ind, v);
     put(m, n, 'pulse', 120); // at rest, outside the norm, inside the red limits, five mornings in a row
   }
   assert.equal(judgeOn(m, 120).body.level, LEVEL.ATTENTION);

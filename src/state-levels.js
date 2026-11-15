@@ -21,6 +21,7 @@
 // or answers can say "tell someone", as an "attention" item of kind 'tell' that never goes beyond the person's own
 // screen by itself: an eye self-check answer other than "no change", until a later "no change"; a symptom rated
 // RULES.symptomTellAt or more in the last RULES.symptomHours hours; a medicine past the kit list's own printed rules.
+import { isLowEnergy } from './fatigue.js';
 import { STATUS } from './engine.js';
 import { forecast } from './trend.js';
 import { KIT_HOURS, gmtText, kitFindings, kitFindingShort, kitFindingText, logText } from './quicklog.js';
@@ -372,9 +373,10 @@ export function assess({ machine, person, cells, mission, now, ship = SHIP_DEFAU
   // Mind: bad mood or low energy on several of the last days (placeholder rule until the team sets one).
   const since = ms(now) - RULES.psycheDays * DAY;
   const badDays = new Set();
-  for (const [indicator, low] of [['mood', 'bad'], ['attitude', 'sluggish']]) {
+  // A low day: mood "bad", or energy at step FATIGUE_RULE.lowFrom or more of the Samn-Perelli scale (src/fatigue.js).
+  for (const [indicator, low] of [['mood', (v) => v === 'bad'], ['attitude', isLowEnergy]]) {
     for (const x of machine.history(person.id, indicator)) {
-      if (ms(x.time) >= since && x.value === low) badDays.add(new Date(x.time).toISOString().slice(0, 10));
+      if (ms(x.time) >= since && low(x.value)) badDays.add(new Date(x.time).toISOString().slice(0, 10));
     }
   }
   if (badDays.size >= RULES.badDaysForAttention) {

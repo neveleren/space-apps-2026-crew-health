@@ -2,7 +2,7 @@
 
 The owner's request (15 Nov 2026): more ways to support the person's mind, built on NASA studies of recent years and on studies of support with AI. Everything below works offline and with the AI off. Code: `src/support.js`, `src/reaction-test.js`, `src/earth-break.js`, styles in `support.css`, photos in `assets/earth/`. Written by Claude (Anthropic), an AI system; the owner decides.
 
-**Kept exactly as the owner made them:** the AI offer in his words ("Hey <name>, I noticed from your check-ins that ... How about talking anonymously about what is bothering you? Or, if you wish, I can send the results of these check-ins to the doctor."), the anonymous session, the choice to tell the doctor on Earth, the private cycle tracker, the daily check-in of mood, energy and sleep. **No questionnaire was added:** PHQ-9, PHQ-8, GAD-7 or another is his open decision.
+**Kept exactly as the owner made them:** the AI offer in his words ("Hey <name>, I noticed from your check-ins that ... How about talking anonymously about what is bothering you? Or, if you wish, I can send the results of these check-ins to the doctor."), the anonymous session, the choice to tell the doctor on Earth, the private cycle tracker, the daily check-in of mood, energy and sleep. On 15 Nov 2026 he chose the Samn-Perelli seven-point fatigue scale for the energy question (1 fully alert to 7 completely exhausted; a day at 5 or more counts as low, a draft), in place of the two answers "energetic" and "sluggish" (`src/fatigue.js`). **No questionnaire was added:** PHQ-9, PHQ-8, GAD-7 or another is his open decision.
 
 ## The features
 

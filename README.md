@@ -48,7 +48,7 @@ These screenshots show the crew screen with the made-up example flight. The app'
 ![Today on a calm day: the dated sentence, the check-in, the quick logs and Coming up](presentation/img/today.png)
 
 - One dated sentence about body and mind, for example "As of 15 Nov 2026, your physical condition needs attention, your mental condition is excellent." When something needs the person, level chips, the reasons and the buttons Details, Analyse with AI and Message the doctor appear under it.
-- A daily check-in (mood, energy, sleep quality, and an optional private "What is weighing on you?"), a quick symptom log and a two-tap medicine log from an ISS kit list.
+- A daily check-in (mood; energy as one of seven statements of the Samn-Perelli fatigue scale, from "fully alert" to "completely exhausted"; sleep quality; and an optional private "What is weighing on you?"), a quick symptom log and a two-tap medicine log from an ISS kit list.
 - Coming up (an example schedule, shown with the example flight) lists the next three of: the weekly private medical conference (with "Prepare", a drafted 7-day summary the person edits), the talk with the psychologist every two weeks, the monthly thinking test and the next eye check. The card also names the next event of the example mission calendar.
 - A status line that never scrolls away: flight day, GMT clock, a Systems tag (automation, AI, mission, link, doctor, saving, sound), Messages, and a Help key you hold for 2 s (a single press from a screen reader or a switch asks "Call for help now?"). A crewmate's alarm line appears in it.
 
@@ -109,7 +109,7 @@ These screenshots show the crew screen with the made-up example flight. The app'
 - **Watch rule.** A daily vital sign just outside its normal range (inside its red limits) is watched first: attention after 3 readings in a row outside, needs action after 7. Two or more vital signs outside within 24 hours count at once as attention (after NEWS2). Heart rate and breathing rate readings marked as exercise are recorded, not judged against the resting range; their low red limits still count.
 - **Forecast.** A straight line to landing. It raises an alert only for slow measures (VO2max, strength, body mass, radiation, hearing) or a line that clearly outruns the daily scatter. It is not a validated medical model, and the page says so.
 - **No fresh data.** Then the sentence says "not enough fresh data to judge" instead of "excellent".
-- **Mind check-ins.** Low mood or low energy on 6 or more of the last 14 days gives attention, on 8 or more needs action. Placeholders until the team chooses a questionnaire.
+- **Mind check-ins.** Low mood or low energy on 6 or more of the last 14 days gives attention, on 8 or more needs action. Low energy is a fatigue answer of 5 ("moderately tired") or more of 7; the scale has no formal cut-off, so this is a draft. Placeholders until the team chooses a questionnaire.
 - **Ship.** Cabin CO2, oxygen, pressure, temperature and noise are compared with NASA limits. A ship alarm reaches every crew screen and points to the ship's procedures.
 
 ## Privacy and security
@@ -169,8 +169,8 @@ npm test
 node tools/sbom.mjs --check
 ```
 
-- `npm test` runs Node's own test runner over 16 test files: the machine, history, camera rules, levels, cycle, server, store, PIN, supply chain, mind tools, quick logs, cells, connections, pages, crew alarm and screens. The server tests start the real server on a throwaway data folder.
-- On 15 Nov 2026 (version 1.1.0): 270 tests, 268 pass, 0 fail, 2 skipped, with Node 24.13.0. The 2 skipped tests call the real ISSLive and NOAA services.
+- `npm test` runs Node's own test runner over 17 test files: the machine, history, camera rules, levels, cycle, server, store, PIN, supply chain, mind tools, quick logs, cells, connections, pages, crew alarm, screens and the fatigue scale. The server tests start the real server on a throwaway data folder.
+- On 15 Nov 2026 (version 1.2.0): 275 tests, 273 pass, 0 fail, 2 skipped, with Node 24.13.0. The 2 skipped tests call the real ISSLive and NOAA services.
 - We also walk the pages in headless Chromium with Playwright. These scripts are kept outside this repository and are not part of `npm test`. Last run, 15 Nov 2026, against commit `09e93ae` (the merged review fixes), each on a fresh data folder:
 
 | Browser check | Steps | Result |
@@ -197,7 +197,7 @@ Full detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 These stay with the team. The thresholds in the program are marked as drafts on screen.
 
-- Which questionnaire for the mind; the level thresholds, including the mind rule (6 and 8 low days in 14) and the 3-in-a-row watch rule; whether to use a NEWS2 total score.
+- Which questionnaire for the mind; the level thresholds, including the mind rule (6 and 8 low days in 14), the fatigue step that counts as a low-energy day (5 of 7) and the 3-in-a-row watch rule; whether to use a NEWS2 total score.
 - The crisis floor: what the program does in immediate danger. The crew screen says this is the team's decision and that nothing is sent by itself; a draft wording (`crisisNotice()` in `src/support.js`) is not shown on the crew screen.
 - The AI's name; "anonymous" or "private" as the word for the session; who gives advice, the automation or the AI.
 - Anonymity before "Message the doctor"; how the program tells people apart; names for crew members 3 and 4.

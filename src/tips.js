@@ -341,7 +341,7 @@ export const PROVENANCE = {
     "path": "Manual entry on the morning check-in, stored on this computer and looked at in the planned review."
   },
   "attitude": {
-    "what": "How much energy you have today (energetic or sluggish); on the ISS, nights under 6 hours of sleep went with slower reactions and higher stress and workload, so fatigue is worth catching early.",
+    "what": "How tired you feel today, on the Samn-Perelli fatigue scale: one of seven statements, from 1 fully alert to 7 completely exhausted; a day at 5 or more counts as a low-energy day for the mind rule (a draft). On the ISS, nights under 6 hours of sleep went with slower reactions and higher stress and workload, so fatigue is worth catching early.",
     "iss": [
       {
         "name": "Reaction Self Test",
@@ -359,14 +359,9 @@ export const PROVENANCE = {
         "name": "Garmin Body Battery",
         "maker": "Garmin",
         "url": "https://www.garmin.com/en-CA/blog/?p=32426"
-      },
-      {
-        "name": "Samn-Perelli 7-point fatigue scale",
-        "maker": "USAF School of Aerospace Medicine, public scale",
-        "url": "https://caa.co.uk/publication/download/13058"
       }
     ],
-    "how": "Self-report: one tap a day in the morning check-in. NASA's Reaction Self Test asked astronauts to rate stress, mental fatigue, physical exhaustion, tiredness and sleepiness on 11-point scales, then timed a 3-minute reaction test and gave feedback against astronaut norms. Fatigue level is also a set topic of the private psychologist call every two weeks.",
+    "how": "Self-report: one tap a day in the morning check-in, on the Samn-Perelli seven-point fatigue scale (USAF School of Aerospace Medicine, 1982; the statements as quoted by the UK Civil Aviation Authority, 2007). NASA's Reaction Self Test asked astronauts to rate stress, mental fatigue, physical exhaustion, tiredness and sleepiness on 11-point scales, then timed a 3-minute reaction test and gave feedback against astronaut norms. Fatigue level is also a set topic of the private psychologist call every two weeks.",
     "path": "Manual entry on the morning check-in. A wearable energy estimate"
   },
   "sleepQuality": {

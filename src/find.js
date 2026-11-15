@@ -13,7 +13,7 @@ export const WORDS = {
   temp: 'temperature fever temp', resp: 'breathing respiration breaths', sleep: 'sleep hours rest', fluid: 'water drink fluid hydration',
   glucose: 'sugar glucose blood sugar', bodyMass: 'weight mass body', vo2max: 'fitness aerobic vo2 cardio exercise', strength: 'muscle strength',
   bone: 'bone density dexa', eyePressure: 'eye vision iop', hearing: 'ear hearing audiogram', radiation: 'radiation dose msv dosimeter',
-  mood: 'mood feeling', attitude: 'energy tired fatigue', sleepQuality: 'sleep quality rest', cognition: 'thinking cognition memory test winscat monthly', reaction: 'reaction reflex speed alert alertness fatigue pvt rst test',
+  mood: 'mood feeling', attitude: 'energy tired fatigue sleepy exhausted samn perelli', sleepQuality: 'sleep quality rest', cognition: 'thinking cognition memory test winscat monthly', reaction: 'reaction reflex speed alert alertness fatigue pvt rst test',
   xray: 'x-ray xray image', exercise: 'exercise workout training treadmill bike ared cevis', visionCheck: 'vision eye eyes amsler sans sight', octChange: 'oct retina eye eyes sans', octScan: 'oct scan eye image retina', ecg: 'ecg ekg heart tracing', ultrasound: 'ultrasound echo scan image', camera: 'camera video chest sleep',
   co2: 'co2 carbon dioxide air', cabinO2: 'oxygen o2 air', cabinPressure: 'pressure cabin air', noise: 'noise sound loud db', cabinTemp: 'temperature cabin air',
 };
