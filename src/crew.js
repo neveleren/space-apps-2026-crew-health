@@ -658,6 +658,11 @@ function measureRow(owner, indicator, a, now) {
   if (forecast) kids.push(h('span', { class: 'r-state lvc1' }, icon('info', { size: 14 }), 'Forecast: may leave the range'));
   else if (level) kids.push(h('span', { class: `r-state lvc${level}` }, icon(LEVEL_ICON[level], { size: 14 }), LEVEL_TITLE[level]));
   else if (stale && last) kids.push(h('span', { class: 'r-state lvc-stale' }, icon('clock', { size: 14 }), `Old data, ${ageText(last.time, now)}`));
+  else if (a && a.info) {
+    const note = a.info.find((x) => x.cell && x.cell.indicator === indicator && (x.kind === 'expected' || x.kind === 'watch'));
+    if (note && note.kind === 'expected') kids.push(h('span', { class: 'r-state muted', 'data-tip': `m:${indicator}:${owner.id}` }, icon('circle-check', { size: 14 }), 'Common in flight'));
+    if (note && note.kind === 'watch') kids.push(h('span', { class: 'r-state muted' }, icon('clock', { size: 14 }), `Watching: ${note.m.streak} of ${note.needed}`));
+  }
   kids.push(icon('chevron-right', { size: 18, cls: 'chev' }));
   return rowWrap(h('button', { type: 'button', class: `row ${level ? LV_CLASS[level] : stale ? 'stale' : ''}`, 'data-ind': indicator, 'data-tip': `m:${indicator}:${owner.id}`, onclick: () => openDetail(indicator) }, ...kids), `m:${indicator}:${owner.id}`, cell.label);
 }
