@@ -115,9 +115,13 @@ function keepFocus(fn) {
   }
   return out;
 }
+// The notice box stays on the page (it is the live region); signing out only empties it, so the next person never
+// reads the last person's notice.
 function dropToast() {
-  for (const n of document.querySelectorAll('.toast')) n.remove();
-  lastToast = null;
+  clearTimeout(toastTimer);
+  clearTimeout(toastSet);
+  const box = byId('toast');
+  if (box) { box.classList.remove('on'); box.textContent = ''; }
 }
 
 // Per-device conveniences only (the switches of the situation, seen alerts). "Sound off" is not kept: it never
