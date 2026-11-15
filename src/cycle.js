@@ -113,7 +113,12 @@ export function cycleFacts(s) {
   if (s.flags.includes('no-period')) facts.push('No period for more than 3 months. The Endocrine Society advises a check-up, after other causes are ruled out.');
   if (s.flags.includes('cycle-outside-range')) facts.push(`The last cycle was outside the usual ${CYCLE_RULES.normalMin} to ${CYCLE_RULES.normalMax} days (ACOG).`);
   if (s.flags.includes('cycle-varies')) facts.push(`Your recent cycles differ by more than ${CYCLE_RULES.varyMax} days; ACOG counts that as irregular.`);
-  if (s.flags.includes('long-period')) facts.push(`Your last period has more than ${CYCLE_RULES.periodMax} days of bleeding logged; ACOG counts bleeding that lasts more than ${CYCLE_RULES.periodMax} days as abnormal.`);
+  // The length counts every day from the first day of bleeding to the last day of bleeding or spotting (a draft
+  // rule), so the sentence says that rather than "days of bleeding", which may be fewer.
+  if (s.flags.includes('long-period')) {
+    const going = s.periods && s.periods.length && s.periods[s.periods.length - 1].ongoing;
+    facts.push(`${going ? 'Your period has gone on for' : 'Your last period lasted'} more than ${CYCLE_RULES.periodMax} days, counted from its first day of bleeding to its last day of bleeding or spotting; ACOG counts bleeding that lasts more than ${CYCLE_RULES.periodMax} days as abnormal.`);
+  }
   if (s.flags.includes('between-periods')) {
     const e = s.spottingApart[s.spottingApart.length - 1];
     facts.push(`You logged spotting apart from your periods, last on ${dayWords(e.last)}. ACOG lists bleeding or spotting between periods as abnormal bleeding. Flo's help says spotting is usually harmless, and advises seeing a health care provider when bleeding between periods happens regularly or comes with pain: on board, your flight surgeon (a draft flag).`);
