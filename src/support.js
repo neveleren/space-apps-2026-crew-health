@@ -434,7 +434,6 @@ export const SUPPORT_TIPS = {
     lines: ['In studies on Earth with NASA ties, virtual nature scenes lowered negative feelings (2017, 2026). Slow breathing with long exhales helped mood in a study on Earth (2023).', 'Flat screen, not VR. Real video and sound recorded on Earth: rain, fields, a city, a cafe, the sea and a forest. The studies used nature; the city and cafe scenes are the team\'s choice. Videos from Pexels and recordings from Freesound, credited on the screen.'],
     badge: BADGE.nasa, sources: [SRC.vr2017, SRC.vr2026, SRC.breath2023],
   },
-
 };
 for (const tip of MIND_TIPS) SUPPORT_TIPS[`tip-${tip.id}`] = { title: tip.title, lines: [tip.why], badge: tip.badge, sources: [tip.source, ...(tip.also || [])] };
 

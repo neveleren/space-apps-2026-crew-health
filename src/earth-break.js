@@ -205,7 +205,7 @@ function createSound({ base, fadeS, onProblem, onPlay }) {
         src.start(now, b ? b.start : 0);
         fadeOut(current);
         current = { src, gain };
-        if (typeof onPlay === 'function') onPlay(file);
+        try { if (typeof onPlay === 'function') onPlay(file); } catch { /* the sound plays on */ }
       }).catch(() => {
         if (closed || t !== token) return;
         fadeOut(current);
