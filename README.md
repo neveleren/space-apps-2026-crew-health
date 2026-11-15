@@ -74,6 +74,13 @@ These screenshots show the crew screen with the made-up example flight. The app'
 - Every connection says Working, Simulated or Planned, with its sources.
 - Sound and display (a sound test; dark, light or follow the device), mission profile (ISS, Moon, Mars: the signal delay), camera, "I am exercising" (turns itself off after 2 hours, draft), save a copy of your data and bring it back, the PIN, and the simulation switches.
 
+**5. An analog test, for example in NASA's HERA.** The program measures itself (drafts for the team):
+
+- An alert log: when an alert shows, is acknowledged (Mark as read, Mark all as read, the Messages key, Silence, Silence all sounds), clears or is called off as a false alarm, that step is saved in the person's own record, one entry per alert and step and no text. Every screen where the person is signed in then shows the same read state, and an acknowledged alarm stops sounding on the others at their next look (15 s). Each message says when it was acknowledged, how, and how many seconds after it showed.
+- A Drill switch in Settings: the screen says DRILL, everything new is marked as the drill's, alarms sound and reach the crew and the doctor as usual with the word DRILL, and drill readings never count in the levels, the charts, the summaries for the doctor or the FHIR file. It is off at every sign-in and ends by itself after 60 minutes (a draft).
+- After an urgent alarm is acknowledged, an optional workload rating on the Bedford scale, which NASA-STD-3001 Vol 2 names for crew interfaces [V2 5007], in the words of NASA's own figure.
+- A study export of all subjects, by id only, with no alert about the mind, the cycle, symptoms or medicines: `node tools/study-export.mjs`, or "Study export" on the technical view.
+
 ## Working now, simulated, planned
 
 | Part | Status | Note |
@@ -81,6 +88,7 @@ These screenshots show the crew screen with the made-up example flight. The app'
 | Crew screen: sign-in, Today, check-in, quick logs, all measures, charts, forecast, hand entry, messages | Working | Runs offline |
 | Levels, red limits, crew alarm lines, alarm tones, Help key | Working | Every threshold is a draft for flight surgeons |
 | Mind support tools | Working | Journal and plan stay in this browser, not encrypted |
+| Alert log, drill, Bedford rating, study export (analog test) | Working, not yet used in a test with people | Drafts: the drill's 60 minutes, which alarms ask for a rating |
 | Camera: a hand on the chest asks "Are you okay?", a sleeping person is ignored | Working, as a demonstration | Google's models run on the computer; no video stored or sent; off after an hour |
 | Server: one file per person, per-person reads, checked events, sealed outbox | Working | Uses a public DEMO key |
 | Bluetooth heart rate strap, thermometer, blood pressure cuff, pulse oximeter | Working, not yet tried with a real device | Standard Bluetooth profiles; Chrome or Edge |
@@ -105,6 +113,7 @@ These screenshots show the crew screen with the made-up example flight. The app'
   - A crewmate sees one line, for example "Tom needs help now: Blood oxygen (SpO2) 85 %.", and nothing else from that record.
   - "I am okay: false alarm" writes an all clear that takes the line away on every screen, and tells the doctor.
   - Under the ISS crew code of conduct (14 CFR 1214.403), other crewmembers may not use or disclose a crewmember's medical information without consent, "except as required for the immediate safety of ISS crewmembers".
+- **Analog test.** Each alert's steps (shown, acknowledged, read, cleared, false alarm, workload) are events of the person's own record, never shared with crewmates. A drill's readings go into a second machine used only for the drill's alarms; the machine that judges the person never sees them. A crew line is never marked as a drill while a real urgent sign from before the drill is present.
 - **Expected changes are information.** Changes that flight studies call common show on the measure's page and never raise the headline: a resting temperature up to about 1 °C above the usual range, built up over the first months of flight (Stahn 2017) and always below 38.0 °C; sleep of 5 hours or more (Barger 2014).
 - **Watch rule.** A daily vital sign just outside its normal range (inside its red limits) is watched first: attention after 3 readings in a row outside, needs action after 7. Two or more vital signs outside within 24 hours count at once as attention (after NEWS2). Heart rate and breathing rate readings marked as exercise are recorded, not judged against the resting range; their low red limits still count.
 - **Forecast.** A straight line to landing. It raises an alert only for slow measures (VO2max, strength, body mass, radiation, hearing) or a line that clearly outruns the daily scatter. It is not a validated medical model, and the page says so.
@@ -121,6 +130,7 @@ Full detail, including what is not protected: [docs/SECURITY.md](docs/SECURITY.m
 - The server answers only known host names, saves only JSON from its own pages, checks every event against `src/config.js`, never serves `data/`, `tests/`, `tools/`, `demo-keys/` or dot files, and sends security headers with a Content Security Policy. The pages carry the same policy as a meta tag for the static copy.
 - Each message to a doctor is sealed in `data/outbox/` for the flight surgeon's public key (ECDH P-256, HKDF-SHA-256, AES-256-GCM). The key pair in `demo-keys/` is a public DEMO key, never a real one.
 - Not protected yet: the server has no sign-in or roles (the technical view reads everyone); `data/<id>.jsonl` is plain text; there is no sender verification and no TLS.
+- The alert log is the person's own: a crewmate gets only alarm lines, never these steps. The study export names people only by id and leaves out every alert about the mind, the cycle, symptoms or medicines; the command line writes it into `data/study/`, which the server never serves.
 - `SBOM.json` (CycloneDX 1.6) lists the 6 third-party components (the camera runtime and its two models, the Lucide icons, two fonts) with their hashes, and `SHA256SUMS` holds the hashes of their 15 files; `npm test` checks both. The NASA photos and data are credited below.
 
 ## Connections
@@ -147,7 +157,8 @@ The full traceability matrix, with the evidence for each row: [docs/REQUIREMENTS
 - **Alerts, met in part:** a colour, icon and word for every level, and tones after Table 10.3-1 for needs action and urgent [V2 10114]: an urgent alarm repeats until someone acknowledges it, the needs-action tone plays once; the first burst 10 dB below the repeat [V2 10176]; a sound test, but no light test [V2 10117]; stale data marked for measures with an expected cadence [V2 10020]; a Help key held for 2 s, which is on the screen and so not yet independent of the display, as [V2 10178] asks.
 - **Records and privacy:** secured handling of medical records [V1 7003] and protection of private data [V2 10125] are met only in part (see SECURITY.md).
 - **ISS research software rules** (NASA JSC, [archived page](https://web.archive.org/web/20260312221613/https://tsc.jsc.nasa.gov/roi-swprocess/sw_reqs.html)): "Experiment software does not have internet access on ISS"; installer packages "should contain all dependencies"; "File names shall not contain PII". The program runs with no internet and keeps personal information out of its file names (a person's file is named by id, an outbox message by time and a random number). It has no installer package: the folder holds everything the pages need, but Node.js 18 or newer must be installed.
-- **Not done:** tests with real people (human-in-the-loop testing, [V2 3101]), usability and workload scores, a hazard analysis.
+- **Built for an analog test, not yet used with people:** the alert log with the time to acknowledge, a drill mode [V2 10153], a Bedford workload rating [V2 5007] and a study export by id only ([V2 10163]).
+- **Not done:** tests with real people (human-in-the-loop testing, [V2 3101]), the NASA usability score [V2 10001], error rates [V2 10002], a hazard analysis.
 - **Software class:** we read it as NPR 7150.2D Class E, which "can include prototypes of flight and ground systems ... in the spirit of 'exploring a design concept'" ([Appendix D](https://nodis3.gsfc.nasa.gov/displayDir.cfm?Internal_ID=N_PR_7150_002D_&page_name=AppendixD)). The same ISS page says "All ROI flown software is assumed to be Class C". NASA sets the class.
 
 ## Run it
@@ -160,6 +171,7 @@ npm start
 - Needs only Node.js 18 or newer. No packages to install, no build step, no internet. `node serve.mjs` does the same without npm.
 - Optional settings: `PORT`, `HOST`, `HOSTS` (more host names to answer), `DATA_DIR`, `OUTBOX_KEY_FILE` (the flight surgeon's public key).
 - Saved data: `data/<person id>.jsonl`, one plain file per person, with no personal information in file names. `npm run outbox` opens the queued messages with the DEMO key, as the ground would.
+- Study export of an analog test: `node tools/study-export.mjs` writes `data/study/study-alerts.csv` and `data/study/study-subjects.csv` (options: `--data`, `--out`, `--real-only`).
 - Everything the pages need is in the folder: fonts, icons, camera models and photos.
 
 ## Test it
@@ -192,6 +204,7 @@ Full detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 3. Every reading, answer and message is an event. `src/store.js` keeps events on our server or, without it, in the browser; the machine is rebuilt from them each time a page opens.
 4. The server (`serve.mjs`, `src/security.js`, Node built-ins only) serves the pages, checks each event, appends it to the person's file and seals messages to a doctor. It never judges a reading.
 5. Bluetooth devices (`src/ble.js`), CSV files (`src/csv-import.js`), ISSLive (`src/isslive.js`), the reaction test (`src/reaction-test.js`), the camera (`src/camera.js`, `src/camera-rules.js`) and a letter to the psychologist add events the same way. The FHIR and calendar exports (`src/fhir.js`, `src/ical.js`) read them. The journal, the plan for hard days, the five steps and the Earth break (`src/support.js`, `src/earth-break.js`) stay in the browser.
+6. The analog test: the alert log and the study tables (`src/alert-log.js`), the drill (`src/drill.js`), their parts of the crew screen (`src/analog-view.js`) and the export (`tools/study-export.mjs`).
 
 ## Open decisions of the team
 
@@ -207,6 +220,7 @@ These stay with the team. The thresholds in the program are marked as drafts on 
 - The alarm timings (a look for new crew lines every 15 s, a repeat every 4 s, the spoken line every 16 s, a call for help tried again every 5 s); whether an eye self-check answer other than "no change" is attention or needs action; the symptom score (8 of 10 in 24 hours) that asks to tell the crew medical officer; the 12 hours for two sleep medicines.
 - On the public copy, which has no station server, the urgent sentence still says "a doctor has been called", while the message panel says the message is saved on this computer only. The sentence is the team's own wording.
 - Who can clear the line "Help was pressed at this computer" (it stays for 24 hours); how a forecast works when no mission is set (it then uses the example dates).
+- For an analog test: how long a drill may run (60 minutes now, with no public source) and whether one screen's drill should reach every crew screen; which alarms ask for a workload rating (urgent ones now) and whether the Bedford limit for answering an alarm is 3 or 6; what counts as acknowledging an alert (now also opening Messages with its key).
 
 ## Use of SI
 
