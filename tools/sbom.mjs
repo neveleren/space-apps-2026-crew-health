@@ -73,6 +73,28 @@ export const PARTS = [
     files: [file('vendor/lucide/LICENSE', 'licence text')],
   },
   {
+    // Checked by Claude on 2026-11-15: vendor/web-llm/web-llm.js is lib/index.js of the npm package, byte for byte
+    // (renamed), and the package matches the registry's SHA-512.
+    ref: 'npm:@mlc-ai/web-llm@0.2.87', type: 'library', group: '@mlc-ai', name: 'web-llm', version: '0.2.87',
+    supplier: { name: 'MLC (Machine Learning Compilation) project', url: ['https://github.com/mlc-ai/web-llm'] }, licenses: APACHE,
+    purl: 'pkg:npm/%40mlc-ai/web-llm@0.2.87',
+    description: 'Engine that runs the AI model in the browser over WebGPU (src/ai.js), copied unchanged from the npm package.',
+    hashes: [{ alg: 'SHA-512', content: hex('34N19988MdaEtzh8Mq/IOrfKCk2HRDOrXgEkLT28r3aiyAU6ZJSUB+v35t7zyU+0QEaFl91Y4U5SuPN/cwoHNw==') }, { alg: 'SHA-1', content: '6bc9c1b004c518742a9b1916f0e6dbd18bf35e19' }],
+    links: [['distribution', 'https://registry.npmjs.org/@mlc-ai/web-llm/-/web-llm-0.2.87.tgz'], ['website', 'https://github.com/mlc-ai/web-llm']],
+    files: [file('vendor/web-llm/web-llm.js', 'lib/index.js of the package'), file('vendor/web-llm/LICENSE', 'licence text')],
+  },
+  {
+    ref: 'model-lib:Qwen2-1.5B-Instruct-q4f16_1_cs1k-webgpu', type: 'library', name: 'Qwen2-1.5B-Instruct-q4f16_1_cs1k-webgpu', version: 'v0_2_87',
+    // The repository has no licence file (GitHub reports none, checked 2026-11-15); it is built from Apache-2.0
+    // sources (MLC LLM, Apache TVM). TO CONFIRM with the MLC project.
+    supplier: { name: 'MLC (Machine Learning Compilation) project', url: ['https://github.com/mlc-ai/binary-mlc-llm-libs'] }, licenses: [{ license: { name: 'No licence file in the repository; built from Apache-2.0 sources (MLC LLM, Apache TVM). TO CONFIRM' } }],
+    purl: `pkg:generic/binary-mlc-llm-libs/Qwen2-1.5B-Instruct-q4f16_1_cs1k-webgpu@v0_2_87?download_url=${encodeURIComponent('https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs/main/web-llm-models/v0_2_87/base/Qwen2-1.5B-Instruct-q4f16_1_cs1k-webgpu.wasm')}`,
+    description: 'The AI model\'s compiled WebGPU program (WebAssembly) for WebLLM 0.2.87. The model weights are not in this folder: an on-board install puts them in assets/models/ (tools/fetch-model.mjs).',
+    location: 'vendor/web-llm/libs/Qwen2-1.5B-Instruct-q4f16_1_cs1k-webgpu.wasm',
+    links: [['distribution', 'https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs/main/web-llm-models/v0_2_87/base/Qwen2-1.5B-Instruct-q4f16_1_cs1k-webgpu.wasm'], ['vcs', 'https://github.com/mlc-ai/binary-mlc-llm-libs']],
+    files: [],
+  },
+  {
     ref: 'font:atkinson-hyperlegible-next@2.001', type: 'file', name: 'Atkinson Hyperlegible Next', version: '2.001',
     supplier: { name: 'Braille Institute of America', url: ['https://www.brailleinstitute.org/freefont/'] },
     authors: [{ name: 'The Atkinson Hyperlegible Next Project Authors' }], licenses: OFL,
@@ -215,7 +237,7 @@ export async function checkSupply() {
   for (const p of PARTS) if (!(deps.get('app') || []).includes(p.ref)) problems.push(`SBOM.json: the program's dependencies lack ${p.ref}`);
   const covered = new Set([...refs].filter((r) => r && r.startsWith('file:')).map((r) => r.slice(5)));
   for (const p of PARTS) if (p.location) covered.add(p.location);
-  const own = ['vendor/mediapipe/NOTICE.md', 'fonts/fonts.css']; // the team's own notes about the parts, not third-party files
+  const own = ['vendor/mediapipe/NOTICE.md', 'vendor/web-llm/NOTICE.md', 'fonts/fonts.css']; // the team's own notes about the parts, not third-party files
   for (const path of files) if (!covered.has(path) && !own.includes(path)) problems.push(`SBOM.json does not name ${path}`);
   return problems;
 }

@@ -229,3 +229,34 @@ html.sup-noscroll, html.sup-noscroll body { overflow: hidden; }
   .sup .sup-eb-ask { gap: 8px; padding: 14px 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .sup .sup-eb-video { transition: none; } }
+
+/* The AI on this computer (src/ai-view.js): the card that asks first, the progress, the talk, and the rules it
+   follows. Same colour tokens, so both displays work; no motion. */
+.ai-part { display: grid; gap: 12px; min-width: 0; }
+.ai-part p { margin: 0; }
+.ai-part .ai-card { display: grid; gap: 8px; padding: 12px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); min-width: 0; }
+.ai-part .ai-card ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+.ai-part .ai-progress { display: grid; gap: 6px; }
+.ai-part .ai-progress:focus, .ai-part .ai-log:focus { outline: none; }
+.ai-part .ai-progress:focus-visible, .ai-part .ai-log:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.ai-part progress { width: 100%; height: 12px; accent-color: var(--cmd); }
+.ai-part .ai-label { display: flex; gap: 6px; align-items: flex-start; font-size: 15px; color: var(--muted); }
+.ai-part .ai-label .icon { flex: none; margin-top: 2px; }
+.ai-part .ai-log { display: grid; gap: 10px; min-width: 0; }
+.ai-part .ai-log:empty { display: none; }
+.ai-part .ai-msg { display: grid; gap: 4px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); min-width: 0; }
+.ai-part .ai-msg.me { justify-self: end; max-width: 92%; background: var(--cmd-soft); border-color: var(--cmd-edge); }
+.ai-part .ai-msg.held { border-style: dashed; border-color: var(--axis); }
+.ai-part .ai-who { font-size: 13px; font-weight: 700; color: var(--muted); }
+.ai-part .ai-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; color: var(--ink); }
+.ai-part .ai-text.pending { color: var(--muted); font-style: italic; }
+.ai-part .ai-red { display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel-2); font-weight: 600; }
+.ai-part .ai-red .icon { flex: none; margin-top: 2px; }
+.ai-part .ai-ask { display: flex; flex-wrap: wrap; gap: 8px; }
+.ai-part .ai-q { flex: 1 1 200px; min-width: 0; min-height: 44px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--axis); background: var(--bg); color: var(--ink); font: inherit; }
+.ai-part .ai-q:focus-visible, .ai-part textarea.ai-input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.ai-part .ai-rules { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); }
+.ai-part .ai-rules summary { min-height: 32px; display: flex; align-items: center; font-weight: 700; cursor: pointer; }
+.ai-part .ai-rules summary:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.ai-part .ai-rules ul { margin: 6px 0 8px; padding-left: 20px; display: grid; gap: 4px; font-size: 15px; }
+.ai-part .ai-rules .note { font-size: 14px; }

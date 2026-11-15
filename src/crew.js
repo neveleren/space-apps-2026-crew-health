@@ -48,6 +48,9 @@ import { ownFacts, lineFacts, logEvent, logState, readAndAcked, shownAndCleared,
 import { isDrill, startDrill, drillOver, minutesLeft, markFor, drillLine, drillReport, lineDrill, DRILL_WORDS } from './drill.js';
 import { ANALOG_TIPS, drillTag, analogCard, ackText, workloadForm } from './analog-view.js';
 import { supIcon } from './support.js';
+import { renderAi, endTalk } from './ai-view.js';
+import { stopAi } from './ai.js';
+import { AI_MODEL } from './ai-model.js';
 
 // One icon per measure, so a list can be read at a glance.
 const ICON_FOR = { pulse: 'heart-pulse', bp: 'activity', glucose: 'droplet', temp: 'thermometer', spo2: 'droplets', sleep: 'moon', resp: 'wind', fluid: 'glass-water', bodyMass: 'scale', eyePressure: 'eye', hearing: 'ear', radiation: 'radiation', vo2max: 'heart', strength: 'dumbbell', bone: 'bone', camera: 'camera', mood: 'smile', attitude: 'battery', sleepQuality: 'bed', cognition: 'brain', reaction: 'zap', cycle: 'calendar-heart', xray: 'scan-line', ecg: 'chart-line', ultrasound: 'waves', exercise: 'flame', visionCheck: 'eye', octChange: 'eye', octScan: 'scan-line', symptoms: 'stethoscope', medicines: 'pill', co2: 'cloud-fog', cabinTemp: 'thermometer', cabinO2: 'orbit', cabinPressure: 'gauge', noise: 'volume-2', blood: 'test-tube' };
@@ -775,7 +778,7 @@ function systemsTip() {
   return h('div', {},
     h('p', { class: 'tp-title' }, 'Systems'),
     line('Automation', 'on: every reading is checked against its normal range and the team\'s rules, with or without the AI.'),
-    line('AI', ui.ship.aiWorks ? 'the route is on, but no AI model is connected in this version.' : 'off: only the automation works.'),
+    line('AI', ui.ship.aiWorks ? `on: an open model (${AI_MODEL.name}) runs in this browser on this computer when an AI panel starts it; the automation works with or without it.` : 'off: only the automation works.'),
     line('Mission', `${profile().name}: signal delay ${profile().delay} one way; ${profile().evac}.`),
     line('Link to Earth', ui.ship.linkToEarth ? 'up: messages to Earth go with the next downlink.' : 'down: messages to Earth wait in the outbox.'),
     line('Doctor', ui.ship.doctorOnBoard ? 'on board.' : 'on Earth.'),
@@ -1219,11 +1222,11 @@ function mindChoice(p, a, primaryFirst) {
     btn('secondary', ADVICE, () => openAdvice(), 'list', { 'data-tip': 't:advice', 'data-fk': 'open:advice' }));
   if (offerDismissed.has(p.id)) return h('div', { class: 'advice' }, choices);
   return h('div', { class: 'advice' },
-    h('p', { class: 'who-says' }, 'AI support (not a psychologist) · not connected yet'),
+    h('p', { class: 'who-says' }, 'AI support (not a psychologist) · runs on this computer'),
     h('blockquote', {}, offerText(p.name, topicSignal(machine.history(p.id, 'weighing'), nowTime()))),
     choices,
     h('div', { class: 'actions' }, btn('secondary small', 'Not now', () => { offerDismissed.add(p.id); renderHome(); })),
-    h('p', { class: 'note' }, "The team's idea: this conversation is not recorded or read, and the AI is there day and night, unlike doctors. Which AI it is, the team decides."));
+    h('p', { class: 'note' }, `The team's idea: this conversation is not recorded or read, and the AI is there day and night, unlike doctors. The AI here is an open model on this computer (${AI_MODEL.name}); which AI flies is the team's decision.`));
 }
 
 // ---------- coming up: what is due, from the medical routine of an ISS flight ----------
@@ -2247,8 +2250,16 @@ function openPanel(title, body, actions = [], { key = title, closeLabel = 'Close
 }
 
 // The anonymous session's box is never kept. Closing it with words in it asks once; any other way says so.
-function sessionBox() { const b = byId('panel').querySelector('textarea[data-session]'); return b && b.value.trim() ? b : null; }
-function forgetSessionText() { const b = sessionBox(); if (b) { b.value = ''; toast('What you wrote in the session was forgotten, as promised: it is never saved.'); } }
+// The talk with the AI (src/ai-view.js) is forgotten the same way, in memory and in the model.
+function sessionBox() { return [...byId('panel').querySelectorAll('textarea[data-session]')].find((b) => b.value.trim()) || null; }
+function forgetSessionText() {
+  const boxes = [...byId('panel').querySelectorAll('textarea[data-session]')].filter((b) => b.value.trim());
+  for (const b of boxes) b.value = '';
+  const talked = endTalk();
+  if (boxes.length && talked) toast('What you wrote in the session and the talk with the AI were forgotten, as promised: they are never saved.');
+  else if (talked) toast('The talk with the AI was forgotten, as promised: it is never saved.');
+  else if (boxes.length) toast('What you wrote in the session was forgotten, as promised: it is never saved.');
+}
 function askBeforeClosing(box) {
   const keepBtn = btn('primary small', 'Keep writing', () => { byId('panel-ask').replaceChildren(); box.focus(); }, 'check');
   byId('panel-ask').replaceChildren(h('div', { class: 'sheet-note', role: 'alert' },
@@ -2286,9 +2297,11 @@ narrowScreen.addEventListener('change', syncInert);
 // The flagged items in words. full (Message the doctor): also the person's last 7 days from src/doctor-summary.js,
 // all of it from Today or the measure's own part from its page, leaving out what a flagged item already says. The
 // panel "Analyse with AI" asks without full, so the private logs never go into what the AI would get.
-function summaryFor(a, kind, indicator, { full = false } = {}) {
+// forAi: also leaves out the automation's own lines about a private log (a strong symptom, the medicine kit's rules),
+// since those lines quote the log, notes included (found by the independent check of the AI).
+function summaryFor(a, kind, indicator, { full = false, forAi = false } = {}) {
   const p = personById[ui.person];
-  const items = (kind === 'psyche' ? a.psyche.items : a.body.items).filter((it) => !indicator || (it.cell && it.cell.indicator === indicator));
+  const items = (kind === 'psyche' ? a.psyche.items : a.body.items).filter((it) => (!indicator || (it.cell && it.cell.indicator === indicator)) && !(forAi && it.private));
   const lines = items.map((it) => { const tx = itemText(it, p); return `${tx.title}: ${tx.text}`; });
   const tells = items.filter((it) => it.kind === 'tell');
   const skip = { symptoms: tells.filter((it) => it.rule === 'strong-symptom').flatMap((it) => (it.entries || []).slice(0, 3).map((x) => x.time)), findings: tells.filter((it) => it.rule === 'kit').flatMap((it) => it.findings || []) };
@@ -2372,10 +2385,15 @@ function openSupport(a) {
     h('ol', { class: 'links' }, ...cd.steps.map((s) => h('li', {}, s))),
     h('p', { class: 'note' }, cd.src)));
   const box = h('textarea', { 'aria-label': 'Write it out. Not saved.', placeholder: 'Write it out. This is not saved and not sent.', 'data-session': '', 'data-nodraft': '', oninput: (e) => { if (matchesRisk(e.target.value)) showHelp({ byRule: true }); } });
-  const talk = () => fill(view,
+  // The chat with the AI (src/ai-view.js) goes in here once the panel is open; with the AI off it stays empty.
+  const aiHost = h('div', { class: 'ai-host' });
+  let opened = false;
+  const mountAi = () => { if (opened && ui.ship.aiWorks && aiHost.isConnected) renderAi(aiHost, { kind: 'session', onRisk: () => showHelp({ byRule: true, focus: true }) }); };
+  const talk = () => { fill(view,
     h('div', { class: 'actions' },
       btn('secondary small', 'Help now', () => showHelp({ focus: true }), 'circle-alert', { 'data-tip': 't:helpnow', 'data-fk': 'session:help' }),
       btn('secondary small', 'My plan for hard days', () => openPlan(), 'shield')),
+    aiHost,
     h('p', {}, h('b', {}, 'What is it about?'), ' ', h('span', { class: 'muted' }, 'Pick one for a few steps that help.')),
     h('div', { class: 'chips' }, ...COPING.map((cd) => h('button', { type: 'button', class: 'chip neutral topic', onclick: () => openCard(cd) }, cd.topic))),
     cardSlot,
@@ -2383,7 +2401,10 @@ function openSupport(a) {
     h('div', { class: 'actions' }, btn('secondary small', 'Forget now', () => { box.value = ''; helpSlot.replaceChildren(); toast('Cleared. Nothing was saved.'); }, 'x')),
     h('p', {}, h('b', {}, 'Is there one person you could talk to today?'), ' A crewmate, a family call, or your next private talk with your psychologist.'),
     h('div', { class: 'actions' }, btn('secondary small', 'Tell the doctor on Earth', () => openDoctor(a, 'psyche'), 'stethoscope', { 'data-tip': 't:tellDoctor' })),
-    h('p', { class: 'note' }, `No AI model is connected in this version${ui.ship.aiWorks ? '' : ', and the AI is off'}; everything above works without it. When one is connected it is told it is an AI and says so, gives no diagnosis or medicine advice, uses only the on-board library with sources, and ends every talk by pointing to a person.`));
+    h('p', { class: 'note' }, ui.ship.aiWorks
+      ? `The AI here is an open model (${AI_MODEL.name}) that runs on this computer; everything above works without it. It is told it is an AI and says so, gives no diagnosis or medicine advice, and ends every talk by pointing to a person; code checks each answer against its rules before you see it.`
+      : 'The AI is off; everything above works without it.'));
+  mountAi(); };
   const privacy = () => fill(view,
     h('div', { class: 'privacy-card' },
       h('p', { class: 'tp-title' }, 'Before you talk: how private is this?'),
@@ -2403,17 +2424,29 @@ function openSupport(a) {
     helpSlot,
     view,
   ], [], { key: 'session' });
+  opened = true;
+  mountAi();
 }
 
+// The automation's level and red flag for the AI's rules (src/ai-rules.js): the AI gets them, never sets them.
+const AI_LEVEL = ['normal', 'attention', 'action', 'urgent'];
 function openAi(kind, a) {
   if (kind === 'psyche') { openSupport(a); return; }
-  const summary = summaryFor(a, kind);
+  const summary = summaryFor(a, kind, undefined, { forAi: true });
+  const part = kind === 'psyche' ? a.psyche : a.body;
+  const privateLeft = part.items.some((it) => it.private);
+  const ctx = { level: AI_LEVEL[part.level] || null, red: part.items.some((it) => it.kind === 'red'), data: summary };
+  const aiHost = h('div', { class: 'ai-host' });
   openPanel('Analyse with AI', [
-    h('p', {}, "No AI is connected to this version yet. Which AI, and what exactly it does, is the team's decision."),
-    h('p', {}, "What checked facts say: NASA's crew medical officer assistant (CMO-DA) runs with no link to Earth on a ground copy of the ISS computer and is tested only on Earth so far; open models can run right in a web browser without internet."),
-    h('p', { class: 'muted' }, kind === 'psyche' ? 'Anonymous session: these check-ins do not go to the doctor unless you press "Tell the doctor on Earth" yourself.' : 'This is what the AI would get from the automation:'),
-    summary ? h('pre', { class: 'code', style: 'white-space: pre-wrap' }, summary) : null,
-  ]);
+    h('p', { class: 'ai-badge' }, icon('sparkles', { size: 16 }), 'AI draft, not a diagnosis'),
+    h('p', { class: 'muted' }, 'What the AI gets from the automation (your private logs never go to it):'),
+    summary ? h('pre', { class: 'code', style: 'white-space: pre-wrap' }, summary) : h('p', {}, privateLeft ? 'Nothing else is flagged now.' : 'Nothing is flagged now.'),
+    privateLeft ? h('p', { class: 'note' }, 'Left out: what the automation flagged from your private logs (symptoms, medicines). Those lines never go to the AI.') : null,
+    aiHost,
+    h('p', { class: 'note' }, `An open model (${AI_MODEL.name}) that runs on this computer explains these lines in plain words. The levels, red limits and the steps in What to do come from the automation, not from the AI.`),
+    h('p', { class: 'note' }, "What checked facts say: NASA's crew medical officer assistant (CMO-DA) runs with no link to Earth on a ground copy of the ISS computer and is tested only on Earth so far; open models can run right in a web browser without internet."),
+  ], [btn('secondary', 'Message the doctor', () => openDoctor(a, kind), 'stethoscope', { 'data-tip': 't:doctor' })]);
+  renderAi(aiHost, { kind: 'analyse', ctx, helpNow: () => helpNowCard() });
 }
 
 // One name for the panel of checked suggestions everywhere: "Small things that help".
@@ -3435,7 +3468,7 @@ function renderSetup() {
       pinCard(p),
       p && !p.real ? analogCard({ drill: ui.drill, left: minutesLeft(ui.drill), onDrill: setDrill, switchRow, cornerTip }) : null,
       h('section', { class: 'card' }, cornerTip('t:onboard', 'the simulation switches'), h('h2', {}, 'Simulation, for the demonstration'),
-        switchRow('st-ai', 'AI is working', 'With the AI off, only the automation works.', ui.ship.aiWorks, ship('aiWorks')),
+        switchRow('st-ai', 'AI is working', 'With the AI off, only the automation works.', ui.ship.aiWorks, (on) => { ship('aiWorks')(on); if (!on) stopAi(); }),
         switchRow('st-doc', 'Doctor on board', 'Messages go to the doctor on board instead of Earth.', ui.ship.doctorOnBoard, ship('doctorOnBoard')),
         switchRow('st-link', 'Link to Earth', 'Without it, messages to Earth wait until the link is back.', ui.ship.linkToEarth, ship('linkToEarth')),
         switchRow('st-example', 'Example flight', 'Made-up readings for four people, shaped like published flight studies.', ui.example, (on) => { ui.example = on; savePrefs(); rebuild(); render(); }))),

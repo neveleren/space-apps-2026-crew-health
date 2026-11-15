@@ -2,3 +2,7 @@
 data/
 node_modules/
 *.log
+
+# The AI model files of an on-board install (tools/fetch-model.mjs): too big for the repository
+assets/models/
+.notes/
