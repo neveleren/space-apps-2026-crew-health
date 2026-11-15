@@ -41,6 +41,9 @@ function place() {
 
 function show(target, pin) {
   clearTimeout(showTimer);
+  // A thing that left the page while the pointer rested on it (a message that went away after its button was
+  // pressed) gets no card: the card would stick in the top corner with nothing to point at.
+  if (!target.isConnected) return;
   const content = resolve(target.dataset.tip, target);
   if (!content) return;
   if (current && current !== target) current.setAttribute('aria-expanded', 'false');
