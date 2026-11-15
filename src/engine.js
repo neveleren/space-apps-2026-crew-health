@@ -103,8 +103,9 @@ export function checkNorm(cell, value, profile) {
   }
   if (cell.normType === 'record') {
     // A measure with no checked norm (for example body mass change in flight): it is recorded, never judged.
+    // Below zero is a device or typing error here too (minus 5 minutes of exercise), unless the cell allows it.
     const v = toNum(value);
-    if (!Number.isFinite(v)) return { valid: false };
+    if (!Number.isFinite(v) || (v < 0 && !cell.allowNegative)) return { valid: false };
     return { valid: true, inNorm: null, side: null };
   }
   if (cell.normType === 'baseline-percent') {
@@ -147,6 +148,30 @@ function onScale(cell, value) {
   if (!cell.scale) return true;
   const v = toNum(value);
   return Number.isFinite(v) && v >= cell.scale.min && v <= cell.scale.max;
+}
+
+// A self-report from a fixed list must be on that list, so a typo never counts as a real answer: one of the
+// cell's answers (the eye self-check), a symptom from its list with a whole number on its scale, or a medicine
+// from its kit list (or "other" with a name) with an amount above zero. The lists live in config.js.
+function onList(cell, value) {
+  if (cell.answers) return cell.answers.some((a) => a.value === value);
+  const entry = value !== null && typeof value === 'object' && !Array.isArray(value);
+  if (cell.symptoms) {
+    const s = cell.severity || {};
+    return entry && cell.symptoms.some((x) => x.key === value.symptom)
+      && Number.isInteger(value.severity) && value.severity >= s.min && value.severity <= s.max;
+  }
+  if (cell.kit) {
+    const named = entry && (cell.kit.some((k) => k.key === value.medicine)
+      || (value.medicine === 'other' && typeof value.name === 'string' && value.name.trim() !== ''));
+    return Boolean(named) && typeof value.amount === 'number' && Number.isFinite(value.amount) && value.amount > 0;
+  }
+  return true;
+}
+
+// Can the machine read this self-report? Not empty, on its scale, on its list. The server can use the same check.
+export function checkSelf(cell, value) {
+  return { valid: !isBlank(value) && onScale(cell, value) && onList(cell, value) };
 }
 
 // Every reading is signed with the person it belongs to (reading.person). Each person has their
@@ -312,7 +337,7 @@ export function createMachine({ cells, crew = [], state = {}, now = () => new Da
         dest = DEST.UNDECIDED;
       }
     } else if (cell.kind === KIND.SELF) {
-      if (isBlank(reading.value) || !onScale(cell, reading.value)) {
+      if (!checkSelf(cell, reading.value).valid) {
         steps.push({ code: 'bad-value', by: 'machine' });
         status = STATUS.UNKNOWN;
         dest = DEST.UNDECIDED;
