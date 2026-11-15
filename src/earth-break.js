@@ -147,7 +147,7 @@ export function runEarthBreak({ onDone, onCancel, durationS = BREAK_RULES.durati
       h('h2', { id: 'sup-eb-ask-title' }, 'How do you feel now?'),
       h('div', { class: 'actions' }, FEELINGS.map(([k, label]) => btn('secondary', label, () => finish(k)))),
       h('button', { type: 'button', class: 'link', onclick: () => finish(null) }, 'Skip'),
-      h('p', { class: 'note' }, 'Only you see your answer.'),
+      h('p', { class: 'note' }, 'Your answer is kept in this browser only, and no screen shows it.'),
       h('p', {}, badge(BADGE.nasa)),
       sourceLine(SRC.hrp2025, SRC.vr2017, SRC.breath2023));
     layer.root.append(box);
