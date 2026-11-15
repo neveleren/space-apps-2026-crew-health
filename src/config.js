@@ -436,7 +436,8 @@ export const CELLS = [
   {
     id: null, section: 'body', indicator: 'symptoms', effort: 'light', label: 'Symptoms', kind: KIND.SELF, reviewByAi: false, private: true,
     unit: '0 (none) to 10 (worst)', normType: 'record',
-    normText: "the person picks one symptom and rates it from 0 (none) to 10 (worst), with a note if they like; it is recorded, never judged by a number. The commonest in-flight medical problems are symptoms: in NASA's records of Shuttle, Mir and ISS flights up to 2006, nasal congestion was reported 389 times, back pain 382, space motion sickness 325, insomnia 299 and headache 233",
+    // The 8 below is state-levels.js RULES.symptomTellAt (a draft); tests/state.test.js keeps the two the same.
+    normText: "the person picks one symptom and rates it from 0 (none) to 10 (worst), with a note if they like. It is recorded; a rating of 8 or more in the last 24 hours shows as \"attention\" with the advice to tell the crew medical officer (a draft rule), and nothing is sent unless the person chooses. The commonest in-flight medical problems are symptoms: in NASA's records of Shuttle, Mir and ISS flights up to 2006, nasal congestion was reported 389 times, back pain 382, space motion sickness 325, insomnia 299 and headache 233",
     src: L2.lsah2017, src2: L2.sas2025,
     availability: 'On the ISS, crew tell their flight surgeon how they sleep, eat and feel in a private medical conference of about 15 minutes once a week (NASA, 2025). This log keeps what they feel in between, to share if they choose.',
     availabilitySrc: [L2.pmc2025],
@@ -459,7 +460,7 @@ export const CELLS = [
   {
     id: null, section: 'body', indicator: 'medicines', effort: 'light', label: 'Medicines taken', kind: KIND.SELF, reviewByAi: false, private: true,
     unit: 'tablets of the kit strength', normType: 'record',
-    normText: 'the person picks a medicine from the kit, how much and when; it is recorded, never judged. When ISS crew logged their medicines in an app (Dose Tracker, a conference abstract, not peer reviewed), the use they logged was more than ten times what the medical records showed; on the ISS the commonest uses were for sleep, pain, congestion and allergy',
+    normText: 'the person picks a medicine from the kit, how much and when. It is recorded and checked only against the kit list\'s own printed rules: no more tablets every 24 hours than its limit, and no sleep medicine together with another one or with a medicine whose note says not to; a match shows as "attention", quoting the kit list (a draft), and nothing is sent unless the person chooses. When ISS crew logged their medicines in an app (Dose Tracker, a conference abstract, not peer reviewed), the use they logged was more than ten times what the medical records showed; on the ISS the commonest uses were for sleep, pain, congestion and allergy',
     src: L2.doseTracker, src2: L2.wotring2015,
     availability: "NASA relies on crew self-reporting to keep track of the ISS medical kit (NASA, 2024); ESA's EveryWear app, used daily by all ISS crew, logs medication intake (ESA, 2026).",
     availabilitySrc: [L2.inventory2024, L2.everyWear],
@@ -469,15 +470,23 @@ export const CELLS = [
     // pick are a log of what was taken, not dosing advice. Draft: the flight surgeons own the real list.
     kitSrc: L2.kit2015, kitSrc2: L2.sas2025, kitDraft: true,
     uses: { sleep: 'Sleep', pain: 'Pain or headache', nose: 'Stuffy nose', allergy: 'Allergy', nausea: 'Motion sickness', bowel: 'Constipation' },
+    // The kit list's own rules as data, each taken by hand from its printed comment and checked against the kit list
+    // (3.001 Medical kit, contents and reference, 9 Apr 2015) by Claude on 15 Nov 2026: max24h is its "No more than N
+    // tablets every 24 hours" (acetaminophen, page 3 of 27; ibuprofen, page 4); sleepMed marks the medicines of its
+    // "Sleep" group, whose comment is "Do not use with other sleep meds." (melatonin and zolpidem, page 4);
+    // notWithSleepMeds marks each medicine whose comment says not to use it with (other) sleep meds (the two sleep
+    // medicines, and meclizine and promethazine under "Space Motion Sickness/Anti-Nausea", page 17). Loratadine
+    // (page 2), pseudoephedrine (page 3) and bisacodyl (page 5) carry no comment there. Nothing is read from kitNote
+    // when the program runs: kitNote is only shown and quoted. The checks are in quicklog.js (kitFindings).
     kit: [
-      { key: 'melatonin', name: 'Melatonin', strength: '3 mg', unit: 'tablet', use: 'sleep', kitNote: 'Do not use with other sleep meds.' },
-      { key: 'zolpidem', name: 'Zolpidem', brand: 'Ambien', strength: '10 mg', unit: 'tablet', use: 'sleep', kitNote: 'Do not use with other sleep meds.' },
-      { key: 'acetaminophen', name: 'Acetaminophen (paracetamol)', brand: 'Tylenol', strength: '325 mg', unit: 'tablet', use: 'pain', kitNote: 'No more than 12 tablets every 24 hours.' },
-      { key: 'ibuprofen', name: 'Ibuprofen', brand: 'Motrin', strength: '400 mg', unit: 'tablet', use: 'pain', kitNote: 'No more than 8 tablets every 24 hours. Take with food.' },
+      { key: 'melatonin', name: 'Melatonin', strength: '3 mg', unit: 'tablet', use: 'sleep', kitNote: 'Do not use with other sleep meds.', sleepMed: true, notWithSleepMeds: true },
+      { key: 'zolpidem', name: 'Zolpidem', brand: 'Ambien', strength: '10 mg', unit: 'tablet', use: 'sleep', kitNote: 'Do not use with other sleep meds.', sleepMed: true, notWithSleepMeds: true },
+      { key: 'acetaminophen', name: 'Acetaminophen (paracetamol)', brand: 'Tylenol', strength: '325 mg', unit: 'tablet', use: 'pain', kitNote: 'No more than 12 tablets every 24 hours.', max24h: 12 },
+      { key: 'ibuprofen', name: 'Ibuprofen', brand: 'Motrin', strength: '400 mg', unit: 'tablet', use: 'pain', kitNote: 'No more than 8 tablets every 24 hours. Take with food.', max24h: 8 },
       { key: 'pseudoephedrine', name: 'Pseudoephedrine', brand: 'Sudafed 12 Hour', strength: '120 mg', unit: 'tablet', use: 'nose' },
       { key: 'loratadine', name: 'Loratadine', brand: 'Claritin', strength: '10 mg', unit: 'tablet', use: 'allergy' },
-      { key: 'promethazine', name: 'Promethazine', brand: 'Phenergan', strength: '25 mg', unit: 'tablet', use: 'nausea', kitNote: 'May cause sedation and impair performance. Do not use with sleep meds.' },
-      { key: 'meclizine', name: 'Meclizine', brand: 'Antivert', strength: '25 mg', unit: 'tablet', use: 'nausea', kitNote: 'May cause sedation and impair performance. Do not use with sleep meds.' },
+      { key: 'promethazine', name: 'Promethazine', brand: 'Phenergan', strength: '25 mg', unit: 'tablet', use: 'nausea', kitNote: 'May cause sedation and impair performance. Do not use with sleep meds.', notWithSleepMeds: true },
+      { key: 'meclizine', name: 'Meclizine', brand: 'Antivert', strength: '25 mg', unit: 'tablet', use: 'nausea', kitNote: 'May cause sedation and impair performance. Do not use with sleep meds.', notWithSleepMeds: true },
       { key: 'bisacodyl', name: 'Bisacodyl', brand: 'Dulcolax', strength: '5 mg', unit: 'tablet', use: 'bowel' },
     ],
     amounts: [0.5, 1, 2],
@@ -500,17 +509,20 @@ export const CELLS = [
   {
     id: null, section: 'body', indicator: 'visionCheck', effort: 'light', label: 'Eyes (SANS): vision self-check', kind: KIND.SELF, reviewByAi: false,
     unit: 'one answer from the list', normType: 'record', group: 'Eyes (SANS)',
-    normText: 'SANS (spaceflight associated neuro-ocular syndrome) means changes in the eyes during long flights. Two questions: has your near or far vision changed, and do all lines of the Amsler grid look straight and unbroken? The answer is recorded, not judged by a number. Crew of the station\'s US segment answer a vision questionnaire and look at an Amsler grid on flight day 30, flight day 90 and 30 days before return',
+    normText: 'SANS (spaceflight associated neuro-ocular syndrome) means changes in the eyes during long flights. Two questions: has your near or far vision changed, and do all lines of the Amsler grid look straight and unbroken? The answer is recorded, not judged by a number; any answer but "No change" shows as "attention" with the advice to tell your flight surgeon, until a later "No change" (a draft rule; who reads these answers is the team\'s open decision). Crew of the station\'s US segment answer a vision questionnaire and look at an Amsler grid on flight day 30, flight day 90 and 30 days before return',
     src: L.nasaEyes2018, src2: L2.sans2023,
+    // short: the same answer in a few words, for one line on Today and in a list.
     answers: [
-      { value: 'no change', label: 'No change: I see as before, and all grid lines look straight' },
-      { value: 'vision changed', label: 'My near or far vision has changed' },
-      { value: 'grid changed', label: 'Some grid lines look wavy, broken or missing' },
-      { value: 'vision and grid changed', label: 'Both: my vision changed, and grid lines look wrong' },
+      { value: 'no change', label: 'No change: I see as before, and all grid lines look straight', short: 'No change' },
+      { value: 'vision changed', label: 'My near or far vision has changed', short: 'Vision changed' },
+      { value: 'grid changed', label: 'Some grid lines look wavy, broken or missing', short: 'Grid lines look wrong' },
+      { value: 'vision and grid changed', label: 'Both: my vision changed, and grid lines look wrong', short: 'Vision and grid changed' },
     ],
     // Draft: any answer but "no change" is worth telling the flight surgeon. NASA counts distorted central vision as
     // SANS with an acute effect on sight, and a shift in the eye's focus of +0.75 dioptres or more as an earliest sign.
-    tellDoctor: { values: ['vision changed', 'grid changed', 'vision and grid changed'], draft: true, src: L2.sans2023 },
+    // The levels (state-levels.js) show such an answer as "attention" until a later "no change"; who reads the answers
+    // between the eye exams is still the team's open decision.
+    tellDoctor: { values: ['vision changed', 'grid changed', 'vision and grid changed'], who: 'flight surgeon', draft: true, src: L2.sans2023 },
     howTo: ['Wear your reading glasses if you use them.', 'Hold the grid about 35 cm (14 inches) from your eyes.', 'Test one eye at a time.', 'Look at the dot in the centre: all lines should look straight and unbroken, with no missing areas.'],
     howToSrc: L2.medlineAmsler,
     availability: "On the ISS the eye chart, Amsler grid and questionnaire are part of the eye exams on flight day 30, flight day 90 and 30 days before return (NASA, 2018). A monthly self-check between those exams is this app's draft.",

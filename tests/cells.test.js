@@ -90,6 +90,24 @@ test('the medicine list comes from the kit list, with strength, unit and a known
   assert.ok(c.amounts.every((a) => a > 0));
 });
 
+// The structured rules were typed in by hand from the kit list's printed comments; this test reads the comments only
+// to check that typing, the program itself never reads them (quicklog.js kitFindings uses only the fields).
+test("the kit list's own rules are data on each medicine, matching its printed comment", () => {
+  const c = cell('medicines');
+  const keys = (pick) => c.kit.filter(pick).map((k) => k.key).sort();
+  assert.deepEqual(c.kit.filter((k) => k.max24h).map((k) => [k.key, k.max24h]).sort(), [['acetaminophen', 12], ['ibuprofen', 8]]);
+  assert.deepEqual(keys((k) => k.sleepMed), ['melatonin', 'zolpidem']);
+  assert.deepEqual(keys((k) => k.notWithSleepMeds), ['meclizine', 'melatonin', 'promethazine', 'zolpidem']);
+  for (const k of c.kit) {
+    const note = k.kitNote || '';
+    const max = /No more than (\d+) tablets every 24 hours\./.exec(note);
+    assert.equal(k.max24h, max ? Number(max[1]) : undefined, `${k.key}: max24h`);
+    assert.equal(Boolean(k.notWithSleepMeds), /Do not use with (other )?sleep meds\./.test(note), `${k.key}: notWithSleepMeds`);
+    assert.equal(Boolean(k.sleepMed), k.use === 'sleep' && note === 'Do not use with other sleep meds.', `${k.key}: sleepMed is the kit list's "Sleep" group`);
+    for (const f of ['max24h', 'sleepMed', 'notWithSleepMeds']) if (k[f] !== undefined) assert.ok(f === 'max24h' ? Number.isInteger(k[f]) && k[f] > 0 : k[f] === true, `${k.key}.${f}`);
+  }
+});
+
 test('hypothermia: 35.0 °C or less is urgent, from MedlinePlus with NEWS2 as the second source', () => {
   const low = cell('temp').red.filter((r) => r.when === 'atOrBelow' || r.when === 'below');
   assert.equal(low.length, 1);
@@ -106,6 +124,13 @@ test('the camera: only "I am okay" calls an alarm off', () => {
   const triggers = Object.entries(cell('camera').triggers);
   assert.deepEqual(triggers.filter(([, t]) => t.clears).map(([k]) => k), ['chest_grab_ok']);
   assert.ok(triggers.every(([, t]) => !t.clears || t.action === 'ignore'), 'an alarm never clears itself');
+});
+
+test('every eye answer has a short form, and the eye rule says who to tell', () => {
+  const eye = cell('visionCheck');
+  assert.ok(eye.answers.every((a) => typeof a.short === 'string' && a.short.length > 0 && a.short.length < a.label.length));
+  assert.equal(eye.tellDoctor.who, 'flight surgeon');
+  assert.ok(!eye.tellDoctor.values.includes('no change'));
 });
 
 test('every threshold added here is marked as a draft', () => {
@@ -320,7 +345,7 @@ test('the new example data add nothing to Today: the same levels and items for e
 test('no long dashes in the files of this change', () => {
   // The two dash characters are built from their code points, so this file holds neither of them.
   const dashes = new RegExp(`[${String.fromCharCode(0x2013, 0x2014)}]`);
-  for (const f of ['src/config.js', 'src/demo-crew.js', 'src/quicklog.js', 'tests/cells.test.js', 'tests/quicklog.test.js', 'package.json']) {
+  for (const f of ['src/config.js', 'src/demo-crew.js', 'src/quicklog.js', 'src/state-levels.js', 'src/security.js', 'tests/cells.test.js', 'tests/quicklog.test.js', 'tests/state.test.js', 'tests/serve.test.js', 'tests/engine.test.js', 'package.json']) {
     const text = readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');
     assert.ok(!dashes.test(text), f);
   }

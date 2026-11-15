@@ -17,8 +17,13 @@
 // - with no fresh data the message does not say "excellent";
 // - a cabin value past the ship's own limit reaches the person's message as a ship alarm;
 // - "I am okay" after a camera or Help key alarm calls the alarm off (the record stays).
+// Drafts by Claude after the final reviews of 15 Nov 2026 (the team and flight surgeons decide): what the person logs
+// or answers can say "tell someone", as an "attention" item of kind 'tell' that never goes beyond the person's own
+// screen by itself: an eye self-check answer other than "no change", until a later "no change"; a symptom rated
+// RULES.symptomTellAt or more in the last RULES.symptomHours hours; a medicine past the kit list's own printed rules.
 import { STATUS } from './engine.js';
 import { forecast } from './trend.js';
+import { KIT_HOURS, gmtText, kitFindings, kitFindingShort, kitFindingText, logText } from './quicklog.js';
 
 export const LEVEL = { FINE: 0, ATTENTION: 1, ACTION: 2, URGENT: 3 };
 export const LEVEL_WORD = ['fine', 'attention', 'needs action', 'urgent'];
@@ -74,6 +79,9 @@ export const RULES = {
   badDaysForAttention: 6, // draft: bad mood or low energy on this many of those days: "attention" (was 3, which fired on 39 to 56% of days for people with no mood problem)
   badDaysForAction: 8, // draft: ... on this many, more than half of the days: "needs action" (was 6)
   cameraHours: 24, // a camera alarm in this many last hours makes the body "urgent", unless "I am okay" came after it
+  symptomTellAt: 8, // draft: a symptom rated this or more of 10 ...
+  symptomHours: 24, // ... logged in this many last hours: "attention", with the advice to tell the crew medical officer
+  kitNightHours: 12, // draft: "one night" for the kit list's "Do not use with (other) sleep meds": two medicines this many hours apart or less
 };
 
 // Why the draft rules above exist, for the page. The red limits carry their own sources (config.js, "red").
@@ -97,6 +105,18 @@ export const RULE_NOTES = {
   badDaysForAttention: {
     text: "Placeholder until the team chooses the questionnaire and the rule (the team's open question 8).",
     source: "Claude's placeholder", url: null, draft: true,
+  },
+  symptomTellAt: {
+    text: `Most medical problems in flight are symptoms, not numbers (NASA counted 389 reports of nasal congestion, 382 of back pain and 233 of headache up to 2006), so a strong one must not read "excellent". A symptom rated ${RULES.symptomTellAt} or more of 10 in the last ${RULES.symptomHours} hours shows as "attention" with the advice to tell the crew medical officer. The log stays private: nothing is sent unless the person chooses.`,
+    source: 'NASA HRP evidence report, 2017', url: 'https://ntrs.nasa.gov/api/citations/20170004604/downloads/20170004604.pdf', draft: true,
+  },
+  kitNightHours: {
+    text: `The kit list's own printed rules, kept as data: no more tablets every 24 hours than its limit (acetaminophen 12, ibuprofen 8), and its sleep medicines not with other sleep medicines, nor with meclizine or promethazine ("Do not use with sleep meds"). A match shows as "attention" and quotes the kit list. Two medicines count as one night when they are ${RULES.kitNightHours} hours apart or less: a draft.`,
+    source: 'NASA ISS medical kit list, 9 Apr 2015', url: 'https://www.governmentattic.org/19docs/NASA-ISSmedicalEmergManual_2016.pdf', draft: true,
+  },
+  eyeAnswer: {
+    text: 'NASA ranks distorted central vision as SANS with an acute effect on sight, a tier above clinically concerning retinal swelling. Any eye self-check answer but "No change" shows as "attention" with the advice to tell the flight surgeon, until a later "No change". Who reads these answers between the eye exams is the team\'s open decision.',
+    source: 'Brunstetter et al., NASA, 2023', url: 'https://ntrs.nasa.gov/api/citations/20220014606/downloads/Brunstetter%20-%20IWS%202023%20SANS%20Clinical%20Update%20-%20Abstract%20-%2023Sep22.pdf', draft: true,
   },
 };
 
@@ -223,12 +243,88 @@ function freshness({ machine, person, cells, now }) {
 
 const top = (items) => items.reduce((lv, x) => Math.max(lv, x.level), LEVEL.FINE);
 const HOUR = 60 * 60 * 1000;
+const iso = (t) => new Date(ms(t)).toISOString();
+
+// ---------- the person's own logs and answers that say "tell someone" (drafts) ----------
+// Each gives at most one item of kind 'tell' at "attention", never higher, so it is never shared with the crew
+// (crew lines carry only urgent red limits and alarms): the symptom and medicine logs stay private until the person
+// chooses to send them. The item carries its own words for the screens: title, text (for Messages and the message
+// to the doctor), short (one line for Today), steps (What to do), who to tell, rule, time (of the entry behind it),
+// entries (the entries behind it, newest first), private, draft and source ({ name, url }).
+const tellItem = (cell, fields) => ({ kind: 'tell', level: LEVEL.ATTENTION, cell, title: cell.label, private: Boolean(cell.private), draft: true, ...fields });
+
+// The eye self-check: the latest answer, when the cell's tellDoctor lists it, until a later "no change".
+function eyeItem(cell, list) {
+  const tell = cell.tellDoctor;
+  const last = list[list.length - 1];
+  if (!tell || !Array.isArray(tell.values) || !last || !tell.values.includes(last.value)) return null;
+  const answer = (cell.answers || []).find((a) => a.value === last.value) || { label: String(last.value) };
+  const who = tell.who || 'flight surgeon';
+  return tellItem(cell, {
+    rule: 'eye-answer', who, time: iso(last.time), entries: [last], source: tell.src || null,
+    text: `"${answer.label}", your eye self-check answer of ${gmtText(last.time)}. Worth telling your ${who} (a draft rule; who reads these answers between the eye exams is the team's open decision). It stays here until a later answer "No change".`,
+    short: `${answer.short || answer.label}: tell your ${who}`,
+    steps: [
+      `You: tell your ${who}, for example with the "Message the doctor" button.`,
+      'You: do the self-check again when you are ready; the answer "No change" ends this message.',
+      'NASA checks the eyes on flight day 30, flight day 90 and 30 days before return.',
+    ],
+  });
+}
+
+// Symptoms rated RULES.symptomTellAt or more in the last RULES.symptomHours hours, newest first.
+function symptomItem(cell, list, now) {
+  const strong = list.filter((x) => ms(now) - ms(x.time) <= RULES.symptomHours * HOUR && x.value && Number(x.value.severity) >= RULES.symptomTellAt).reverse();
+  if (!strong.length) return null;
+  const shown = strong.slice(0, 3).map((x) => `${logText('symptoms', x.value)} (${gmtText(x.time)})`);
+  const more = strong.length - shown.length;
+  return tellItem(cell, {
+    rule: 'strong-symptom', who: 'crew medical officer', time: iso(strong[0].time), entries: strong, source: null,
+    text: `${shown.join('; ')}${more ? `; and ${more} more` : ''}. A symptom of ${RULES.symptomTellAt} or more of 10 in the last ${RULES.symptomHours} hours: tell the crew medical officer (a draft rule; the team decides).`,
+    short: `${logText('symptoms', strong[0].value)}: tell the crew medical officer`,
+    steps: [
+      'You: tell the crew medical officer.',
+      'You: if it is bad right now or getting worse, hold the Help key for 2 seconds.',
+      'You: to tell the doctor as well, use "Message the doctor". Your log is private: it is sent only if you choose.',
+    ],
+  });
+}
+
+// Medicines past the kit list's own printed rules (quicklog.js kitFindings), quoting the kit list.
+function medicineItem(cell, list, now) {
+  const found = kitFindings(list, { now, nightHours: RULES.kitNightHours, cell });
+  if (!found.length) return null;
+  const involved = new Set(found.flatMap((f) => (f.rule === 'max' ? [f.medicine] : f.medicines)));
+  return tellItem(cell, {
+    rule: 'kit', who: 'crew medical officer', time: found[0].time, findings: found, source: cell.kitSrc || null,
+    entries: list.filter((x) => x.value && involved.has(x.value.medicine) && ms(now) - ms(x.time) <= (KIT_HOURS + RULES.kitNightHours) * HOUR).reverse(),
+    text: `${found.map((f) => kitFindingText(f, cell)).join(' ')} Tell the crew medical officer, or your flight surgeon (a draft rule from the kit list of 2015; the flight surgeons set the real one).`,
+    short: found.map((f) => kitFindingShort(f, cell)).join('; '),
+    steps: [
+      'You: tell the crew medical officer, or your flight surgeon with the "Message the doctor" button.',
+      "You: the kit list's own words are quoted above; the flight surgeons own the real list and its rules.",
+      'Your log is private: it is sent only if you choose.',
+    ],
+  });
+}
+
+function tellItems({ machine, person, cells, now }) {
+  const out = [];
+  const rules = { visionCheck: (c, list) => eyeItem(c, list), symptoms: (c, list) => symptomItem(c, list, now), medicines: (c, list) => medicineItem(c, list, now) };
+  for (const cell of cells) {
+    if (!rules[cell.indicator] || cell.onlyOnEarth) continue;
+    const it = rules[cell.indicator](cell, machine.history(person.id, cell.indicator));
+    if (it) out.push(it);
+  }
+  return out;
+}
 
 // Everything the front side needs for one person today.
 // body, psyche: the levels and items of the headline; an item counted at once because several vital signs are
-// outside the norm together carries `together` (their indicators). info: level-fine notes for the measures' pages
-// ('stale', 'expected' = common in flight, 'watch' = outside the norm once, waiting for a repeat, 'camera-cleared' =
-// "I am okay" called off a camera or Help key alarm).
+// outside the norm together carries `together` (their indicators). Item kinds: camera, red, standard, out, tell (the
+// person's own log or answer says to tell someone; it carries its own title, text, short and steps), forecast, mood.
+// info: level-fine notes for the measures' pages ('stale', 'expected' = common in flight, 'watch' = outside the norm
+// once, waiting for a repeat, 'camera-cleared' = "I am okay" called off a camera or Help key alarm).
 // fresh: whether there is fresh data to judge the body and the mind. ship: cabin values past the ship's own
 // limits, which reach every person. doctorReachable: a doctor on board, or a link to Earth.
 export function assess({ machine, person, cells, mission, now, ship = SHIP_DEFAULT }) {
@@ -270,6 +366,9 @@ export function assess({ machine, person, cells, mission, now, ship = SHIP_DEFAU
   if (alarm && !cleared) body.push({ kind: 'camera', level: LEVEL.URGENT, time: alarm.time, value: alarm.value });
   if (alarm && cleared) info.push({ kind: 'camera-cleared', level: LEVEL.FINE, time: cleared.time, value: cleared.value, source: cleared.source, alarm: { time: alarm.time, value: alarm.value, source: alarm.source } });
 
+  // What the person logged or answered that says "tell someone" (drafts): see tellItems.
+  body.push(...tellItems({ machine, person, cells, now }));
+
   // Mind: bad mood or low energy on several of the last days (placeholder rule until the team sets one).
   const since = ms(now) - RULES.psycheDays * DAY;
   const badDays = new Set();
@@ -281,7 +380,7 @@ export function assess({ machine, person, cells, mission, now, ship = SHIP_DEFAU
   if (badDays.size >= RULES.badDaysForAttention) {
     psyche.push({ kind: 'mood', level: badDays.size >= RULES.badDaysForAction ? LEVEL.ACTION : LEVEL.ATTENTION, days: badDays.size });
   }
-  const rank = { camera: 0, red: 1, standard: 2, out: 3, forecast: 4, mood: 5 };
+  const rank = { camera: 0, red: 1, standard: 2, out: 3, tell: 4, forecast: 5, mood: 6 };
   const order = (a, b) => b.level - a.level || rank[a.kind] - rank[b.kind];
   body.sort(order);
   psyche.sort(order);
