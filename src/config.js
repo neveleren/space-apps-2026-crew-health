@@ -62,10 +62,33 @@ const L = {
 
 const none = null;
 
+// Red limits: published single values where one reading is enough to act, with no streak (the reviews of
+// 15 Nov 2026). Each limit is { when, value, level, source, url, note } and is a DRAFT: the team and flight
+// surgeons decide. level 'action' = needs action, 'urgent' = urgent. part picks one number of a pair (blood
+// pressure). atRest: the limit holds for a person at rest and is not applied to a reading taken during exercise.
+// Every number was checked in its source on 15 Nov 2026 (or in the team's verified FACTS files).
+const RED = {
+  news2: { source: 'RCP NEWS2, 2017', url: 'https://www.rcp.ac.uk/media/a4ibkkbf/news2-final-report_0_0.pdf' },
+  medlineFever: { source: 'MedlinePlus (NIH)', url: 'https://medlineplus.gov/ency/article/003090.htm' },
+  medlineHypothermia: { source: 'MedlinePlus (NIH)', url: 'https://medlineplus.gov/ency/article/000038.htm' },
+  ochmoCo2: { source: 'NASA OCHMO-TB-004 Rev D, 2026', url: 'https://www.nasa.gov/wp-content/uploads/2023/12/ochmo-tb-004-carbon-dioxide.pdf' },
+  issDepress: { source2: 'NASA, ICES-2025-126', url2: 'https://ntrs.nasa.gov/api/citations/20250003954/downloads/ICES-2025-126_Final_Rev%20A.pdf' },
+};
+const cite = (l) => ({ source: l.name, url: l.url });
+const cite2 = (l) => ({ source2: l.name, url2: l.url });
+const NEWS2_NOTE = 'NEWS2 is a hospital score for adults, not tested in flight; only its single red values are used here, not the score';
+
 export const CELLS = [
   {
     id: 'A', section: 'body', indicator: 'pulse', effort: 'light', label: 'Heart rate', kind: KIND.NUMBER, unit: 'bpm',
     normType: 'range', norm: { min: 60, max: 100 }, compareWith: 'earthGeneral',
+    atRest: true, // the norm is for rest: a reading marked as taken during exercise is recorded, not judged
+    red: [
+      { when: 'atOrBelow', value: 40, level: 'urgent', ...RED.news2, ...cite2(L.medlinePulse), draft: true,
+        note: `NEWS2 gives a single red score at 40 bpm or less. Well-trained athletes can rest at 40 to 60 bpm (MedlinePlus). ${NEWS2_NOTE}.` },
+      { when: 'atOrAbove', value: 131, level: 'urgent', atRest: true, ...RED.news2, ...cite2(L.ochmoMed), draft: true,
+        note: `NEWS2 gives a single red score at 131 bpm or more. NASA's astronaut medical standard sends a resting heart rate above 130 for over an hour, not related to activity, to its medical board. Not applied during exercise. ${NEWS2_NOTE}.` },
+    ],
     norms: {
       earthGeneral: { text: '60 to 100 bpm at rest', src: L.medlinePulse },
       spaceGeneral: { text: 'no norm; in flight the 24-hour average heart rate did not change', src: L.norsk2015 },
@@ -76,6 +99,12 @@ export const CELLS = [
   {
     id: 'B', section: 'body', indicator: 'bp', effort: 'light', label: 'Blood pressure', kind: KIND.NUMBER, unit: 'mmHg',
     normType: 'below-both', norm: { sysBelow: 120, diaBelow: 80, sysMin: 90, diaMin: 60 }, compareWith: 'earthGeneral',
+    red: [
+      { part: 'sys', when: 'above', value: 180, level: 'urgent', ...cite(L.nhlbi), draft: true, note: 'NHLBI: readings above 180/120 mm Hg need immediate medical attention.' },
+      { part: 'dia', when: 'above', value: 120, level: 'urgent', ...cite(L.nhlbi), draft: true, note: 'NHLBI: readings above 180/120 mm Hg need immediate medical attention.' },
+      { part: 'sys', when: 'below', value: 90, level: 'action', ...RED.news2, ...cite2(L.fu2019), draft: true,
+        note: `NEWS2 gives a single red score at a systolic of 90 or less. In flight the 24-hour systolic averages about 106 against 120 before flight (Fu et al., 2019), so this draft starts below 90, where NHLBI's low line begins, and only at "needs action". ${NEWS2_NOTE}.` },
+    ],
     norms: {
       earthGeneral: { text: 'below 120/80; below 90/60 counts as low blood pressure, though for some people low is normal', src: L.nhlbi, src2: L.nhlbiLow },
       spaceGeneral: { text: 'no norm; in flight the 24-hour systolic averaged about 106 against 120 before flight', src: L.fu2019 },
@@ -86,6 +115,10 @@ export const CELLS = [
   {
     id: null, section: 'body', indicator: 'glucose', effort: 'light', label: 'Fasting glucose', kind: KIND.NUMBER, unit: 'mg/dL',
     normType: 'range', norm: { min: 70, max: 99 }, compareWith: 'earthGeneral',
+    red: [
+      { when: 'below', value: 70, level: 'action', ...cite(L.ada), draft: true, note: 'ADA: below 70 mg/dL (and 54 or above) is Level 1 hypoglycemia.' },
+      { when: 'below', value: 54, level: 'urgent', ...cite(L.ada), draft: true, note: 'ADA: below 54 mg/dL is Level 2 hypoglycemia.' },
+    ],
     norms: {
       earthGeneral: { text: '70 to 99 mg/dL fasting', src: L.niddk, src2: L.ada },
       spaceGeneral: { text: 'no norm; no public in-flight glucose figures' },
@@ -96,6 +129,11 @@ export const CELLS = [
   {
     id: null, section: 'body', indicator: 'temp', effort: 'light', label: 'Body temperature', kind: KIND.NUMBER, unit: '°C',
     normType: 'range', norm: { min: 36.1, max: 37.2 }, compareWith: 'earthGeneral',
+    red: [
+      { when: 'atOrAbove', value: 38.0, level: 'action', ...cite(L.cdcFever), draft: true, note: 'CDC: a measured temperature of 38 °C (100.4 °F) or more is a fever. A fever is never counted as the usual rise in flight.' },
+      { when: 'atOrAbove', value: 40.6, level: 'urgent', ...RED.medlineFever, draft: true, note: 'MedlinePlus: an adult with a fever of 40.6 °C (105 °F) or higher should contact a provider right away, unless it comes down readily with treatment.' },
+      { when: 'below', value: 35.0, level: 'urgent', ...RED.medlineHypothermia, draft: true, note: 'MedlinePlus: hypothermia is a dangerously low body temperature, below 35 °C (95 °F); call emergency help whenever it is suspected.' },
+    ],
     norms: {
       earthGeneral: { text: '36.1 to 37.2 °C; fever from 38 °C', src: L.medlineTemp, src2: L.cdcFever },
       spaceGeneral: { text: 'no norm; at rest it rises by about 1 °C over 2.5 months of flight', src: L.stahn2017 },
@@ -106,6 +144,10 @@ export const CELLS = [
   {
     id: null, section: 'body', indicator: 'spo2', effort: 'light', label: 'Blood oxygen (SpO2)', kind: KIND.NUMBER, unit: '%',
     normType: 'range', norm: { min: 95, max: 100 }, compareWith: 'earthGeneral',
+    red: [
+      { when: 'atOrBelow', value: 92, level: 'action', ...cite(L.medlineSpo2), draft: true, note: 'MedlinePlus: contact a provider at 92% or lower. A pulse oximeter can read 2 to 4% high or low, so repeat the reading at once.' },
+      { when: 'atOrBelow', value: 88, level: 'urgent', ...cite(L.medlineSpo2), draft: true, note: 'MedlinePlus: seek immediate medical attention at 88% or lower.' },
+    ],
     norms: {
       earthGeneral: { text: '95 to 100%; at 92% or lower, call a doctor', src: L.medlineSpo2 },
       spaceGeneral: none,
@@ -126,6 +168,11 @@ export const CELLS = [
   {
     id: null, section: 'body', indicator: 'resp', effort: 'light', label: 'Breathing rate', kind: KIND.NUMBER, unit: 'breaths/min',
     normType: 'range', norm: { min: 12, max: 18 }, compareWith: 'earthGeneral',
+    atRest: true, // the norm is for rest: a reading marked as taken during exercise is recorded, not judged
+    red: [
+      { when: 'atOrBelow', value: 8, level: 'urgent', ...RED.news2, draft: true, note: `NEWS2 gives a single red score at 8 breaths per minute or less. ${NEWS2_NOTE}.` },
+      { when: 'atOrAbove', value: 25, level: 'urgent', atRest: true, ...RED.news2, draft: true, note: `NEWS2 gives a single red score at 25 breaths per minute or more. Not applied during exercise. ${NEWS2_NOTE}.` },
+    ],
     norms: {
       earthGeneral: { text: '12 to 18 breaths per minute at rest', src: L.medlineVitals },
       spaceGeneral: { text: 'no norm; on the ISS the Bio-Monitor shirt records breathing rate', src: L.bioMonitor },
@@ -275,6 +322,12 @@ export const CELLS = [
   {
     id: null, section: 'env', indicator: 'co2', effort: 'light', label: 'Cabin CO2', kind: KIND.NUMBER, unit: 'mmHg',
     normType: 'range', norm: { min: null, max: 3 }, compareWith: 'spaceGeneral',
+    // NASA sets no public emergency value for CO2: the standard leaves off-nominal CO2 to each program, and on the
+    // ISS the flight control team corrects a high average. So the ship's limit here is a caution, not an emergency.
+    red: [
+      { when: 'above', value: 7.5, level: 'action', ...RED.ochmoCo2, draft: true,
+        note: "NASA's limit is a one-hour average of 3 mmHg; earlier NASA requirements accepted 3.8 to 7.5 mmHg. Headaches are reported from about 2.8 mmHg, fatigue and nausea above 4.5 mmHg (anecdotal). This draft calls a value above 7.5 mmHg a ship caution." },
+    ],
     norms: {
       earthGeneral: none,
       spaceGeneral: { text: 'NASA standard: one-hour average at most 3 mmHg', src: L.std2 },
@@ -285,6 +338,12 @@ export const CELLS = [
   {
     id: null, section: 'env', indicator: 'cabinO2', effort: 'light', label: 'Cabin oxygen (inspired O2 pressure)', kind: KIND.NUMBER, unit: 'mmHg',
     normType: 'range', norm: { min: 145, max: 155 }, compareWith: 'spaceGeneral',
+    red: [
+      { when: 'below', value: 122, level: 'urgent', ...cite(L.std2f), draft: true,
+        note: 'NASA-STD-3001 Vol 2 [V2 6003]: the absolute lower limit for inspired oxygen is 122 mmHg (the mild hypoxia limit is 127 mmHg as a one-hour average).' },
+      { when: 'above', value: 356, level: 'action', ...cite(L.std2f), draft: true,
+        note: 'NASA-STD-3001 Vol 2 [V2 6003]: 356 mmHg is the upper limit for indefinite exposure; oxygen-rich air also feeds fires [V2 6006].' },
+    ],
     norms: {
       earthGeneral: none,
       spaceGeneral: { text: 'NASA standard: normoxia target 145 to 155 mmHg, acceptable indefinitely; on the ISS the Major Constituent Analyzer watches O2 and CO2', src: L.std2f },
@@ -295,6 +354,10 @@ export const CELLS = [
   {
     id: null, section: 'env', indicator: 'cabinPressure', effort: 'light', label: 'Cabin pressure', kind: KIND.NUMBER, unit: 'kPa',
     normType: 'range', norm: { min: 34.5, max: 103 }, compareWith: 'spaceGeneral',
+    red: [
+      { when: 'below', value: 34.5, level: 'urgent', ...cite(L.std2f), ...RED.issDepress, draft: true,
+        note: "NASA-STD-3001 Vol 2 [V2 6006]: crew exposure must stay above 34.5 kPa; pressure loss is an emergency in NASA's alert table (Table 10.3-1). The ISS itself alarms earlier, on the rate of loss, and its lowest allowed cabin pressure is 490 mmHg (65.3 kPa)." },
+    ],
     norms: {
       earthGeneral: none,
       spaceGeneral: { text: 'NASA standard: above 34.5 and at most 103 kPa; the ISS keeps about 101.3 kPa, as at sea level', src: L.std2f, src2: L.ochmoAtmos },
