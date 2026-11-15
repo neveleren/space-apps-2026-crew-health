@@ -164,7 +164,9 @@ export function medicineLines(get, since, now, max = SUMMARY_RULES.maxMedicines)
     if (g.length === 1) return `- Medicine: ${logText('medicines', { ...v, takenAt: undefined })}, ${gmtText(takenMs(g[0]))}.`;
     const total = g.reduce((s, x) => s + (Number(x.value.amount) || 0), 0);
     const what = [v.name, v.strength].filter(Boolean).join(' ');
-    return `- Medicine: ${what}, ${amountText(total, v.unit || 'dose')} in ${g.length} entries, ${gmtText(takenMs(g[0]))} to ${gmtText(takenMs(g[g.length - 1]))}.`;
+    // Entries logged within the same minute read "at GMT 319/07:15", not "GMT 319/07:15 to GMT 319/07:15".
+    const [from, to] = [gmtText(takenMs(g[0])), gmtText(takenMs(g[g.length - 1]))];
+    return `- Medicine: ${what}, ${amountText(total, v.unit || 'dose')} in ${g.length} entries, ${from === to ? `at ${from}` : `${from} to ${to}`}.`;
   });
   if (rows.length > max) lines.push(`- And ${plural(rows.length - max, 'more medicine')}.`);
   return lines;

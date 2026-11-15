@@ -12,7 +12,7 @@ import { forecast } from './trend.js';
 import { drawHistory, drawTable, fmtDate } from './history-view.js';
 import { hearingBand, hearingLines } from './nasa-rules.js';
 
-const PEOPLE =[...CREW, SHIP, ...realPeople(INSPIRATION4.subjects)];
+const PEOPLE = [...CREW, SHIP, ...realPeople(INSPIRATION4.subjects)];
 const personById = Object.fromEntries(PEOPLE.map((p) => [p.id, p]));
 const personName = (id) => (personById[id] ? personById[id].name : 'not signed');
 

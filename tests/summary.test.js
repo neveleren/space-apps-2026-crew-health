@@ -187,6 +187,13 @@ test('medicines: one line each, taken earlier than logged counts at that time, a
   assert.deepEqual(lines.map((l) => l.replace(/GMT \d+\/\d\d:\d\d/g, 'GMT t')), ['- Medicine: Eye drops, 1 dose, GMT t.', '- Medicine: Melatonin 3 mg, half a tablet, GMT t.']);
 });
 
+test('medicines logged within the same minute read "at" that time, not "from" and "to" the same time', () => {
+  const m = machineWith([[2, 'medicines', kit('ibuprofen', 2)], [2, 'medicines', kit('ibuprofen', 2)], [30, 'medicines', kit('melatonin', 1)], [26, 'medicines', kit('melatonin', 1)]]);
+  const lines = medicineLines((ind) => m.history('crew-1', ind), NOW.getTime() - 7 * DAY, NOW.getTime());
+  assert.match(lines.find((l) => l.includes('Ibuprofen')), /^- Medicine: Ibuprofen 400 mg, 4 tablets in 2 entries, at GMT \d+\/\d\d:\d\d\.$/);
+  assert.match(lines.find((l) => l.includes('Melatonin')), /^- Medicine: Melatonin 3 mg, 2 tablets in 2 entries, GMT \d+\/\d\d:\d\d to GMT \d+\/\d\d:\d\d\.$/);
+});
+
 test('the example flight: the draft says that it holds made-up data, and Tom\'s week has his exercise, eyes and numbers', () => {
   const m = createMachine({ cells: CELLS, crew: [...CREW, SHIP], state: STATE, mission: MISSION });
   for (const ev of exampleFlight(CREW)) if (ev.kind === 'reading') m.receive({ ...ev.reading, person: ev.person, time: ev.time, example: Boolean(ev.example) });

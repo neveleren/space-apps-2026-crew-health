@@ -125,7 +125,7 @@ export function checkNorm(cell, value, profile, context = null) {
     return { valid: true, inNorm, side: inNorm ? null : 'below' };
   }
   if (cell.normType === 'record') {
-    // A measure with no checked norm (for example body mass change in flight): it is recorded, never judged.
+    // A measure with no checked norm (for example exercise minutes): it is recorded, never judged.
     // Below zero is a device or typing error here too (minus 5 minutes of exercise), unless the cell allows it.
     const v = toNum(value);
     if (!Number.isFinite(v) || (v < 0 && !cell.allowNegative)) return { valid: false };
