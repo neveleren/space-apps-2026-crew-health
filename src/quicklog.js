@@ -79,11 +79,13 @@ export function logText(indicator, value) {
   if (indicator === 'symptoms') {
     const cell = cellOf('symptoms');
     const s = value && typeof value === 'object' ? cell.symptoms.find((x) => x.key === value.symptom) : null;
-    if (!s) return 'Unreadable symptom entry';
+    // A stored entry with no number would read "undefined of 10".
+    if (!s || !Number.isFinite(value.severity)) return 'Unreadable symptom entry';
     return `${s.label}, ${value.severity} of ${cell.severity.max}${value.note ? `: ${value.note}` : ''}`;
   }
   if (indicator === 'medicines') {
-    if (!value || typeof value !== 'object' || !value.name) return 'Unreadable medicine entry';
+    // A stored entry with no amount would read "undefined tablets".
+    if (!value || typeof value !== 'object' || !value.name || !(Number(value.amount) > 0)) return 'Unreadable medicine entry';
     const what = [value.name, value.strength].filter(Boolean).join(' ');
     return `${what}, ${amountText(value.amount, value.unit)}${value.takenAt ? `, taken ${gmtText(value.takenAt)}` : ''}`;
   }
@@ -256,7 +258,7 @@ export function medicineLog(host, { onSave, onCancel = null, now = () => new Dat
     privacy ? make(doc, 'p', { class: 'note' }, privacy) : null,
     ...rows.map((g) => g.block),
     details,
-    kitSrc ? make(doc, 'p', { class: 'note' }, 'A short list from the ', make(doc, 'a', { href: kitSrc.url, target: '_blank', rel: 'noopener' }, kitSrc.name), ', the newest public one. A draft: the flight surgeons set the real list.') : null,
+    kitSrc ? make(doc, 'p', { class: 'note' }, 'A short list from the ', make(doc, 'a', { href: kitSrc.url, target: '_blank', rel: 'noopener' }, kitSrc.name), ', released in 2016; the kit flying now may differ. A draft: the flight surgeons set the real list.') : null,
     onCancel ? make(doc, 'div', { class: 'actions' }, make(doc, 'button', { type: 'button', class: 'btn secondary', onclick: () => onCancel() }, 'Cancel')) : null,
     status);
 
