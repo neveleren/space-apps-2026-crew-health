@@ -1,0 +1,20 @@
+{
+  "demo": true,
+  "warning": "DEMO KEY PAIR. NOT SECRET. NOT A REAL KEY. It is published with the code so the demonstration and the automatic checks can open the outbox. Never use it for real health data.",
+  "kid": "demo-flight-surgeon-2026-11",
+  "created": "2026-11-15",
+  "use": "The station seals each message to a doctor for publicJwk (ECDH P-256, HKDF-SHA-256, AES-256-GCM); the ground opens it with privateJwk (node tools/read-outbox.mjs).",
+  "publicJwk": {
+    "kty": "EC",
+    "crv": "P-256",
+    "x": "08ARzmIZbOY9TZXr-h1L4ejZqlcriGyNxaw9QnZ-20w",
+    "y": "QT0rzq77oXUSUtNq4NIrVNF-9D2zupWZS3zFhN3VrRo"
+  },
+  "privateJwk": {
+    "kty": "EC",
+    "crv": "P-256",
+    "x": "08ARzmIZbOY9TZXr-h1L4ejZqlcriGyNxaw9QnZ-20w",
+    "y": "QT0rzq77oXUSUtNq4NIrVNF-9D2zupWZS3zFhN3VrRo",
+    "d": "7wCsvfWvk4WQlkNvlBg1DmRAPAbcnSUpasxmrDxtKco"
+  }
+}
