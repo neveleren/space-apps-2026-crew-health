@@ -355,12 +355,18 @@ test('fluid intake: the lower limit follows the person\'s sex (NASA: 2,500 mL me
   assert.equal(m.receive(r('fluid', 2600, TOM)).status, STATUS.OK);
 });
 
-test('body mass change has no checked norm: it is recorded, never judged', () => {
+test('body mass change: a loss of more than 5% leaves the band, 10% or more is a red limit at needs action (NASA nutrition report, drafts)', () => {
   const m = make();
   const e = m.receive(r('bodyMass', 96.5));
-  assert.equal(e.status, STATUS.RECORDED);
+  assert.equal(e.status, STATUS.OK);
   assert.equal(e.dest, DEST.NONE);
-  assert.deepEqual(codes(e), ['no-norm-recorded']);
+  assert.equal(m.receive(r('bodyMass', 95)).status, STATUS.OK, 'a loss of exactly 5% is not more than 5%');
+  const out = m.receive(r('bodyMass', 94.9));
+  assert.equal(out.status, STATUS.OUT);
+  assert.ok(!out.steps.some((s) => s.code === 'red-limit'));
+  const red = m.receive(r('bodyMass', 90));
+  assert.equal(red.status, STATUS.OUT);
+  assert.equal(red.steps.find((s) => s.code === 'red-limit').level, 'action');
   assert.equal(m.receive(r('bodyMass', 'abc')).status, STATUS.UNKNOWN);
 });
 

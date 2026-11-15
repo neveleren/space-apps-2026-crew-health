@@ -38,6 +38,8 @@ import { shortLabel, WORDS, normalFind, findText, findHit } from './find.js';
 import { readMission, missionProblem, missionTimes, flightDay, missionDay, MISSION_RULES } from './mission.js';
 import { buildRecord } from './medrecord.js';
 import { drawRecord, printRecord, resetRecordView, recordReturnKey } from './record-view.js';
+import { pmcDraft, doctorSections } from './doctor-summary.js';
+import { co2Around, co2Short, co2Words, co2Link, headacheToday, headacheList, massLines, massWords, hearingLines, hearingWords, hearingRangeText, hearingBand } from './nasa-rules.js';
 
 // One icon per measure, so a list can be read at a glance.
 const ICON_FOR = { pulse: 'heart-pulse', bp: 'activity', glucose: 'droplet', temp: 'thermometer', spo2: 'droplets', sleep: 'moon', resp: 'wind', fluid: 'glass-water', bodyMass: 'scale', eyePressure: 'eye', hearing: 'ear', radiation: 'radiation', vo2max: 'heart', strength: 'dumbbell', bone: 'bone', camera: 'camera', mood: 'smile', attitude: 'battery', sleepQuality: 'bed', cognition: 'brain', reaction: 'zap', cycle: 'calendar-heart', xray: 'scan-line', ecg: 'chart-line', ultrasound: 'waves', exercise: 'flame', visionCheck: 'eye', octChange: 'eye', octScan: 'scan-line', symptoms: 'stethoscope', medicines: 'pill', co2: 'cloud-fog', cabinTemp: 'thermometer', cabinO2: 'orbit', cabinPressure: 'gauge', noise: 'volume-2', blood: 'test-tube' };
@@ -189,7 +191,8 @@ function flightDayNow(now = nowTime()) {
 }
 
 function rebuild() {
-  machine = createMachine({ cells: CELLS, crew: PEOPLE, state: ui.ship });
+  // The mission tells the machine which readings are pre-flight (hearing is judged against the pre-flight test).
+  machine = createMachine({ cells: CELLS, crew: PEOPLE, state: ui.ship, mission: ui.example || ui.mission ? mission() : null });
   const flight = ui.example ? exampleFlight(CREW) : [];
   // Elly's made-up cycle days (flow and symptoms) come on top of the example flight's start and end marks.
   const all = [...flight, ...exampleCycleDays(flight), ...stored].filter((e) => e.kind === 'reading' || e.kind === 'review').sort((a, b) => msOf(a.time) - msOf(b.time));
@@ -528,6 +531,7 @@ function seriesOf(ownerId, indicator) {
 
 function bandOf(cell, owner) {
   if (cell.normType === 'range') return { min: cell.norm.min, max: cell.norm.max };
+  if (cell.normType === 'baseline-shift') return hearingBand(machine.history(owner.id, cell.indicator), cell);
   if (cell.normType === 'baseline-percent') {
     const base = owner && owner.baselines ? Number(owner.baselines[cell.baselineKey]) : NaN;
     return Number.isFinite(base) ? { min: (base * cell.norm.minPercent) / 100, max: null } : null;
@@ -548,11 +552,19 @@ function rangeText(cell, owner) {
     return `${n.maxExclusive ? 'below' : 'up to'} ${n.max}`;
   }
   if (cell.normType === 'below-both') return `below ${cell.norm.sysBelow}/${cell.norm.diaBelow}`;
+  if (cell.normType === 'baseline-shift') return hearingRangeText(machine.history(owner.id, cell.indicator), cell);
   return normShort(cell, owner);
+}
+// The range with its unit on a measure's page: "95% or more of own pre-flight", not "95 or more % of own pre-flight"
+// (body mass). A range said in words of its own (own pre-flight level, hearing) takes no unit.
+function rangeWithUnit(cell, owner) {
+  const r = rangeText(cell, owner);
+  if (!cell.unit || cell.kind !== KIND.NUMBER || cell.normType === 'baseline-percent' || cell.normType === 'baseline-shift') return r;
+  return cell.unit.startsWith('% ') && r.endsWith(' or more') ? `${r.slice(0, -' or more'.length)}% or more ${cell.unit.slice(2)}` : `${r} ${cell.unit}`;
 }
 
 function normShort(cell, owner) {
-  if (cell.normType === 'range' || cell.normType === 'below-both') return `normal range ${rangeText(cell, owner)}`;
+  if (cell.normType === 'range' || cell.normType === 'below-both' || cell.normType === 'baseline-shift') return `normal range ${rangeText(cell, owner)}`;
   if (cell.normType === 'baseline-percent') {
     const b = bandOf(cell, owner);
     return b ? `at least ${fmtVal(b.min)} (${cell.norm.minPercent}% of own level)` : 'no pre-flight level';
@@ -590,8 +602,14 @@ function alarmReportOf(personId, since = 0) {
 const isHelpKeyItem = (it, ownerId) => { const c = it.kind === 'camera' ? machine.history(ownerId, 'camera').filter((x) => x.status === STATUS.OUT).slice(-1)[0] : null; return Boolean(c && c.source === HELP_SOURCE.id); };
 
 // What one item of the assessment says, in plain words.
+// A strong headache also says the cabin CO2 before it (src/nasa-rules.js, Law et al., 2014).
+function headacheAir(it, owner) {
+  const link = co2Link();
+  const x = it.rule === 'strong-symptom' && link ? (it.entries || []).find((e) => e.value && e.value.symptom === link.symptom) : null;
+  return x ? ` Headache of GMT ${gmtDOY(x.time)}: ${co2Short(co2Around(machine.history(SHIP.id, 'co2'), x.time, { link }))}.` : '';
+}
 function itemText(it, owner) {
-  if (it.kind === 'tell') return { title: it.title, text: it.text, time: it.time }; // the levels word these items themselves (state-levels.js)
+  if (it.kind === 'tell') return { title: it.title, text: `${it.text}${headacheAir(it, owner)}`, time: it.time }; // the levels word these items themselves (state-levels.js)
   if (it.kind === 'camera') {
     const doc = doctorWords(statusOf(alarmReportOf(owner.id, msOf(it.time))), ui.ship);
     if (isHelpKeyItem(it, owner.id)) return { title: 'Help requested with the Help key', text: `You held the Help key. ${doc}`, time: it.time };
@@ -1002,6 +1020,7 @@ function clearPerson() {
   // form opens), the last side sheet and the last "?" card.
   byId('ci-topics').replaceChildren();
   byId('screen-record').replaceChildren();
+  if (byId('ci-air')) byId('ci-air').replaceChildren();
   byId('panel-title').textContent = '';
   byId('panel-body').replaceChildren();
   byId('panel-actions').replaceChildren();
@@ -1162,47 +1181,46 @@ function renderComingUp(p, now) {
   card.hidden = false;
 }
 
+// What the doctor's drafts are written from (src/doctor-summary.js): this person's records, the ship's CO2 and the
+// reaction test runs with their times (the person's own, and the made-up example runs from before flight).
+function reactionRuns(p) {
+  const launch = msOf(mission().launch);
+  const mine = stored.filter((e) => e.kind === 'reading' && e.person === p.id && e.reading && e.reading.indicator === 'reaction').map((e) => {
+    const d = e.reading.detail || {};
+    return { ...d, median: Number(d.median ?? e.reading.value), mode: d.mode || 'full', time: e.time, beforeFlight: msOf(e.time) < launch, example: Boolean(e.example) };
+  });
+  return ui.example && !p.real ? [...exampleEarlierRuns(MISSION.launch), ...mine] : mine;
+}
+function summaryInput(p, now = nowTime()) {
+  const fd = flightDayNow(now);
+  return { name: p.name, flightDay: fd ? lower(fd.words) : null, now, get: (ind) => machine.history(p.id, ind), co2: machine.history(SHIP.id, 'co2'), runs: reactionRuns(p), nightHours: LEVEL_RULES.kitNightHours };
+}
+// The words that say a draft holds the private logs, in the panel and not in the text that is sent.
+const PRIVATE_DRAFT = 'From my private log';
+const privateDraftNote = (text) => (String(text).includes(PRIVATE_DRAFT) ? h('p', { class: 'note' }, 'It includes your private symptom and medicine logs of the last 7 days, under "From my private log". Delete any line you do not want to send.') : null);
+// A draft longer than what is sent is not cut: the person shortens it first, so the end is never lost.
+function tooLong(area, max) {
+  if (area.value.length <= max) return false;
+  toast(`This text has ${area.value.length} characters; at most ${max.toLocaleString('en-US')} can be sent. Please shorten it first.`);
+  area.focus();
+  return true;
+}
+
 // A one-page summary of the last 7 days for the private medical conference; the person edits it and decides.
 function pmcSummary(p, now) {
-  const since = msOf(now) - 7 * DAY;
-  const fd = flightDayNow(now);
-  const lines = [`For my private medical conference. ${p.name}${fd ? `, ${lower(fd.words)}` : ''}, the last 7 days:`];
-  const nums = ['pulse', 'bp', 'spo2', 'temp', 'resp', 'sleep', 'fluid'];
-  for (const ind of nums) {
-    const cell = cellBy[ind];
-    if (!cell) continue;
-    const list = machine.history(p.id, ind).filter((x) => msOf(x.time) >= since);
-    if (!list.length) continue;
-    if (ind === 'bp') {
-      const sys = list.map((x) => Number(x.value.sys));
-      const dia = list.map((x) => Number(x.value.dia));
-      lines.push(`- Blood pressure: ${list.length} readings, ${Math.min(...sys)}/${Math.min(...dia)} to ${Math.max(...sys)}/${Math.max(...dia)} mmHg${list.some((x) => x.status === STATUS.OUT) ? ', some outside the normal range' : ''}.`);
-      continue;
-    }
-    const v = list.map((x) => Number(x.value)).filter(Number.isFinite);
-    if (!v.length) continue;
-    const avg = v.reduce((s, x) => s + x, 0) / v.length;
-    const r = (x) => (Math.abs(x) >= 100 ? String(Math.round(x)) : fmtVal(x));
-    lines.push(`- ${cell.label}: ${v.length} readings, average ${r(avg)} ${cell.unit || ''}, from ${r(Math.min(...v))} to ${r(Math.max(...v))}${list.some((x) => x.status === STATUS.OUT) ? ', some outside the normal range' : ''}.`.replace(/ +\./g, '.').replace(/ +,/g, ','));
-  }
-  const count = (ind, val) => machine.history(p.id, ind).filter((x) => msOf(x.time) >= since && x.value === val).length;
-  const moods = ['good', 'fair', 'bad'].map((v) => `${count('mood', v)} ${v}`).join(', ');
-  const steps = machine.history(p.id, 'attitude').filter((x) => msOf(x.time) >= since).map((x) => fatigueStep(x.value)).filter(Number.isFinite);
-  const energy = steps.length ? `energy ${steps.filter((n) => n >= FATIGUE_RULE.lowFrom).length} of ${steps.length} answers at ${FATIGUE_RULE.lowFrom} or more (1 fully alert, 7 completely exhausted)` : 'energy not answered';
-  lines.push(`- Check-ins: mood ${moods}; ${energy}.`);
-  const active = alertsFor(p.id).filter((x) => x.system !== 'Ship');
-  if (active.length) lines.push(`- Flagged by the program: ${active.map((x) => `${x.title} (${LEVEL_WORD[x.level]})`).join('; ')}.`);
-  lines.push('', 'What I want to talk about:', '');
-  return lines.join('\n');
+  const flagged = alertsFor(p.id).filter((x) => x.system !== 'Ship').map((x) => `${x.title} (${LEVEL_WORD[x.level]})`);
+  return pmcDraft({ ...summaryInput(p, now), flagged });
 }
 function openPmc(p) {
   const area = h('textarea', { 'aria-label': 'Summary for the private medical conference' });
   area.value = pmcSummary(p, nowTime());
   openPanel('Prepare for your private medical conference', [
     h('p', {}, 'A summary of your last 7 days, drafted by the automation. Change anything; add what you want to talk about. Nothing is sent unless you press Send.'),
+    privateDraftNote(area.value),
     area,
     h('p', { class: 'note' }, 'NASA flight surgeons hold a private medical conference with each crew member every week, about 15 minutes.'),
   ], [btn('primary', 'Send to my flight surgeon', async () => {
+    if (tooLong(area, 6000)) return;
     const to = ui.ship.doctorOnBoard ? 'doctor-onboard' : 'doctor-earth';
     const res = await keep({ v: 1, kind: 'report', time: new Date().toISOString(), person: ui.person, state: { ...ui.ship }, report: { to, text: area.value.slice(0, 6000), topic: 'pmc' } });
     if (!res.ok) return;
@@ -1234,6 +1252,12 @@ function renderCheckin(p, now, top = LEVEL.FINE) {
     btn('secondary small', 'I took a medicine', () => openMedicineLog(), 'pill', { 'data-tip': 't:medicinelog', 'data-fk': 'open:medicine' }),
     p.sex === 'F' ? btn('secondary small', 'Cycle log', () => openCycleLog(), 'calendar-heart', { 'data-tip': 't:cycle', 'data-fk': 'open:cycle' }) : null,
     btn('secondary small', 'Mind support', () => openMindSupport(), 'sparkles', { 'data-tip': 't:mindsupport', 'data-fk': 'open:mind' }));
+  // A headache of the last 24 hours shows the cabin CO2 before it (src/nasa-rules.js): on this person's screen only.
+  let air = byId('ci-air');
+  if (!air) { air = h('div', { id: 'ci-air', class: 'ci-air' }); byId('ci-extra').after(air); }
+  const ache = headacheToday(machine.history(p.id, 'symptoms'), machine.history(SHIP.id, 'co2'), now);
+  fill(air, ache ? h('p', { class: 'note' }, icon('cloud-fog', { size: 16 }), ` ${logText('symptoms', ache.entry.value)}, GMT ${gmtDOY(ache.entry.time)}: ${co2Short(ache.co2)}. Private, on your screen only. `,
+    h('button', { type: 'button', class: 'link', 'data-fk': 'open:symptoms', onclick: () => openDetail('symptoms') }, 'See your headaches and cabin CO2')) : null);
   // A chosen answer keeps the focus on the button that was pressed (keepFocus), so the next Tab goes on from there.
   const seg = (id, key, options) => byId(id).replaceChildren(...options.map(([value, label]) => h('button', {
     type: 'button', 'aria-pressed': String(ui.checkin[key] === value), 'data-fk': `ci:${key}:${value}`, onclick: () => { ui.checkin[key] = ui.checkin[key] === value ? null : value; keepFocus(() => renderCheckin(p, now, top)); },
@@ -1601,6 +1625,47 @@ function periodBar(onChange) {
       h('label', {}, 'To (GMT)', h('input', { type: 'date', value: ui.to, 'data-fk': 'period:to', onchange: (e) => { ui.to = e.target.value; onChange(); } }))) : null);
 }
 
+// ---------- the three NASA rules on a measure's page (src/nasa-rules.js; every line and level is a draft) ----------
+const SLOW_WORD = { vo2max: 'fitness', strength: 'strength', radiation: 'radiation', hearing: 'hearing' };
+const srcLink = (s) => h('a', { href: s.url, target: '_blank', rel: 'noopener' }, s.name);
+// Reference lines for the chart: body mass at a loss of 5% and 10%, hearing at the shift from the pre-flight test.
+function ruleLines(indicator, owner) {
+  if (indicator === 'bodyMass') return massLines(cellBy.bodyMass);
+  if (indicator === 'hearing') return hearingLines(machine.history(owner.id, indicator), cellBy.hearing);
+  return [];
+}
+// The words under the chart: the last body mass against the two levels, the hearing shift, the cabin CO2 average.
+function ruleFacts(indicator, owner, now) {
+  const list = machine.history(owner.id, indicator);
+  if (indicator === 'bodyMass') { const w = list.length ? massWords(list[list.length - 1].value, cellBy.bodyMass) : null; return w ? [w] : []; }
+  if (indicator === 'hearing') return list.length ? hearingWords(list, cellBy.hearing) : [];
+  if (indicator === 'co2') {
+    const ctx = co2Around(list, now);
+    const link = co2Link();
+    if (!ctx || !link) return [];
+    const avg = ctx.average ? `The ${ctx.days}-day average is ${fmtVal(ctx.average.value)} mmHg, from ${ctx.average.count} ${ctx.average.count === 1 ? 'reading' : 'readings'}${ctx.average.notBelowLine ? `: not below ${ctx.line} mmHg.` : `: below ${ctx.line} mmHg.`}` : `No reading in the last ${ctx.days} days, so there is no ${ctx.days}-day average.`;
+    return [h('span', {}, `${avg} ${link.text.replace(/\.$/, '')} (`, srcLink(link.src), '). NASA\'s limit is a one-hour average of at most ', String(ctx.limit), ' mmHg; these are single readings, so they are compared with it only roughly.')];
+  }
+  return [];
+}
+// The cabin CO2 page: the 7-day average next to the latest value.
+function co2WeekMeta(now) {
+  const ctx = co2Around(machine.history(SHIP.id, 'co2'), now);
+  if (!ctx || !ctx.average) return h('p', { class: 'meta' }, `${ctx ? ctx.days : 7}-day average: no readings in these days`);
+  return h('p', { class: 'meta' }, `${ctx.days}-day average `, h('span', { class: 'mono' }, `${fmtVal(ctx.average.value)} mmHg`), ` (${ctx.average.count} ${ctx.average.count === 1 ? 'reading' : 'readings'}; a headache risk below 1% needs it below ${ctx.line} mmHg)`);
+}
+// The symptom page: the latest headaches, each with the cabin CO2 before it, against NASA's limit (Law et al., 2014).
+function headacheCard(owner) {
+  const link = co2Link();
+  if (!link) return null;
+  const list = headacheList(machine.history(owner.id, 'symptoms'), machine.history(SHIP.id, 'co2'), { link });
+  const lim = cellBy.co2.norms.spaceGeneral;
+  return h('section', { class: 'card', 'aria-labelledby': 'air-title', 'data-terms': 'headache co2 carbon dioxide' },
+    h('h2', { id: 'air-title' }, 'Headaches and cabin CO2'),
+    list.length ? h('ul', { class: 'links' }, ...list.map(({ entry, co2 }) => h('li', {}, h('b', {}, `${logText('symptoms', entry.value)}, GMT ${gmtDOY(entry.time)}. `), co2Words(co2, link).join(' ')))) : h('p', { class: 'muted' }, 'No headache logged yet. When you log one, the cabin CO2 before it shows here and on Today.'),
+    h('p', { class: 'note' }, `NASA's limit: a one-hour average of at most ${cellBy.co2.norm.max} mmHg (`, srcLink(lim.src), `). ${link.text.replace(/\.$/, '')} (`, srcLink(link.src), '; ', srcLink(link.src2), "). The cabin CO2 is the ship's own reading before each headache; it does not show what caused it."));
+}
+
 function renderDetail() {
   const host = byId('screen-detail');
   const p = personById[ui.person];
@@ -1620,6 +1685,7 @@ function renderDetail() {
   if (indicator === 'radiation') lines.push({ v: cell.norm.max, label: 'NASA career limit' });
   for (const t of cell.thresholds || []) if (!(cell.red || []).some((r) => r.value === t.min)) lines.push({ v: t.min, label: `${cap(t.text)}: ${t.min} ${cell.unit} (draft)` });
   if (indicator === 'bp') lines.push({ v: cell.norm.sysBelow, label: `Systolic: below ${cell.norm.sysBelow}` }, { v: cell.norm.diaBelow, label: `Diastolic: below ${cell.norm.diaBelow}` });
+  lines.push(...ruleLines(indicator, owner));
 
   const facts = [];
   const about = [];
@@ -1639,17 +1705,18 @@ function renderDetail() {
     facts.push(cell.onlyOnEarth ? 'Not measured in flight: only on Earth, before and after flight.'
       : cell.normType === 'record' ? 'Recorded for you and your doctor: there is no checked norm, so there is no forecast line.'
         : flightDays < 3 ? 'To see where a measure is going, in-flight readings on at least three different days are needed.'
-          : 'No forecast line: one is drawn only for slow changes (fitness, strength, body mass, radiation, hearing) or a clear trend, so the daily ups and downs raise no alarm.');
+          : `No forecast line: one is drawn only for slow changes (${SLOW_MEASURES.map((x) => SLOW_WORD[x] || lower(cellBy[x].label)).join(', ')}) or a clear trend, so the daily ups and downs raise no alarm.`);
     if (indicator === 'reaction') facts.push('The 3-minute reaction test is modelled on NASA\'s Reaction Self Test (ISS, 2009) and the PVT-B rules. Compare only with yourself, never with others. It is not a fitness-for-duty test.');
   } else if (indicator === 'cognition') {
     facts.push('Once a month NASA crews take a thinking test (WinSCAT) on the station computer and compare it with their own result from before flight. Here you record how it went.');
-  } else if (cell.answers) {
+  } else if (cell.answers || indicator === 'symptoms' || indicator === 'medicines') {
     facts.push(cell.normText);
   } else {
     facts.push('Check-ins build up and are looked at in the planned review. By which rule the AI decides that spirits are falling is still the team\'s open question.');
   }
   if (EXPECTED[indicator]) facts.push(EXPECTED[indicator].text);
   if (indicator === 'strength') facts.push("In NASA studies muscle strength is measured before and after flight; NASA's 2023 evidence report says how it changes during flight is not well characterized.");
+  facts.push(...ruleFacts(indicator, owner, now));
   if (ui.example && !owner.real) about.push('The example data are made up; the shapes of the changes come from published flight studies.');
 
   const normsBox = cell.norms ? h('dl', { class: 'norms' }, ...Object.entries(NORM_NAMES).map(([k, title]) => {
@@ -1697,7 +1764,8 @@ function renderDetail() {
       lastEntry ? h('div', { class: `now-value${String(shown).length > 12 && !/^[\d.,\s/:+-]+$/.test(String(shown)) ? ' words' : ''}` }, h('b', {}, shown), cell.unit && cell.kind === KIND.NUMBER ? h('span', { class: 'u' }, cell.unit) : null, arrow) : null,
       h('div', { class: 'now-text' },
         h('p', { class: 'verdict' }, level ? h('span', { class: `lvc${level}` }, icon(LEVEL_ICON[level], { size: 18 }), ' ') : null, verdict, level ? h('span', { class: `lvc${level}` }, ` ${LEVEL_TITLE[level]}.`) : null),
-        norm ? h('p', { class: 'meta' }, `Normal range: ${rangeText(cell, owner)}${cell.unit && cell.kind === KIND.NUMBER && cell.normType !== 'baseline-percent' ? ` ${cell.unit}` : ''}`) : null,
+        norm ? h('p', { class: 'meta' }, `Normal range: ${rangeWithUnit(cell, owner)}`) : null,
+        indicator === 'co2' ? co2WeekMeta(now) : null,
         lastEntry ? h('p', { class: 'meta' }, 'Last reading ', h('span', { class: 'mono' }, stamp(lastEntry.time, now))) : null)),
     alert ? h('div', { class: 'actions' }, btn('proc', 'What to do', () => openProcedure(alert), 'list-checks')) : null,
     indicator === 'reaction' ? h('div', { class: 'actions' }, btn('primary', 'Start the 3-minute test', () => openReactionTest('full'), 'zap'), btn('secondary', 'Try a 30-second demo', () => openReactionTest('demo'), 'zap')) : null,
@@ -1716,6 +1784,7 @@ function renderDetail() {
       chart, tip,
       h('div', { class: 'legend', id: 'd-legend' }),
       showTrend ? h('p', { class: 'how' }, 'Forecast: a straight line through the flight readings, not a medical model.') : null),
+    indicator === 'symptoms' ? headacheCard(owner) : null,
     h('div', { class: 'prose' }, ...facts.map((x) => h('p', {}, x))),
     owner === SHIP ? null : cell.section === 'psyche' ? h('div', { class: 'actions' },
       aiButton('Start an anonymous session with AI', 'psyche', a),
@@ -2054,15 +2123,21 @@ function closePanel({ asked = false } = {}) {
 }
 narrowScreen.addEventListener('change', syncInert);
 
-function summaryFor(a, kind, indicator) {
+// The flagged items in words. full (Message the doctor): also the person's last 7 days from src/doctor-summary.js,
+// all of it from Today or the measure's own part from its page, leaving out what a flagged item already says. The
+// panel "Analyse with AI" asks without full, so the private logs never go into what the AI would get.
+function summaryFor(a, kind, indicator, { full = false } = {}) {
   const p = personById[ui.person];
   const items = (kind === 'psyche' ? a.psyche.items : a.body.items).filter((it) => !indicator || (it.cell && it.cell.indicator === indicator));
   const lines = items.map((it) => { const tx = itemText(it, p); return `${tx.title}: ${tx.text}`; });
-  if (indicator && !lines.length) {
+  const tells = items.filter((it) => it.kind === 'tell');
+  const skip = { symptoms: tells.filter((it) => it.rule === 'strong-symptom').flatMap((it) => (it.entries || []).slice(0, 3).map((x) => x.time)), findings: tells.filter((it) => it.rule === 'kit').flatMap((it) => it.findings || []) };
+  const extra = full && kind !== 'psyche' ? doctorSections(summaryInput(p), { indicator, skip }) : [];
+  if (indicator && !lines.length && !extra.length) {
     const last = machine.history(p.id, indicator).slice(-1)[0];
     if (last) lines.push(`${cellBy[indicator].label}: ${valueText(indicator, last.value)} ${cellBy[indicator].unit || ''} (${fmtDT(last.time)}).`);
   }
-  return lines.join('\n');
+  return [...lines, ...(lines.length && extra.length ? [''] : []), ...extra].join('\n');
 }
 
 // ---------- the anonymous session: support that works with the AI off ----------
@@ -2376,7 +2451,7 @@ function openDoctor(a, kind, indicator = null) {
   const toText = to === 'doctor-onboard' ? 'the doctor on board' : 'the doctor on Earth';
   const p = personById[ui.person];
   const area = h('textarea', { id: 'doc-text', 'aria-label': 'Message text' });
-  area.value = kind === 'psyche' ? psycheSummary(p, nowTime()) : summaryFor(a, kind, indicator) || 'Please look at my data.';
+  area.value = kind === 'psyche' ? psycheSummary(p, nowTime()) : summaryFor(a, kind, indicator, { full: true }) || 'Please look at my data.';
   // What will really happen to it, said before Send: the same cases as sentText() after it (FS-02).
   const status = serverDown ? 'The station server is not answering: the message is kept in this browser and goes to the station computer, and from there to the doctor, when it answers again.'
     : store && store.kind !== 'server' ? 'This copy runs without the station server: the message is saved on this computer only, and nothing is sent.'
@@ -2384,10 +2459,12 @@ function openDoctor(a, kind, indicator = null) {
   openPanel(`Message ${toText}`, [
     h('p', {}, status),
     kind === 'psyche' && ui.ship.doctorOnBoard ? h('p', { class: 'note' }, 'It goes to the doctor on Earth, as the button says, not to the doctor on board.') : null,
+    privateDraftNote(area.value),
     area,
     h('p', { class: 'note' }, 'The automation drafted this text from your data; you can change it.'),
   ], [
     btn('primary', 'Send', async () => {
+      if (tooLong(area, 4000)) return;
       const event = { v: 1, kind: 'report', time: new Date().toISOString(), person: ui.person, state: { ...ui.ship }, report: { to, text: area.value.slice(0, 4000), ...(kind === 'psyche' ? { topic: 'mind-checkins' } : {}) } };
       const res = await keep(event);
       if (!res.ok) return;
@@ -3024,10 +3101,11 @@ function missionFields() {
     if (why) { status.textContent = why; return; }
     ui.mission = readMission(next);
     savePrefs();
+    rebuild();
     render();
     toast(`Mission saved on this device: ${flightDayNow() ? flightDayNow().words.toLowerCase() : 'its days are counted on the status line'}.`);
   };
-  const clear = () => { ui.mission = null; savePrefs(); render(); toast('Mission cleared: no flight day is shown.'); };
+  const clear = () => { ui.mission = null; savePrefs(); rebuild(); render(); toast('Mission cleared: no flight day is shown.'); };
   return h('div', { class: 'mission-own' },
     h('p', {}, h('b', {}, 'Your mission'), ' ', h('span', { class: 'muted' }, 'For a real flight or an analog. Kept on this device only; the dates are GMT.')),
     h('div', { class: 'log-form' },

@@ -60,8 +60,11 @@ export const EXPECTED = {
 export const EXPECTED_EVERY_DAYS = { pulse: 1, bp: 1, temp: 1, sleep: 1, resp: 1, fluid: 1, radiation: 1, co2: 1, cabinTemp: 1, cabinO2: 1, cabinPressure: 1, vo2max: 30, mood: 1, attitude: 1 };
 
 // Measures that change slowly over weeks: only these get a forecast alert from the straight line (the reviews of
-// 15 Nov 2026). Daily vitals scatter from day to day, and a straight line through them misleads.
-export const SLOW_MEASURES = ['vo2max', 'strength', 'bodyMass', 'radiation', 'hearing'];
+// 15 Nov 2026). Daily vitals scatter from day to day, and a straight line through them misleads. Body mass is not
+// one of them since it has a band (config.js): in ISS data crew lost 2 to 5% in the first month and then kept the
+// lower mass (NASA HRP nutrition report, 2015), so a straight line through the flight would overstate the loss; it
+// still gets a forecast when its line clearly outruns the scatter (RULES.trendOverNoise).
+export const SLOW_MEASURES = ['vo2max', 'strength', 'radiation', 'hearing'];
 
 // The vital signs that NEWS2 scores (RCP, 2017): breathing rate, blood oxygen, systolic pressure, pulse, temperature.
 export const VITAL_SIGNS = ['resp', 'spo2', 'bp', 'pulse', 'temp'];
@@ -127,8 +130,16 @@ const SHIP_DEFAULT = { id: 'ship', baselines: {} };
 const DAY = 24 * 60 * 60 * 1000;
 const ms = (t) => (t instanceof Date ? t.getTime() : new Date(t).getTime());
 
-function normOf(cell, person) {
+function normOf(cell, person, list = []) {
   if (cell.normType === 'range') return { min: cell.norm.min, max: cell.norm.max, maxExclusive: Boolean(cell.norm.maxExclusive) };
+  if (cell.normType === 'baseline-shift') {
+    // Hearing: below the person's own pre-flight test plus the shift (engine.js keeps the test on each reading after
+    // launch); with no pre-flight test on record, the cell's second reference (src/nasa-rules.js says the same).
+    const based = list.filter((x) => Number.isFinite(x.baseline));
+    const base = based.length ? based[based.length - 1].baseline : null;
+    const f = cell.norm.fallback || {};
+    return base === null ? { min: null, max: f.max ?? null, maxExclusive: Boolean(f.maxExclusive) } : { min: null, max: base + cell.norm.shiftAtLeast, maxExclusive: true };
+  }
   if (cell.normType === 'baseline-percent') {
     const base = person && person.baselines ? Number(person.baselines[cell.baselineKey]) : NaN;
     return Number.isFinite(base) ? { min: (base * cell.norm.minPercent) / 100, max: null } : null;
@@ -173,7 +184,7 @@ export function measureState({ machine, person, cell, mission, now }) {
   const judged = list.filter((x) => !(x.context === 'exercise' && x.status === STATUS.RECORDED));
   const latest = list[list.length - 1] || null;
   const last = judged[judged.length - 1] || null;
-  const norm = normOf(cell, person);
+  const norm = normOf(cell, person, list);
   let streak = 0;
   let redInRun = false;
   for (let i = judged.length - 1; i >= 0 && judged[i].status === STATUS.OUT && !commonInFlight(cell, judged[i], norm, mission); i -= 1) {

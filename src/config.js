@@ -75,6 +75,8 @@ const L = {
   nasaEyes2018: { name: 'NASA JSC, 2018', url: 'https://ntrs.nasa.gov/api/citations/20180004916/downloads/20180004916.pdf' },
   whoHearing: { name: 'WHO World report on hearing, 2021', url: 'https://iris.who.int/server/api/core/bitstreams/5c3fc19f-11c9-4488-af3f-7e636b982aca/content' },
   nasaHearing: { name: 'NASA JSC, ICES-2015-239', url: 'https://ntrs.nasa.gov/api/citations/20150011048/downloads/20150011048.pdf' },
+  // Opened on 15 Nov 2026: a NASA poster abstract on the On-Orbit Hearing Assessment (OOHA).
+  ooha2024: { name: 'Coste and Robinette, NASA, 2024', url: 'https://ntrs.nasa.gov/citations/20240009887' },
   hrpNutrition: { name: 'NASA HRP nutrition report, 2015', url: 'https://ntrs.nasa.gov/api/citations/20150000512/downloads/20150000512.pdf' },
   jsc67378: { name: 'NASA JSC-67378, 2020', url: 'https://ntrs.nasa.gov/api/citations/20205008306/downloads/JSC67378%20Expl%20Nutr%20Reqs%20042020.pdf' },
   std2f: { name: 'NASA-STD-3001, Vol. 2 Rev F', url: 'https://standards.nasa.gov/system/files/tmp/NASA-STD-3001%20Vol%202%20Rev%20F.pdf' },
@@ -95,6 +97,7 @@ const RED = {
   medlineHypothermia: { source: 'MedlinePlus (NIH)', url: 'https://medlineplus.gov/ency/article/000038.htm' },
   ochmoCo2: { source: 'NASA OCHMO-TB-004 Rev D, 2026', url: 'https://www.nasa.gov/wp-content/uploads/2023/12/ochmo-tb-004-carbon-dioxide.pdf' },
   issDepress: { source2: 'NASA, ICES-2025-126', url2: 'https://ntrs.nasa.gov/api/citations/20250003954/downloads/ICES-2025-126_Final_Rev%20A.pdf' },
+  nutrition: { source: 'NASA HRP nutrition report, 2015', url: 'https://ntrs.nasa.gov/api/citations/20150000512/downloads/20150000512.pdf' },
 };
 const cite = (l) => ({ source: l.name, url: l.url });
 const cite2 = (l) => ({ source2: l.name, url2: l.url });
@@ -217,11 +220,21 @@ export const CELLS = [
   },
   {
     id: null, section: 'body', indicator: 'bodyMass', effort: 'light', label: 'Body mass change', kind: KIND.NUMBER, unit: '% of own pre-flight',
-    normType: 'record', compareWith: 'personalEarth',
+    // NASA's nutrition evidence report (Smith, Zwart and Heer, 2015, report pages 111 and 112; checked 15 Nov 2026):
+    // many crewmembers "lost more than 5% of preflight body mass, an amount worthy of concern", and "a loss of 10% of
+    // body mass is clinically significant". The value is already a share of the person's own pre-flight mass, so 95
+    // is a loss of 5%. Drafts here, for the team and the flight surgeons: a loss of more than 5% is outside the band
+    // ("attention", "needs action" after 3 readings in a row, the rule for measures taken less often than daily), and
+    // a loss of 10% or more is a red limit at "needs action". NASA sets no limit of its own.
+    normType: 'range', norm: { min: 95, max: null }, draft: true, compareWith: 'personalEarth',
+    red: [
+      { when: 'atOrBelow', value: 90, level: 'action', ...RED.nutrition, draft: true,
+        note: "NASA's nutrition report: in crewmembers who must meet strict medical requirements for flight certification, including weight limits, a loss of 10% of body mass is clinically significant. A draft here, at needs action." },
+    ],
     norms: {
       earthGeneral: none,
       spaceGeneral: { text: 'no NASA limit; in ISS data crew lost 2 to 5% in the first month of flight and then kept the lower mass', src: L.hrpNutrition },
-      personalEarth: { text: 'compared with own pre-flight mass, measured with the SLAMMD or BMMD on the ISS', src: L.hrpNutrition },
+      personalEarth: { text: "compared with own pre-flight mass, measured with the SLAMMD or BMMD on the ISS; NASA's nutrition report calls a loss of more than 5% worthy of concern and a loss of 10% clinically significant (drafts here: more than 5% is attention, 10% or more needs action)", src: L.hrpNutrition },
       personalSpace: none,
     },
   },
@@ -237,11 +250,19 @@ export const CELLS = [
   },
   {
     id: null, section: 'body', indicator: 'hearing', effort: 'high', label: 'Hearing threshold', kind: KIND.NUMBER, unit: 'dB HL', allowNegative: true, // -10 dB HL is a normal audiogram value
-    normType: 'range', norm: { min: null, max: 20, maxExclusive: true }, compareWith: 'earthGeneral',
+    // NASA's criterion (NASA JSC, ICES-2015-239, page 12; checked 15 Nov 2026): "a 10 dB average
+    // shift or more of hearing thresholds in the high frequencies of 2000, 3000 and 4000 Hz since preflight audiometric
+    // tests" marks a mission-associated shift. So the value here is that average, and it is judged by its shift from
+    // the person's own latest test before launch (engine.js, norm type 'baseline-shift'). A draft for the team and the
+    // flight surgeons: the paper names it the standard criterion of an epidemiological examination, not a flight rule.
+    // WHO's 20 dB is kept as the second reference and stands in only when no pre-flight test is on record: WHO grades
+    // the better-ear average at 500, 1000, 2000 and 4000 Hz (World report on hearing, 2021, Table 1.3), not the same
+    // average, so it is a rough reference here.
+    normType: 'baseline-shift', norm: { shiftAtLeast: 10, fallback: { max: 20, maxExclusive: true } }, draft: true, compareWith: 'personalEarth',
     norms: {
-      earthGeneral: { text: 'normal hearing: below 20 dB, better-ear average at 500 to 4000 Hz', src: L.whoHearing },
-      spaceGeneral: { text: 'NASA counts a mission-related shift of 10 dB or more at 2000 to 4000 Hz against the pre-flight test; hearing is checked on orbit for crew staying longer than 30 days', src: L.nasaHearing },
-      personalEarth: none,
+      earthGeneral: { text: 'WHO: normal hearing is below 20 dB, as the better-ear average at 500, 1000, 2000 and 4000 Hz; a second reference here, used for tests before launch and while no pre-flight test is on record', src: L.whoHearing },
+      spaceGeneral: { text: 'no limit in flight; NASA checks on orbit the hearing of crew staying longer than 30 days, and flight surgeons on the ground look for significant changes', src: L.ooha2024 },
+      personalEarth: { text: "NASA's criterion for a mission-related shift: an average shift of 10 dB or more at 2000, 3000 and 4000 Hz since the pre-flight hearing test; fewer than 5% of ISS crew had one. This value is that average, compared with your latest test before launch (a draft rule)", src: L.nasaHearing },
       personalSpace: none,
     },
   },
@@ -458,8 +479,12 @@ export const CELLS = [
     ],
     // The 0 to 10 scale is the panel's proposal (draft).
     severity: { min: 0, max: 10, minText: 'none', maxText: 'worst', draft: true },
-    // A link between measures the panel asked for: cabin CO2 and headaches on the ISS.
-    links: [{ symptom: 'headache', measure: 'co2', text: 'On the ISS, for each 1 mmHg more cabin CO2 the odds of a reported headache doubled; keeping the risk below 1% needs a 7-day average below 2.5 mmHg.', src: L2.law2014 }],
+    // A link between measures the panel asked for: cabin CO2 and headaches on the ISS. Checked on 15 Nov 2026 in the
+    // abstract of Law et al. (J Occup Environ Med, 2014): "For each 1-mm Hg increase in CO(2), the odds of a crew member
+    // reporting a headache doubled. To keep the risk of headache below 1%, average 7-day CO(2) would need to be
+    // maintained below 2.5 mm Hg", which NASA's CO2 brief repeats (OCHMO-TB-004 Rev D, page 5). days and below are
+    // that 7-day average; src/nasa-rules.js uses them to show the cabin CO2 around a logged headache.
+    links: [{ symptom: 'headache', measure: 'co2', days: 7, below: 2.5, text: 'On the ISS, for each 1 mmHg more cabin CO2 the odds of a reported headache doubled; keeping the risk below 1% needs a 7-day average below 2.5 mmHg.', src: L2.law2014, src2: { name: RED.ochmoCo2.source, url: RED.ochmoCo2.url } }],
   },
   {
     id: null, section: 'body', indicator: 'medicines', effort: 'light', label: 'Medicines taken', kind: KIND.SELF, reviewByAi: false, private: true,
@@ -644,7 +669,7 @@ export const QUESTIONS = [
 export const DATA_GAPS = [
   'There are no general space norms for heart rate, blood pressure, glucose, temperature, oxygen or sleep, at NASA or in studies: only in-flight averages are shown.',
   'Personal norms: the four crew members are made up; their pre-flight levels were chosen by Claude.',
-  'Body mass change has no NASA limit: it is recorded, never judged.',
+  "Body mass change has no NASA limit: its lines at a loss of 5% and of 10% come from NASA's nutrition report and are drafts.",
   'Glucose: the fasting norm is used for now. How and when to measure glucose in flight still needs to be settled.',
   'Blood tests: real NASA data (the Inspiration4 crew), but only before and after flight; none were taken in flight.',
   'Bone density is not measured in flight, only on Earth before and after.',
