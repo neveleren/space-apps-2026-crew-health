@@ -79,7 +79,7 @@ These screenshots show the crew screen with the made-up example flight. The app'
 - A card with who it is (made-up or real), the mission and flight day, and where the record is kept; today's sentence and alerts; a list of the sections with their counts.
 - The sections, newest first: vital signs and other measures (latest value, time, source, count), lab results (the real Inspiration4 draws, each value against its lab range), eye checks, images and tracings, medicines taken and symptoms (private), alerts and what happened to them (the red limit, the crew line, the message to the doctor, false alarms, all clears), messages to the doctor, the mind and the cycle (private), and documents (the FHIR export, a copy of everything, print or save as PDF).
 - Every item opens where it came from: the measure's page, the blood value, Messages, the cycle card.
-- Allergies, vaccinations, diagnoses, prescriptions, procedures and visits are listed as "Not in this prototype: comes from the medical record system", pointing to the planned NASA medical record row, as the HL7 International Patient Summary asks a section with no data to say why.
+- Allergies, vaccinations, diagnoses, prescriptions, procedures and visits are listed as "Not in this prototype: comes from the medical record system", pointing to the planned NASA medical record row. The HL7 International Patient Summary asks its required sections (allergies, problems, medicines) to say why when they hold no data; the record does the same for all six.
 - Only the person's own records; a crewmate's screen never gets them.
 
 ## Working now, simulated, planned

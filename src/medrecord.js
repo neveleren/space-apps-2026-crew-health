@@ -9,12 +9,14 @@
 //   card, 2022): allergies, immunizations, conditions and diagnoses, observations, current diagnoses, encounters,
 //   clinical impressions, episodes, risk assessments, devices, medication statements, diagnostic reports and
 //   procedures; encounters, episodes and clinical impressions are shown "with only non-sensitive medical data".
-// - The Helsi app's store listing (LLC Helsi, 2026): a medical card with the visit history, referrals, lab results,
-//   vaccinations and conclusions; e-prescriptions are shown in the card since version 3.00.0 (3 Sep 2026).
+// - The Helsi app's App Store listing (seller Helsi UA LLC, 2026): a medical card with the visit history, referrals,
+//   lab results, vaccinations and conclusions; its version history says prescriptions are shown in the medical
+//   record since version 2.99.0 (31 Aug 2026).
 // - The Page (24 Dec 2024): lab results and the doctor's conclusion are kept in the card, under "Medical documents".
-// - HL7 International Patient Summary 2.0.1: a section with no data says why (its emptyReason, generally
-//   "unavailable" or "notasked"), and allergies, problems and medicines are the three required sections. So the
-//   sections this prototype does not hold are listed with their reason (NOT_HELD), not left out.
+// - HL7 International Patient Summary 2.0.1: allergies, problems and medicines are its three required sections, and a
+//   required section with no data says why (its emptyReason, generally "unavailable" or "notasked"); other sections
+//   may be left out. Here all six sections this prototype does not hold are listed with their reason (NOT_HELD), so
+//   a missing section never reads as "none".
 //
 // buildRecord() turns what the crew screen already holds (the machine's history of the person, the saved events,
 // today's levels) into the header and the sections of the record. It saves nothing and sends nothing. Only the
@@ -46,7 +48,7 @@ const thousands = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 export const RECORD_SOURCES = Object.freeze({
   ehealth: Object.freeze({ name: 'eHealth Ukraine public documentation: Patient summary, the electronic medical card (2022)', url: 'https://e-health-ua.atlassian.net/wiki/spaces/EH/pages/17052631052/Patient+summary' }),
   ehealthApi: Object.freeze({ name: 'eHealth Ukraine: Patient Summary API (2025)', url: 'https://e-health-ua.atlassian.net/wiki/spaces/EH/pages/583402171/Patient+Summary+API' }),
-  helsi: Object.freeze({ name: 'Helsi app, App Store listing (LLC Helsi, version 3.06, 2026)', url: 'https://apps.apple.com/us/app/helsi/id1536904940' }),
+  helsi: Object.freeze({ name: 'Helsi app, App Store listing (Helsi UA LLC, version 3.06, 2026)', url: 'https://apps.apple.com/us/app/helsi/id1536904940' }),
   helsiResults: Object.freeze({ name: 'The Page: lab results in the Helsi medical card (24 Dec 2024)', url: 'https://thepage.ua/ua/news/ukrayinci-teper-mozhut-podivitis-rezultati-analiziv-u-dodatku-helsi' }),
   ips: Object.freeze({ name: 'HL7 International Patient Summary 2.0.1: its sections', url: 'https://hl7.org/fhir/uv/ips/en/Structure-of-the-International-Patient-Summary.html' }),
   ipsEmpty: Object.freeze({ name: 'HL7 International Patient Summary 2.0.1: empty sections and missing data', url: 'https://hl7.org/fhir/uv/ips/en/Empty-Sections-and-Missing-Data.html' }),
