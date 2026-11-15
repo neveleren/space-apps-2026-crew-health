@@ -4,7 +4,7 @@ What changed in each version of the Crew Health Console, team Just For Fun, NASA
 
 ## 1.2.0 (15 Nov 2026)
 
-- The energy question of the daily check-in uses the Samn-Perelli seven-point fatigue scale, the team's choice: one of seven statements from "fully alert, wide awake" to "completely exhausted". A day at 5 ("moderately tired") or more counts as a low-energy day for the mind rule (a draft: the scale has no formal cut-off). Older answers read as 2 ("energetic") and 5 ("sluggish"). The example flight keeps the same low days. New `src/fatigue.js` and `tests/fatigue.test.js`.
+- The energy question of the daily check-in uses the Samn-Perelli seven-point fatigue scale, the team's choice: one of seven statements from "fully alert, wide awake" to "completely exhausted". A day at 5 ("moderately tired") or more counts as a low-energy day for the mind rule (a draft; the scale's 1982 report puts the start of moderate fatigue at 5, as a hypothesis). Older answers stay readable: "energetic" and "sluggish" read as 2 and 5, on the server, on every screen and in a restored copy. The example flight keeps the same low days. New `src/fatigue.js` and `tests/fatigue.test.js`.
 
 ## 1.1.0 (15 Nov 2026)
 

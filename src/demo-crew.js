@@ -128,7 +128,8 @@ export function exampleFlight(crew, stories = STORY) {
       // tired day (5 or 6, counted low) or not (2 to 4), so the made-up story keeps its low days.
       const e = r();
       const cut = low ? pBad + 0.1 : 0.1;
-      push(p.id, 'attitude-report', 'attitude', e < cut ? (e < cut / 2 ? 6 : 5) : e > 0.65 ? 2 : e > 0.3 ? 3 : 4, ms + 4 * 60 * 1000);
+      const u = (e - cut) / (1 - cut); // where a not-tired day falls above the cut, from 0 to 1
+      push(p.id, 'attitude-report', 'attitude', e < cut ? (e < cut / 2 ? 6 : 5) : u > 0.65 ? 2 : u > 0.3 ? 3 : 4, ms + 4 * 60 * 1000);
       push(p.id, 'bio-monitor-resp', 'resp', round(14 + noise2(2)), ms);
       push(p.id, 'drink-log', 'fluid', Math.round((s.fluidMean + noise2(220)) / 10) * 10, ms + 8 * 60 * 60 * 1000);
       if (d % 7 === 0) push(p.id, 'mass-device', 'bodyMass', round(100 - s.massLoss * Math.min(1, d / 30) + noise2(0.4), 1), ms + 30 * 60 * 1000);

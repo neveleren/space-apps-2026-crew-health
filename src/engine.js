@@ -172,7 +172,8 @@ const isBlank = (v) => v === null || v === undefined || (typeof v === 'string' &
 // A self-report on a fixed scale (for example sleep quality from 1 to 7) must be a number on that scale.
 function onScale(cell, value) {
   if (!cell.scale) return true;
-  const v = toNum(value);
+  // A cell may read its own value (the energy question: whole steps, and the old words "energetic" and "sluggish").
+  const v = typeof cell.step === 'function' ? cell.step(value) : toNum(value);
   return Number.isFinite(v) && v >= cell.scale.min && v <= cell.scale.max;
 }
 

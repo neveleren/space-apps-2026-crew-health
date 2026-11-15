@@ -514,7 +514,8 @@ function seriesOf(ownerId, indicator) {
     ];
   }
   if (ORDINAL[indicator]) {
-    return [{ name: lower(cell.label), color: 'var(--series-1)', points: list.map((x) => ({ t: msOf(x.time), v: ordinalValue(indicator, x.value), out: isLowAnswer(indicator, x.value) })).filter((p) => Number.isFinite(p.v)) }];
+    const name = indicator === 'attitude' ? 'energy (1 fully alert, 7 completely exhausted)' : lower(cell.label);
+    return [{ name, color: 'var(--series-1)', points: list.map((x) => ({ t: msOf(x.time), v: ordinalValue(indicator, x.value), out: isLowAnswer(indicator, x.value) })).filter((p) => Number.isFinite(p.v)) }];
   }
   return [{ name: lower(cell.label), color: 'var(--series-1)', points: list.map((x) => ({ t: msOf(x.time), v: Number(x.value), out: x.status === STATUS.OUT })).filter((p) => Number.isFinite(p.v)) }];
 }
@@ -1227,7 +1228,7 @@ function renderCheckin(p, now, top = LEVEL.FINE) {
     type: 'button', 'aria-pressed': String(ui.checkin[key] === value), 'data-fk': `ci:${key}:${value}`, onclick: () => { ui.checkin[key] = ui.checkin[key] === value ? null : value; keepFocus(() => renderCheckin(p, now, top)); },
   }, ui.checkin[key] === value ? icon('check', { size: 16 }) : null, label)));
   seg('ci-mood', 'mood', [['bad', 'Bad'], ['fair', 'Fair'], ['good', 'Good']]);
-  seg('ci-attitude', 'attitude', FATIGUE_STEPS.map((x) => [x.step, [h('span', { class: 'step' }, String(x.step)), x.text]]));
+  seg('ci-attitude', 'attitude', FATIGUE_STEPS.map((x) => [x.step, [h('span', { class: 'fs-step' }, String(x.step)), x.text]]));
   seg('ci-sleep', 'sleepQuality', [1, 2, 3, 4, 5, 6, 7].map((n) => [n, String(n)]));
   if (open) renderTopicChips(byId('ci-topics'), { selected: ui.checkin.weighing || [], onChange: (ids) => { ui.checkin.weighing = ids; } });
   const any = Boolean(ui.checkin.mood || ui.checkin.attitude || ui.checkin.sleepQuality);
@@ -1389,7 +1390,8 @@ function renderGroups(p, a, now) {
   const rowFor = (ind) => (ind === 'camera' ? cameraRow(p) : COMPLEX_CELLS.includes(ind) ? complexRow(p, ind) : cellBy[ind] ? measureRow(p, ind, a, now) : null);
   const group = (title, hint, rows) => {
     const real = rows.filter(Boolean);
-    const flaggedHere = real.some((w) => w.querySelector('.row.lv1, .row.lv2, .row.lv3, .row.stale'));
+    // The mind rule belongs to the person, not to one row: a Mind group with a mind level is never folded.
+    const flaggedHere = real.some((w) => w.querySelector('.row.lv1, .row.lv2, .row.lv3, .row.stale')) || (title === 'Mind' && a && a.psyche.level > LEVEL.FINE);
     const foldable = !flaggedHere;
     const open = !foldable || ui.openGroups.has(title);
     const list = h('div', { class: 'rows', hidden: open ? null : true }, ...real);
@@ -1625,7 +1627,7 @@ function renderDetail() {
     return h('div', { class: cell.compareWith === k ? 'used' : '' },
       h('dt', {}, title, cell.compareWith === k ? ' · compared with this one' : ''),
       h('dd', {}, n ? n.text : 'no data', n && n.src ? [' · ', h('a', { href: n.src.url, target: '_blank', rel: 'noopener' }, n.src.name)] : null));
-  })) : h('p', {}, cell.normText || '');
+  })) : h('p', {}, cell.normText || '', cell.src ? [' · ', h('a', { href: cell.src.url, target: '_blank', rel: 'noopener' }, cell.src.name)] : null);
 
   const a = assess({ machine, person: p, cells: CELLS, mission: mission(), now });
   const lastEntry = machine.history(owner.id, indicator).slice(-1)[0] || null;
@@ -1652,7 +1654,10 @@ function renderDetail() {
   const tip = h('div', { class: 'tip', id: 'd-tip', hidden: true });
   const band = ORDINAL[indicator] ? null : bandOf(cell, owner);
   const shownPts = allPoints.filter((pt) => !range || (pt.t >= range.from && pt.t <= range.to));
-  const how = [shownPts.length <= 40 ? 'Each dot is one reading.' : 'The line joins your readings.', band ? 'The shaded band is the normal range.' : null, shownPts.some((pt) => pt.out) ? 'Rings mark readings outside it.' : null].filter(Boolean).join(' ');
+  const ringWords = { attitude: `Rings mark answers at ${FATIGUE_RULE.lowFrom} or more (tired, a draft).`, mood: 'Rings mark bad days.' };
+  const how = (ORDINAL[indicator]
+    ? [indicator === 'attitude' ? 'Higher is more tired: 1 fully alert, 7 completely exhausted.' : null, 'Each dot is one answer.', shownPts.some((pt) => pt.out) ? ringWords[indicator] : null]
+    : [shownPts.length <= 40 ? 'Each dot is one reading.' : 'The line joins your readings.', band ? 'The shaded band is the normal range.' : null, shownPts.some((pt) => pt.out) ? 'Rings mark readings outside it.' : null]).filter(Boolean).join(' ');
 
   fill(host, 
     backButton(),
@@ -2154,7 +2159,7 @@ function openAdvice() {
   const p = personById[ui.person];
   const a = assess({ machine, person: p, cells: CELLS, mission: mission(), now: nowTime() });
   const sig = topicSignal(machine.history(p.id, 'weighing'), nowTime());
-  renderTips(host, { signals: { topic: sig ? sig.id : null, lowMood: a.psyche.level > LEVEL.FINE, poorSleep: (a.info || []).some((x) => x.cell && x.cell.indicator === 'sleep') }, onOpenBreak: () => { closePanel(); openEarthBreak(); }, onOpenJournal: () => openJournal() });
+  renderTips(host, { signals: { topic: sig ? sig.id : null, lowMood: a.psyche.level > LEVEL.FINE, lowEnergy: isLowEnergy((machine.history(p.id, 'attitude').slice(-1)[0] || {}).value), poorSleep: (a.info || []).some((x) => x.cell && x.cell.indicator === 'sleep') }, onOpenBreak: () => { closePanel(); openEarthBreak(); }, onOpenJournal: () => openJournal() });
   openPanel(ADVICE, [backToMind(), host, h('p', { class: 'note' }, "Who gives advice, the automation or the AI, is still the team's open question. These are checked suggestions with their sources."), h('p', {}, h('b', {}, 'Reading for people who prefer to read without the AI')), articleLinks(null)], [], { key: 'advice' });
 }
 
@@ -2280,6 +2285,7 @@ function articleLinks(indicator) {
   const cell = indicator ? cellBy[indicator] : null;
   const links = [];
   if (cell && cell.norms) for (const n of Object.values(cell.norms)) if (n && n.src) links.push([n.src.name, n.src.url]);
+  if (cell && cell.src) links.push([cell.src.name, cell.src.url]);
   links.push(['NASA health briefs for spaceflight (OCHMO)', 'https://www.nasa.gov/ochmo/hsa-standards/ochmo-technical-briefs/']);
   links.push(['NASA evidence reports on health risks (Human Research Program)', 'https://humanresearchroadmap.nasa.gov/evidence/']);
   links.push(['MedlinePlus health articles (US National Library of Medicine)', 'https://medlineplus.gov/']);

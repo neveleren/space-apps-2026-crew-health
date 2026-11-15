@@ -154,7 +154,7 @@ function valueProblem(cell, v) {
     if (Array.isArray(cell.answers) && !checkSelf(cell, v).valid) return 'must be one of the answers of this measure';
     if (Array.isArray(cell.topics)) return Array.isArray(v) && v.length >= 1 && v.length <= cell.topics.length && new Set(v).size === v.length && v.every((x) => cell.topics.includes(x)) ? null : `must be a list of topics from: ${cell.topics.join(', ')}`;
     if (!shortText(v) && !(typeof v === 'number' && Number.isFinite(v))) return `must be a short text or a number`;
-    if (cell.scale && !(Number(v) >= cell.scale.min && Number(v) <= cell.scale.max)) return `must be from ${cell.scale.min} to ${cell.scale.max}`;
+    if (cell.scale && !checkSelf(cell, v).valid) return `must be ${typeof cell.step === 'function' ? 'a whole step ' : ''}from ${cell.scale.min} to ${cell.scale.max}`;
     return null;
   }
   return 'cannot be saved for this measure';

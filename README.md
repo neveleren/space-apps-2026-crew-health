@@ -109,7 +109,7 @@ These screenshots show the crew screen with the made-up example flight. The app'
 - **Watch rule.** A daily vital sign just outside its normal range (inside its red limits) is watched first: attention after 3 readings in a row outside, needs action after 7. Two or more vital signs outside within 24 hours count at once as attention (after NEWS2). Heart rate and breathing rate readings marked as exercise are recorded, not judged against the resting range; their low red limits still count.
 - **Forecast.** A straight line to landing. It raises an alert only for slow measures (VO2max, strength, body mass, radiation, hearing) or a line that clearly outruns the daily scatter. It is not a validated medical model, and the page says so.
 - **No fresh data.** Then the sentence says "not enough fresh data to judge" instead of "excellent".
-- **Mind check-ins.** Low mood or low energy on 6 or more of the last 14 days gives attention, on 8 or more needs action. Low energy is a fatigue answer of 5 ("moderately tired") or more of 7; the scale has no formal cut-off, so this is a draft. Placeholders until the team chooses a questionnaire.
+- **Mind check-ins.** Low mood or low energy on 6 or more of the last 14 days gives attention, on 8 or more needs action. Low energy is a fatigue answer of 5 ("moderately tired") or more of 7: a draft, the team's open decision; the scale's 1982 report puts the start of moderate fatigue at 5, as a hypothesis. Placeholders until the team chooses a questionnaire.
 - **Ship.** Cabin CO2, oxygen, pressure, temperature and noise are compared with NASA limits. A ship alarm reaches every crew screen and points to the ship's procedures.
 
 ## Privacy and security
@@ -170,7 +170,7 @@ node tools/sbom.mjs --check
 ```
 
 - `npm test` runs Node's own test runner over 17 test files: the machine, history, camera rules, levels, cycle, server, store, PIN, supply chain, mind tools, quick logs, cells, connections, pages, crew alarm, screens and the fatigue scale. The server tests start the real server on a throwaway data folder.
-- On 15 Nov 2026 (version 1.2.0): 275 tests, 273 pass, 0 fail, 2 skipped, with Node 24.13.0. The 2 skipped tests call the real ISSLive and NOAA services.
+- On 15 Nov 2026 (version 1.2.0): 276 tests, 274 pass, 0 fail, 2 skipped, with Node 24.13.0. The 2 skipped tests call the real ISSLive and NOAA services.
 - We also walk the pages in headless Chromium with Playwright. These scripts are kept outside this repository and are not part of `npm test`. Last run, 15 Nov 2026, against commit `09e93ae` (the merged review fixes), each on a fresh data folder:
 
 | Browser check | Steps | Result |

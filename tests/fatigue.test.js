@@ -28,7 +28,7 @@ test('an answer is a whole step from 1 to 7; the old words "energetic" and "slug
   assert.equal(fatigueStep('5'), 5);
   assert.equal(fatigueStep('energetic'), 2);
   assert.equal(fatigueStep('sluggish'), 5);
-  for (const bad of [0, 8, 2.5, '', ' ', null, undefined, 'tired', {}]) assert.ok(Number.isNaN(fatigueStep(bad)), String(bad));
+  for (const bad of [0, 8, 2.5, '', ' ', null, undefined, 'tired', {}, true, [5], '5.5', '0x5', '5e0']) assert.ok(Number.isNaN(fatigueStep(bad)), String(bad));
   assert.equal(isLowEnergy(4), false);
   assert.equal(isLowEnergy(5), true);
   assert.equal(isLowEnergy(7), true);
@@ -54,11 +54,11 @@ test('the mind rule: energy at 5 or more on enough of the last days gives attent
   assert.equal(run(4).level, LEVEL.FINE);
 });
 
-test('the server takes a step from 1 to 7 and refuses anything else, the old words included', () => {
+test('the server takes a whole step from 1 to 7 and the two old words, and refuses anything else', () => {
   const at = new Date(NOW.getTime() - 3600 * 1000).toISOString();
   const ev = (value) => ({ v: 1, kind: 'reading', time: at, person: 'crew-1', state: { aiWorks: true, doctorOnBoard: false, linkToEarth: true }, reading: { source: 'attitude-report', indicator: 'attitude', value } });
-  for (const n of [1, 5, 7]) assert.equal(eventProblem(ev(n), { now: NOW }), null, String(n));
-  for (const bad of [0, 8, 'sluggish', 'energetic']) assert.notEqual(eventProblem(ev(bad), { now: NOW }), null, String(bad));
+  for (const ok of [1, 5, 7, '6', 'sluggish', 'energetic']) assert.equal(eventProblem(ev(ok), { now: NOW }), null, String(ok));
+  for (const bad of [0, 8, 2.5, '5.5', '0x5', '5e0', true, 'tired']) assert.notEqual(eventProblem(ev(bad), { now: NOW }), null, String(bad));
 });
 
 test('the energy cell names the scale and its source, and the technical view offers steps on the scale', () => {
@@ -70,4 +70,17 @@ test('the energy cell names the scale and its source, and the technical view off
   const presets = SOURCES.find((s) => s.id === 'attitude-report').presets;
   assert.ok(presets.length >= 2);
   for (const p of presets) assert.ok(Number.isInteger(p.value) && p.value >= 1 && p.value <= 7, p.label);
+});
+
+test('an old answer saved before the scale is kept and read: the machine records "sluggish" as step 5 and counts it low', () => {
+  const machine = createMachine({ cells: CELLS, crew: [...CREW, SHIP], state: { aiWorks: true, doctorOnBoard: false, linkToEarth: true } });
+  const old = machine.receive({ source: 'attitude-report', indicator: 'attitude', value: 'sluggish', person: 'crew-1', time: new Date(NOW.getTime() - 3600 * 1000) });
+  assert.notEqual(old.status, 'unknown');
+  const list = machine.history('crew-1', 'attitude');
+  assert.equal(list.length, 1);
+  assert.equal(fatigueStep(list[0].value), 5);
+  assert.equal(isLowEnergy(list[0].value), true);
+  const odd = machine.receive({ source: 'attitude-report', indicator: 'attitude', value: 2.5, person: 'crew-1', time: NOW });
+  assert.equal(machine.history('crew-1', 'attitude').length, 1, 'a value between steps is not kept');
+  assert.ok(odd);
 });

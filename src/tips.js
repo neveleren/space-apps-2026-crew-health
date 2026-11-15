@@ -341,7 +341,7 @@ export const PROVENANCE = {
     "path": "Manual entry on the morning check-in, stored on this computer and looked at in the planned review."
   },
   "attitude": {
-    "what": "How tired you feel today, on the Samn-Perelli fatigue scale: one of seven statements, from 1 fully alert to 7 completely exhausted; a day at 5 or more counts as a low-energy day for the mind rule (a draft). On the ISS, nights under 6 hours of sleep went with slower reactions and higher stress and workload, so fatigue is worth catching early.",
+    "what": "How tired you feel right now, at the daily check-in, on the Samn-Perelli fatigue scale: one of seven statements, from 1 fully alert to 7 completely exhausted; a day at 5 or more counts as a low-energy day for the mind rule (a draft). On the ISS, nights under 6 hours of sleep went with slower reactions and higher stress and workload, so fatigue is worth catching early.",
     "iss": [
       {
         "name": "Reaction Self Test",
@@ -361,8 +361,8 @@ export const PROVENANCE = {
         "url": "https://www.garmin.com/en-CA/blog/?p=32426"
       }
     ],
-    "how": "Self-report: one tap a day in the morning check-in, on the Samn-Perelli seven-point fatigue scale (USAF School of Aerospace Medicine, 1982; the statements as quoted by the UK Civil Aviation Authority, 2007). NASA's Reaction Self Test asked astronauts to rate stress, mental fatigue, physical exhaustion, tiredness and sleepiness on 11-point scales, then timed a 3-minute reaction test and gave feedback against astronaut norms. Fatigue level is also a set topic of the private psychologist call every two weeks.",
-    "path": "Manual entry on the morning check-in. A wearable energy estimate"
+    "how": "Self-report: one tap a day in the morning check-in, on the Samn-Perelli seven-point fatigue scale (USAF School of Aerospace Medicine, 1982; the statements in the words of the UK Civil Aviation Authority, 2007). NASA's Reaction Self Test asked astronauts to rate stress, mental fatigue, physical exhaustion, tiredness and sleepiness on 11-point scales, then timed a 3-minute reaction test and gave feedback against astronaut norms. Fatigue level is also a set topic of the private psychologist call every two weeks.",
+    "path": "Manual entry on the morning check-in. A wearable energy estimate is not connected in this version."
   },
   "sleepQuality": {
     "what": "Your own rating of last night's sleep, 1 (very poor) to 7 (excellent); ISS crews averaged about 6 hours of sleep a night, and NASA's medical standard asks every crew member for a daily sleep rating.",
