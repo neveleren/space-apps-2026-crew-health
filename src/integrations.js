@@ -106,7 +106,7 @@ export const CONNECTIONS = [
     caveat: 'Not yet tried with a real device; the byte formats match the examples in the Bluetooth specifications.',
     how: 'Web Bluetooth in Chrome or Edge: temperature_measurement (FLOAT), blood_pressure_measurement (SFLOAT, mmHg or kPa), plx_continuous_measurement and plx_spot_check_measurement (SFLOAT).',
     note: 'iPads and Safari have no Web Bluetooth.',
-    tested: 'Unit tests with the specifications\' own byte examples (36.4 °C as FLOAT 0xFF00016C, 114 mmHg as SFLOAT 0x0072) and with every flag combination.',
+    tested: 'Unit tests with the specifications\' own byte examples (36.4 °C as FLOAT 0xFF00016C, 114 mmHg as SFLOAT 0x0072) and with each flag of each measurement at least once.',
     action: { type: 'connect', buttons: [{ kind: 'thermometer', label: 'Thermometer' }, { kind: 'blood-pressure', label: 'Cuff' }, { kind: 'pulse-oximeter', label: 'Oximeter' }] },
     personal: true,
     sources: [S.htp, S.blp, S.plxp, S.plxs, S.gss, S.phdt, S.wbreg],

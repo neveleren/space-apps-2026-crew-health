@@ -668,6 +668,19 @@ test('onlyNew: a saved event whose time is not a time is skipped over, not throw
   assert.equal(onlyNew(r, [...broken, ...toEvents(r)]).length, 0);
 });
 
+test('BLE pulse oximeter: every spot-check flag (time stamp, both status fields, PAI, clock not set)', () => {
+  const all = ble.parsePlxSpotCheck(hex('1F 62 00 48 00 EA 07 0B 0F 06 1E 00 00 01 00 00 00 19 F0'));
+  assert.deepEqual([all.spo2, all.pulse, all.deviceTime.text, all.clockNotSet, all.pai], [98, 72, '2026-11-15 06:30:00', true, 2.5]);
+  assert.deepEqual(all.measurementStatus, ['fully qualified data']);
+  assert.deepEqual(all.deviceStatus, []);
+  assert.equal(all.quality.ok, true);
+  const early = ble.parsePlxSpotCheck(hex('06 62 00 48 00 40 00 00 08 00'));
+  assert.deepEqual(early.measurementStatus, ['early estimated data']);
+  assert.deepEqual(early.deviceStatus, ['sensor unconnected to user']);
+  assert.equal(ble.toReadings('pulse-oximeter', early).readings.length, 0);
+  assert.throws(() => ble.parsePlxSpotCheck(hex('01 62 00 48 00 EA 07')), RangeError, 'a cut-off time stamp');
+});
+
 test('BLE numbers: a malformed FLOAT with an exponent below -100 gives a value, not an exception', () => {
   assert.doesNotThrow(() => ble.decodeFloat(0x80000001));
   assert.equal(ble.decodeFloat(0x80000001).special, null);
